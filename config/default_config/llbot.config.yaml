@@ -1,0 +1,14 @@
+#Milky服务器地址
+authority: localhost
+# 基础路径
+
+basePath: :3010
+
+# 访问令牌（可选）
+accessToken:
+
+# 是否使用TLS
+useTLS: false
+
+# 是否使用SSE
+useSSE: false

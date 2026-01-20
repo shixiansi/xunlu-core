@@ -1,0 +1,15 @@
+node_modules/
+.env
+npm-debug.log
+.DS_Store
+# Project data and generated files
+data/
+config/config
+
+reset-qianyu-plugin/
+
+# plugin downloads (generated files)
+src/plugins/*/downloads/
+temp/
+# logs
+logs/

@@ -1,0 +1,42 @@
+{{extend defaulthtml}} {{block 'css'}}
+<!-- 引入单独的 TTS 样式文件 -->
+<link rel="stylesheet" href="{{_res_path}}/html/tts/tts.css" />
+{{/block}} {{block 'main'}}
+<div
+  id="container"
+  class="box"
+  style="background-image:url({{_res_path}}/img/bg/bg1.jpg)"
+>
+  <!-- 头部标题 -->
+  <div class="header">
+    <h1>千羽TTS语音模型角色库</h1>
+  </div>
+
+  <!-- 主体角色列表 -->
+  <div class="content">
+    {{each ttsList tts}}
+    <div class="tts-group">
+      <!-- 角色分类：如中文女声/英文男声/二次元 -->
+      <div class="tts-content">
+        <div class="tts-card">
+          <!-- 状态色标：可用(绿)/维护中(黄)/不可用(红) -->
+          <div class="role-info">
+            <h4>{{tts}}</h4>
+            <!-- 角色名称 -->
+          </div>
+        </div>
+      </div>
+    </div>
+    {{/each}}
+  </div>
+
+  <!-- 底部说明 -->
+  <div class="bottom">
+    <h4>
+      TTS角色状态说明 <span class="green"></span>表示角色可用
+      <span class="yellow"></span>表示维护中
+      <span class="red"></span>表示角色不可用
+    </h4>
+  </div>
+</div>
+{{/block}}

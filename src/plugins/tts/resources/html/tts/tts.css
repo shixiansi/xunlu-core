@@ -1,0 +1,154 @@
+/* 全局重置与基础样式 */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: "Microsoft Yahei", sans-serif;
+}
+
+/* 容器整体样式 */
+.box {
+    width: 100%;
+    margin: 20px auto;
+    padding: 20px;
+    border-radius: 10px;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* 头部样式 */
+.header {
+    text-align: center;
+    margin-bottom: 30px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.5);
+}
+
+.header h1 {
+    color: #fff;
+    font-size: 28px;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* 主体内容区 */
+.content {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-bottom: 30px;
+}
+
+/* TTS 分类组样式 */
+.tts-group {
+    border-radius: 8px;
+    margin: 15px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.tts-group h3 {
+    color: #333;
+    font-size: 20px;
+    margin: 15px;
+    padding-left: 10px;
+    border-left: 4px solid #4CAF50;
+}
+
+/* TTS 角色卡片样式 */
+.tts-content {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.tts-card {
+    display: flex;
+    align-items: center;
+    padding: 10px;
+    background: rgba(255, 255, 255, 0.7);
+    border-radius: 6px;
+    border: 1px solid #eee;
+    transition: all 0.2s ease;
+}
+
+.tts-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+/* 状态色标样式 */
+.status-marker {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-right: 10px;
+    display: inline-block;
+}
+
+.green {
+    background-color: #4CAF50;
+}
+
+/* 可用 */
+.yellow {
+    background-color: #FFC107;
+}
+
+/* 维护中 */
+.red {
+    background-color: #F44336;
+}
+
+/* 不可用 */
+
+/* 角色信息样式 */
+.role-info {
+    flex: 1;
+}
+
+.role-info h4 {
+    color: #212121;
+    font-size: 16px;
+    margin-bottom: 5px;
+}
+
+.role-info .tone,
+.role-info .lang {
+    color: #666;
+    font-size: 14px;
+    line-height: 1.4;
+}
+
+/* 底部说明样式 */
+.bottom {
+    text-align: center;
+    padding: 15px;
+    background: rgba(255, 255, 255, 0.7);
+    border-radius: 8px;
+}
+
+.bottom h4 {
+    color: #333;
+    font-size: 14px;
+    font-weight: normal;
+}
+
+.bottom h4 span {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+    margin: 0 5px;
+}
+
+/* 响应式适配 */
+@media (max-width: 768px) {
+    .content {
+        grid-template-columns: 1fr;
+    }
+
+    .header h1 {
+        font-size: 22px;
+    }
+}
