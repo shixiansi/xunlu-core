@@ -15,7 +15,7 @@ export function register(bot) {
         "本地人设对话列表：\n" +
           setlist
             .map((item, index) => `${index + 1}. ${item.replace(".txt", "")}`)
-            .join("\n")
+            .join("\n"),
       );
       console.log(ctx.msg);
 
@@ -26,38 +26,6 @@ export function register(bot) {
       let selectedChat = await caimiaoAI.getNewChat();
 
       return await AiDialogueContinuous(bot, selectedChat, ctx, setData);
-    }
-    if (ctx.msg.includes("说")) {
-      return;
-      console.log("开始角色说");
-
-      let characterAudioList = file.getFileDataToJson("hobbyist.json");
-      // console.log(characterAudioList);
-      let strarr = ctx.msg.split("说");
-      let model = Object.keys(characterAudioList).find(
-        (item) => item.includes(strarr[0]) && item.includes("中文")
-      );
-      console.log(model);
-
-      if (model) {
-        let audio = await hobbyist.getModelAudio(
-          model,
-          strarr[1].replace(/\（.*?\）/g, "")
-        );
-        console.log(audio);
-
-        return await ctx.reply([
-          {
-            type: "record",
-            data: {
-              uri: audio,
-            },
-          },
-        ]);
-      } else {
-        return;
-        return await ctx.reply("没有找到对应的角色语音模型");
-      }
     }
 
     if (ctx.atBot) {
@@ -80,7 +48,7 @@ export function register(bot) {
     if (list.length > 0) {
       ctx.reply(
         "检测到存在对话，请选择对话主题：\n" +
-          list.map((item, index) => `${index + 1}. ${item.title}`).join("\n")
+          list.map((item, index) => `${index + 1}. ${item.title}`).join("\n"),
       );
 
       const selectedNum = await waitForUserChoice(bot, ctx, list.length);
@@ -89,7 +57,7 @@ export function register(bot) {
 
       const selectedChat = list[selectedNum];
       await ctx.reply(
-        `已选择“${selectedChat.title}”，开始聊天吧！输入“#结束蔡喵对话”退出。`
+        `已选择“${selectedChat.title}”，开始聊天吧！输入“#结束蔡喵对话”退出。`,
       );
 
       //开启ai对话（主动）
@@ -120,7 +88,7 @@ async function aiDialogue(bot, selectedChat, ctx, setData) {
             selectList[choiceIndex] += chunk;
           }
         },
-      }
+      },
     );
     setData = "";
     console.log("触发了对话结果是：", response);
@@ -139,7 +107,7 @@ async function aiDialogue(bot, selectedChat, ctx, setData) {
         "请选择:" +
           selectList
             .map((item, index) => `\n选项${index + 1}：${item}`)
-            .join("")
+            .join(""),
       );
       const selectedNum = await waitForUserChoice(bot, ctx, 2);
       if (selectedNum == -1) {
@@ -174,7 +142,7 @@ async function AiDialogueContinuous(bot, selectedChat, ctx, setData) {
       await aiDialogue(bot, selectedChat, rep, setData);
       setData = "";
     },
-    "#结束蔡喵对话"
+    "#结束蔡喵对话",
   );
 }
 

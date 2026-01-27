@@ -20,7 +20,7 @@ class MilkyAdapter {
       this.config.basePath,
       this.config.accessToken,
       this.config.useTLS,
-      this.config.useSSE
+      this.config.useSSE,
     );
 
     console.log(this.client);
@@ -419,13 +419,15 @@ class MilkyAdapter {
         message: Array.isArray(message)
           ? message
           : typeof message === "string"
-          ? [{ type: "text", data: { text: message } }]
-          : [this.dealMilkyMsg(message)],
+            ? [{ type: "text", data: { text: message } }]
+            : [this.dealMilkyMsg(message)],
       });
     }
   }
 
   dealMilkyMsg(msg) {
+    console.log(msg);
+
     switch (msg.type) {
       case "text":
         break;
@@ -433,7 +435,7 @@ class MilkyAdapter {
         msg = {
           type: "image",
           data: {
-            uri: msg.file,
+            uri: msg.file || msg.data.uri || "",
             sub_type: "normal",
             summary: "你瞅个蛋",
           },

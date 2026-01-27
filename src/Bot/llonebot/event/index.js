@@ -49,7 +49,7 @@ export default class LLoneBotEventListener {
             });
           }
 
-          // console.log(`[MilkyAdapter] 接收到事件: ${eventName}`, data);
+          console.log(`[MilkyAdapter] 接收到事件: ${eventName}`, data);
           data.data.sendMsg = milkyAdapter?.sendMsg.bind(milkyAdapter);
           llbot.deal({
             ...data.data,
