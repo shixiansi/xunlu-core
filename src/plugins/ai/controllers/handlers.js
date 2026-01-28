@@ -10,6 +10,11 @@ export function register(bot) {
   if (!bot || !bot.registerCommand) return;
   bot.registerCommand([""], async (ctx) => {
     console.log(ctx.segments);
+    ctx.sendGroupMessageReaction({
+      group_id: ctx.group_id,
+      message_seq: ctx.message_seq,
+      reaction: "277",
+    });
     if (ctx.segments[0]?.type == "reply") {
       const replyMsg = ctx.segments[0]?.data?.message_seq;
       let msgInfo = await ctx.getMsg({
