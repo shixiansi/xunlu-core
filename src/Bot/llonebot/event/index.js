@@ -47,8 +47,13 @@ export default class LLoneBotEventListener {
               message: segments,
               sender: group_member,
             });
+            data.data.recallGroupMessage =
+              milkyAdapter.recallGroupMessage.bind(milkyAdapter);
+          } else {
+            data.data.recallPrivateMessage =
+              milkyAdapter.recallPrivateMessage.bind(milkyAdapter);
           }
-
+          data.data.getMsg = milkyAdapter.getMessage.bind(milkyAdapter);
           console.log(`[MilkyAdapter] 接收到事件: ${eventName}`, data);
           data.data.sendMsg = milkyAdapter?.sendMsg.bind(milkyAdapter);
           llbot.deal({

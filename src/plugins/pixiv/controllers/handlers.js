@@ -1,7 +1,7 @@
 /**
  * @Author: 时先思
  * @Date: 2025-12-13 14:29:17
- * @LastEditTime: 2026-01-27 22:51:49
+ * @LastEditTime: 2026-01-28 11:53:28
  * @LastEditors: 时先思
  * @Description:
  * @FilePath: \plugin-api\src\plugins\pixiv\controllers\handlers.js
@@ -76,20 +76,24 @@ export function register(bot) {
       }
     };
     await SynthesisImg();
-    ctx.reply([
-      {
-        type: "text",
-        data: {
-          text: `id：${pic.id} \n画师：${pic.user.name}（${pic.user.id}）\n是否ai：${pic.aiType ? "是" : "否"}\n标题：${pic.title}\n上传时间：${pic.updateTime}\n♥：${pic.bookmarkCount}\n👁：${pic.viewCount}\ntag：${pic.tags}\n原图链接：${imgUrl}`,
+    return ctx.reply(
+      [
+        {
+          type: "text",
+          data: {
+            text: `id：${pic.id} \n画师：${pic.user.name}（${pic.user.id}）\n是否ai：${pic.aiType ? "是" : "否"}\n标题：${pic.title}\n上传时间：${pic.updateTime}\n♥：${pic.bookmarkCount}\n👁：${pic.viewCount}\ntag：${pic.tags}\n原图链接：${imgUrl}`,
+          },
         },
-      },
-      {
-        type: "image",
-        data: {
-          uri: "file://" + process.cwd() + "/mirage_tank_web.png",
+        {
+          type: "image",
+          data: {
+            uri: "file://" + process.cwd() + "/mirage_tank_web.png",
+          },
         },
-      },
-    ]);
+      ],
+      false,
+      { recallMsg: 120 },
+    );
   });
   console.log("[example-plugin] registered with bot shim");
 }

@@ -13,3 +13,4 @@ src/plugins/*/downloads/
 temp/
 # logs
 logs/
+mirage_tank_web.png

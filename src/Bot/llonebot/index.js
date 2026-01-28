@@ -141,7 +141,7 @@ class LloneBot extends BotBase {
           clearTimeout(context.timer);
         }
         return !shouldRemove;
-      }
+      },
     );
   }
 
@@ -175,6 +175,8 @@ class LloneBot extends BotBase {
 
   reply(e) {
     if (e.reply) {
+      console.log("e.reply存在");
+
       e.replyNew = e.reply;
       /**
        * @param msg 发送的消息
@@ -262,20 +264,23 @@ class LloneBot extends BotBase {
           if (e.isGroup) {
             setTimeout(
               () => e.group.recallMsg(msgRes.message_id),
-              recallMsg * 1000
+              recallMsg * 1000,
             );
           } else if (e.friend) {
             setTimeout(
               () => e.friend.recallMsg(msgRes.message_id),
-              recallMsg * 1000
+              recallMsg * 1000,
             );
           }
         }
         return msgRes;
       };
     } else {
+      console.log("e.reply不存在");
       e.reply = async (msg = "", quote = false, data = {}) => {
         console.log("reply对象的e:", e);
+        let msgRes;
+        let { recallMsg = 0, at = "" } = data;
         if (!msg) return false;
         if (quote) {
           let new_msg = [
@@ -291,18 +296,44 @@ class LloneBot extends BotBase {
             : new_msg.push({ type: "text", data: { text: msg } });
           msg = new_msg;
         }
+
         if (e.group_id) {
-          return await e.sendMsg(e, msg).catch((err) => {
+          msgRes = await e.sendMsg(e, msg).catch((err) => {
             console.log(err);
           });
         } else {
           console.log(e);
 
           let friend = e.friend;
-          return await e.sendMsg(`${e.user_id}`, msg).catch((err) => {
+          msgRes = await e.sendMsg(`${e.user_id}`, msg).catch((err) => {
             logger.warn(err);
           });
         }
+        console.log(msgRes);
+
+        if (!e.isGuild && recallMsg > 0 && msgRes?.message_seq) {
+          if (e.isGroup) {
+            setTimeout(
+              () =>
+                e.recallGroupMessage({
+                  group_id: e.group_id,
+                  message_seq: msgRes.message_seq,
+                }),
+              recallMsg * 1000,
+            );
+          } else if (e.friend) {
+            setTimeout(
+              () =>
+                e.recallPrivateMessage({
+                  user_id: e.user_id,
+                  message_seq: msgRes.message_seq,
+                }),
+              recallMsg * 1000,
+            );
+          }
+        }
+
+        return msgRes;
       };
     }
   }

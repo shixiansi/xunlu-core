@@ -9,6 +9,28 @@ let file = new Filemage("./src/plugins/ai/resources/CharacterDesign/");
 export function register(bot) {
   if (!bot || !bot.registerCommand) return;
   bot.registerCommand([""], async (ctx) => {
+    console.log(ctx.segments);
+    if (ctx.segments[0]?.type == "reply") {
+      const replyMsg = ctx.segments[0]?.data?.message_seq;
+      let msgInfo = await ctx.getMsg({
+        message_scene: ctx.message_scene,
+        peer_id: ctx.peer_id,
+        message_seq: replyMsg,
+      });
+      console.log(msgInfo);
+      let msglist = msgInfo.message.segments;
+      console.log(msglist[0].data.text);
+
+      if (
+        msglist[0].data.text.includes("id") ||
+        msglist[0].data.text.includes("画师")
+      ) {
+        return ctx.recallGroupMessage({
+          group_id: ctx.group_id,
+          message_seq: msgInfo.message.message_seq,
+        });
+      }
+    }
     if (ctx.msg == "本地人设对话") {
       let setlist = file.GetfileList();
       ctx.reply(
