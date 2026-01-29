@@ -2,6 +2,8 @@ import { loadPlugins } from "../lib/pluginLoader.js";
 import Render from "../utils/render.js";
 import path from "path";
 import env from "../lib/env.js";
+import lodash from "lodash";
+import schedule from "node-schedule";
 export default class Bot {
   constructor(config) {
     this.adapter = config.adapter;
@@ -13,7 +15,7 @@ export default class Bot {
   async loadBotPlugins() {
     try {
       const plugins = await loadPlugins(
-        path.join(process.cwd(), "./src/plugins")
+        path.join(process.cwd(), "./src/plugins"),
       );
 
       for (const plugin of plugins) {
@@ -47,7 +49,7 @@ export default class Bot {
             imgType: "png",
           };
         },
-      }
+      },
     );
   }
 
@@ -55,21 +57,40 @@ export default class Bot {
     if (!plugin.implementation?.register) return;
 
     const pluginAPI = {
-      registerCommand: this.createCommandRegistrar(),
+      registerCommand: this.createCommandRegistrar(plugin.name),
       contextReply: this.createContextReplyHandler(),
+      setTask: this.collectTimerTasks(),
     };
 
     plugin.implementation.register(pluginAPI);
   }
 
-  createCommandRegistrar() {
+  collectTimerTasks() {
+    return (interval, task) => {
+      const job = schedule.scheduleJob(interval, () => {
+        task();
+      });
+      return job;
+    };
+  }
+
+  createCommandRegistrar(pname) {
     return (command, handler) => {
       if (!command || !handler) return;
+      console.log(command, handler);
 
       const commands = Array.isArray(command) ? command : [command];
-      commands.forEach((cmd) => {
-        this.plugins[cmd] = handler;
-      });
+
+      this.plugins[`${pname}-${commands[0] == "" ? null : commands[0]}`] = {
+        reg: commands[0],
+        event: lodash.isString(commands[1]) ? commands[1] : "message",
+        priority: lodash.isNumber(commands[1])
+          ? commands[1]
+          : lodash.isNumber(commands[2])
+            ? commands[2]
+            : 5000,
+        fnc: handler,
+      };
     };
   }
 
@@ -102,7 +123,7 @@ export default class Bot {
         userId,
         callback,
         endMsg,
-        ctx
+        ctx,
       );
     };
   }
@@ -172,9 +193,6 @@ export default class Bot {
       delete storage[contextKey][userId];
     }
   }
-
-  collectTimerTasks() {}
-
   async initBot() {
     await this.loadBotPlugins();
   }

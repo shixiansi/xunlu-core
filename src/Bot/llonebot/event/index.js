@@ -5,7 +5,7 @@ import MessageDB from "../../../db/MessageDB.js";
 let llbotCfg = config.getConfig("llbot") || {};
 // 创建Milky适配器实例
 const milkyAdapter = new MilkyAdapter({ ...llbotCfg });
-if (!global.Bot) global.Bot = milkyAdapter;
+
 export default class LLoneBotEventListener {
   async load() {
     try {
@@ -36,8 +36,8 @@ export default class LLoneBotEventListener {
       Object.keys(eventTypeMap).forEach((eventType) => {
         milkyAdapter.on(eventType, async (data) => {
           const eventName = eventTypeMap[eventType] || eventType;
-          if (eventType == "message_receive" && data.data.peer_id) {
-            console.log(data.data);
+          if (eventType == "message_receive" && data.data.group) {
+            //  console.log(data.data);
             let { message_seq, sender_id, time, segments, group_member } =
               data.data;
             await MessageDB.saveMessage(data.data.peer_id, {
@@ -47,22 +47,13 @@ export default class LLoneBotEventListener {
               message: segments,
               sender: group_member,
             });
-            data.data.recallGroupMessage =
-              milkyAdapter.recallGroupMessage.bind(milkyAdapter);
-            data.data.sendGroupMessageReaction =
-              milkyAdapter.sendGroupMessageReaction.bind(milkyAdapter);
-          } else {
-            data.data.recallPrivateMessage =
-              milkyAdapter.recallPrivateMessage.bind(milkyAdapter);
           }
-          data.data.getMsg = milkyAdapter.getMessage.bind(milkyAdapter);
-          console.log(`[MilkyAdapter] 接收到事件: ${eventName}`, data);
-          data.data.sendMsg = milkyAdapter?.sendMsg.bind(milkyAdapter);
-
+          LLoneBotEventListener.bindMilkyFnc(data.data);
+          // console.log(`[MilkyAdapter] 接收到事件: ${eventName}`, data);
+          this.dealEvent(data.data, eventType);
           llbot.deal({
             ...data.data,
             self_id: data.self_id,
-            eventType: data.event_type,
           });
         });
       });
@@ -70,4 +61,66 @@ export default class LLoneBotEventListener {
       throw e;
     }
   }
+
+  dealEvent(e, eventType) {
+    const subMap = {
+      message_recall: "recall",
+      friend_request: "friend",
+      group_join_request: "add",
+      group_invited_join_request: "invite",
+      group_invitation: "invited",
+      friend_nudge: "poke",
+      friend_file_upload: "upload",
+      group_admin_change: "admin",
+      group_essence_message_change: "update",
+      group_member_increase: "increase",
+      group_member_decrease: "decrease",
+      group_name_change: "rename",
+      group_message_reaction: "emoj",
+      group_mute: "ban",
+      group_whole_mute: "allban",
+      group_nudge: "poke",
+      group_file_upload: "upload",
+    };
+    if (eventType === "message_receive") {
+      e.post_type = "message";
+    } else if (eventType.includes("request")) {
+      e.post_type = "request";
+    } else {
+      e.post_type = "notice";
+    }
+    e[`${e.post_type}_type`] = e.message_scene == "group" ? "group" : "private";
+
+    e.sub_type = eventType == "message_receive" ? "normal" : subMap[eventType];
+  }
+
+  static bindMilkyFnc(e) {
+    const recallMessage = ({ peer_id, message_seq, isGroup }) => {
+      try {
+        if (isGroup) {
+          milkyAdapter.recallGroupMessage({
+            group_id: peer_id,
+            message_seq,
+          });
+        } else {
+          milkyAdapter.recallPrivateMessage({
+            user_id: peer_id,
+            message_seq,
+          });
+        }
+      } catch (error) {
+        console.log(error);
+      }
+    };
+    e.sendGroupMessageReaction =
+      milkyAdapter.sendGroupMessageReaction.bind(milkyAdapter);
+    e.recallMessage = recallMessage;
+    e.sendMsg = milkyAdapter?.sendMsg.bind(milkyAdapter);
+    e.getMsg = milkyAdapter.getMessage.bind(milkyAdapter);
+  }
+}
+
+if (!global.Bot) {
+  LLoneBotEventListener.bindMilkyFnc(milkyAdapter);
+  global.Bot = milkyAdapter;
 }

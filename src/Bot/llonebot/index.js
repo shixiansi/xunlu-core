@@ -1,715 +1,464 @@
-import fs from "fs/promises";
-import path from "path";
-import React from "react";
-import { transform } from "sucrase";
-import satori from "satori";
-import { Resvg } from "@resvg/resvg-js";
-import sharp from "sharp";
-import { createCanvas, loadImage, Image as CanvasImage } from "@napi-rs/canvas";
-import { Canvg } from "canvg";
-import { DOMParser } from "xmldom";
-import HtmlReactParser from "html-react-parser";
+import BotBase from "../index.js";
+import lodash from "lodash";
+class LloneBot extends BotBase {
+  constructor(Bot) {
+    super({ adapter: "llonebot" });
+  }
 
-// 全局设置 DOMParser
-global.DOMParser = DOMParser;
+  async deal(e) {
+    await this.dealMsg(e);
+    await this.reply(e);
 
-// 工具类常量
-const AsyncFunction = (async () => 0).constructor;
+    if (e.user_id == e.self_id) return;
+    //处理上下文
+    const isPrivate = e.isPrivate;
+    const contextKey = isPrivate ? e.user_id : e.group_id;
+    const userId = e.user_id;
 
-/**
- * 图片处理工具
- */
-class ImageProcessor {
-  /**
-   * 本地图片转 Base64
-   */
-  static async localImageToBase64(imagePath, baseDir = process.cwd()) {
-    try {
-      const absolutePath = path.isAbsolute(imagePath)
-        ? imagePath
-        : path.resolve(baseDir, imagePath);
+    const hasContext = isPrivate
+      ? this.privateReply?.[contextKey]?.[userId]
+      : this.groupReply?.[contextKey]?.[userId];
 
-      if (
-        !(await fs
-          .access(absolutePath)
-          .then(() => true)
-          .catch(() => false))
-      ) {
-        console.warn(`⚠️ 图片文件不存在：${absolutePath}`);
-        return "";
-      }
+    if (!hasContext) {
+      // 没有上下文时处理普通命令
+      console.log(this.plugins);
 
-      const buffer = await fs.readFile(absolutePath);
-      const mimeType = this.getMimeType(absolutePath);
-      return `data:${mimeType};base64,${buffer.toString("base64")}`;
-    } catch (e) {
-      console.warn(`⚠️ 图片转Base64失败：${e.message}`);
-      return "";
+      return await this.processNormalCommands(e);
     }
+
+    // 处理上下文
+    const userContexts = isPrivate
+      ? this.privateReply[contextKey][userId]
+      : this.groupReply[contextKey][userId];
+
+    const result = await this.processUserContexts(e, userContexts);
+
+    // 根据处理结果清理上下文
+    this.cleanupContexts(isPrivate, contextKey, userId, userContexts, result);
   }
 
-  /**
-   * 获取文件 MIME 类型
-   */
-  static getMimeType(filePath) {
-    const ext = path.extname(filePath).toLowerCase();
-    const mimeMap = {
-      ".jpg": "image/jpeg",
-      ".jpeg": "image/jpeg",
-      ".png": "image/png",
-      ".gif": "image/gif",
-      ".webp": "image/webp",
-      ".svg": "image/svg+xml",
-    };
-    return mimeMap[ext] || "application/octet-stream";
-  }
+  // 处理普通命令
+  async processNormalCommands(e) {
+    console.log(e);
 
-  /**
-   * 深度合并对象
-   */
-  static deepMerge(target, source) {
-    const merged = { ...target };
-    for (const key in source) {
-      if (source.hasOwnProperty(key)) {
-        if (
-          source[key] &&
-          typeof source[key] === "object" &&
-          !Array.isArray(source[key]) &&
-          target[key] &&
-          typeof target[key] === "object"
-        ) {
-          merged[key] = this.deepMerge(target[key], source[key]);
-        } else {
-          merged[key] = source[key];
+    let regs = lodash.orderBy(
+      Object.values(this.plugins),
+      ["priority"],
+      ["asc"],
+    );
+    for (let r of regs) {
+      if (r.event && !this.filtEvent(e, r)) continue;
+      if (new RegExp(r.reg).test(e?.msg?.trim())) {
+        try {
+          console.log("触发命令:", r);
+          let res = await r.fnc(e);
+          if (!res) continue;
+          return res;
+        } catch (err) {
+          console.error("处理命令时出错:", err);
+          // await e.reply("命令执行出错，请稍后重试").catch(console.error);
         }
       }
     }
-    return merged;
   }
 
-  /**
-   * 补全 React 元素的 display 属性
-   */
-  static ensureDisplayProperty(element) {
-    if (!React.isValidElement(element)) {
-      return element;
-    }
+  filtEvent(e, v) {
+    let event = v.event.split(".");
+    let eventMap = {
+      message: ["post_type", "message_type", "sub_type"],
+      notice: ["post_type", "notice_type", "sub_type"],
+      request: ["post_type", "request_type", "sub_type"],
+    };
+    let newEvent = [];
+    event.forEach((val, index) => {
+      if (val === "*") {
+        newEvent.push(val);
+      } else if (eventMap[e.post_type]) {
+        newEvent.push(e[eventMap[e.post_type][index]]);
+      }
+    });
+    newEvent = newEvent.join(".");
 
-    const originalChildren = element.props.children;
-    let processedChildren = [];
+    if (v.event == newEvent) return true;
 
-    if (originalChildren != null) {
-      const childrenArray = React.Children.toArray(originalChildren);
-      processedChildren = childrenArray.map((child) =>
-        this.ensureDisplayProperty(child),
-      );
-    }
+    return false;
+  }
 
-    if (element.type !== "div") {
-      return React.cloneElement(
-        element,
-        { ...element.props },
-        ...processedChildren,
-      );
-    }
-
-    const { props } = element;
-    const baseStyle = {
-      display: "flex",
-      flexDirection: "column",
-      boxSizing: "border-box",
+  // 处理用户上下文
+  async processUserContexts(e, userContexts) {
+    const result = {
+      processed: false,
+      shouldCleanPersistent: false,
+      shouldCleanTemporary: false,
     };
 
-    const newStyle = {
-      ...baseStyle,
-      ...props.style,
-    };
+    // 优先处理临时上下文（后进先出）
+    for (let i = userContexts.length - 1; i >= 0; i--) {
+      const context = userContexts[i];
 
-    return React.cloneElement(
-      element,
-      {
-        ...props,
-        style: newStyle,
-      },
-      ...processedChildren,
-    );
-  }
+      if (this.isContextValid(context)) {
+        let res = await this.executeContextCallback(e, context);
+        result.processed = true;
 
-  /**
-   * 解析 JSX 为 React 元素
-   */
-  static async jsxToReactElement(jsxCode, data = {}) {
-    const hCode = transform(jsxCode, {
-      transforms: ["jsx"],
-      jsxRuntime: "classic",
-      production: true,
-    }).code;
-
-    const fn = AsyncFunction(
-      "React",
-      "_args_623601",
-      "with (_args_623601) {\nreturn " + hCode.replace(/^\s+/, "") + "\n}",
-    );
-
-    let res;
-    try {
-      res = await fn(React, data);
-    } catch (e) {
-      e.message = fn.toString() + "\n" + e.message;
-      throw e;
-    }
-
-    let i = 0;
-    while (typeof res === "function" && i++ < 999) {
-      res = await res();
-    }
-
-    return this.ensureDisplayProperty(res);
-  }
-
-  /**
-   * HTML 转 React 元素
-   */
-  static htmlToReactElement(htmlCode) {
-    const element = HtmlReactParser(htmlCode);
-    return this.ensureDisplayProperty(element);
-  }
-}
-
-/**
- * 模板预处理器
- */
-class TemplatePreprocessor {
-  constructor(config) {
-    this.config = config;
-  }
-
-  /**
-   * 预处理 JSX 模板 - 修复图片路径问题
-   */
-  async preprocessJsxTemplate(jsxTemplate, data = {}) {
-    const resPath = data._res_path || this.config.resPath;
-
-    // 1. 处理背景图片
-    const bgImageRegex = /url\(['"]?\$\{_res_path\}\/img\/bg\/([^'"]+)['"]?\)/g;
-
-    // 2. 处理 src 属性中的图片
-    const srcRegex = /src=['"]?\$\{_res_path\}\/([^'"]+)['"]?/g;
-
-    // 3. 处理内联样式的背景图片
-    const inlineBgRegex =
-      /backgroundImage:\s*['"]?url\(['"]?\$\{_res_path\}\/([^'"]+)['"]?\)['"]?/g;
-
-    let processedTemplate = jsxTemplate;
-
-    // 替换所有图片路径
-    const patterns = [
-      { pattern: bgImageRegex, type: "bg" },
-      { pattern: srcRegex, type: "src" },
-      { pattern: inlineBgRegex, type: "inline" },
-    ];
-
-    for (const { pattern, type } of patterns) {
-      let match;
-      while ((match = pattern.exec(jsxTemplate)) !== null) {
-        const [fullMatch, imgPath] = match;
-
-        try {
-          // 构建完整的图片路径
-          const fullPath =
-            type === "bg"
-              ? path.join(resPath, "img", "bg", imgPath)
-              : path.join(resPath, imgPath);
-
-          const base64Str = await ImageProcessor.localImageToBase64(
-            fullPath,
-            process.cwd(),
-          );
-
-          if (base64Str) {
-            if (type === "bg") {
-              processedTemplate = processedTemplate.replace(
-                fullMatch,
-                `url(${base64Str})`,
-              );
-            } else if (type === "src") {
-              processedTemplate = processedTemplate.replace(
-                fullMatch,
-                `src="${base64Str}"`,
-              );
-            } else if (type === "inline") {
-              processedTemplate = processedTemplate.replace(
-                fullMatch,
-                `backgroundImage: url(${base64Str})`,
-              );
-            }
+        // 检查是否需要结束上下文
+        if (this.shouldEndContext(e, context) && res) {
+          if (context.endMsg) {
+            result.shouldCleanPersistent = true;
           } else {
-            console.warn(`⚠️ 无法加载图片：${fullPath}`);
-            if (type === "bg") {
-              processedTemplate = processedTemplate.replace(fullMatch, "none");
-            }
+            result.shouldCleanTemporary = true;
           }
-        } catch (error) {
-          console.warn(`⚠️ 处理图片失败：${error.message}`);
+          break;
         }
       }
     }
 
-    return processedTemplate;
+    return result;
   }
 
-  /**
-   * 处理数据绑定
-   */
-  processDataBindings(template, data) {
-    return template
-      .replace(/\$\{_res_path\}/g, data._res_path || this.config.resPath || "")
-      .replace(/\{data\.([\w.]+)\}/g, (_, key) => {
-        const keys = key.split(".");
-        let value = data;
-        for (const k of keys) {
-          value = value?.[k];
-          if (value === undefined || value === null) break;
-        }
-        return value !== undefined && value !== null ? value : "";
-      })
-      .replace(/\{([\w.]+)\}/g, (_, key) => {
-        const keys = key.split(".");
-        let value = data;
-        for (const k of keys) {
-          value = value?.[k];
-          if (value === undefined || value === null) break;
-        }
-        return value !== undefined && value !== null ? value : "";
-      });
+  dealEventMap() {}
+
+  // 检查上下文是否有效
+  isContextValid(context) {
+    return context && context.cfnc && typeof context.cfnc === "function";
   }
 
-  /**
-   * 处理样式
-   */
-  processStyles(htmlStr) {
-    return htmlStr
-      .replace(/style={{([^}]+)}}/g, (_, styleContent) => {
-        const fixedStyle = styleContent
-          .replace(/['"]/g, "")
-          .replace(/,/g, ";")
-          .replace(/\s*:\s*/g, ":")
-          .trim();
-        return `style="${fixedStyle}"`;
-      })
-      .replace(
-        /<div(?!.*\bstyle\b)/g,
-        '<div style="display:flex;flex-direction:column;box-sizing:border-box"',
-      )
-      .replace(/style="([^"]*)"/g, (match, styleContent) => {
-        if (!styleContent.includes("display")) {
-          return `style="display:flex;flex-direction:column;box-sizing:border-box;${styleContent}"`;
-        }
-        return match;
-      });
-  }
-}
-
-/**
- * 主图片生成器类
- */
-class ImageGenerator {
-  constructor(options = {}) {
-    const defaultConfig = {
-      width: 1200,
-      height: 800,
-      font: {
-        name: "Microsoft YaHei",
-        path: "",
-        data: null,
-        weight: 400,
-        style: "normal",
-      },
-      outputDir: "./output",
-      resPath: "./resources",
-      renderer: "satori", // 可选: satori, skia, sharp
-      enableFallback: true,
-    };
-
-    this.config = ImageProcessor.deepMerge(defaultConfig, options);
-    this.preprocessor = new TemplatePreprocessor(this.config);
-    this.renderer = null;
-
-    if (!this.config.font.path) {
-      throw new Error("字体文件路径（font.path）为必填项，请在构造函数中传入");
-    }
-  }
-
-  /**
-   * 初始化
-   */
-  async initialize() {
-    if (!this.config.font.data) {
-      try {
-        const fontPath = path.isAbsolute(this.config.font.path)
-          ? this.config.font.path
-          : path.resolve(process.cwd(), this.config.font.path);
-
-        this.config.font.data = await fs.readFile(fontPath);
-        console.log(`✅ 字体文件加载成功：${fontPath}`);
-      } catch (e) {
-        throw new Error(
-          `字体文件加载失败：${e.message}，路径：${this.config.font.path}`,
-        );
-      }
-    }
-  }
-
-  /**
-   * 解析模板
-   */
-  async parseTemplate(template, data = {}, type = "jsx") {
-    if (type === "jsx") {
-      const processedTemplate = await this.preprocessor.preprocessJsxTemplate(
-        template,
-        data,
-      );
-      console.log("✅ 模板预处理完成，开始解析为 React 元素");
-      return await ImageProcessor.jsxToReactElement(processedTemplate, data);
-    } else {
-      const processedTemplate = this.preprocessor.processDataBindings(
-        template,
-        data,
-      );
-      const styledTemplate = this.preprocessor.processStyles(processedTemplate);
-      return ImageProcessor.htmlToReactElement(styledTemplate);
-    }
-  }
-
-  /**
-   * 使用 Satori + Resvg 渲染
-   */
-  async renderWithSatori(reactElement) {
-    const { width, height, font } = this.config;
-
-    console.log("🔄 开始使用 Satori 渲染...");
-
-    const svgStr = await satori(reactElement, {
-      width,
-      height,
-      fonts: [
-        {
-          name: font.name,
-          data: font.data,
-          weight: font.weight,
-          style: font.style,
-        },
-      ],
-      strict: false,
-    });
-    console.log(svgStr);
-    fs.writeFile(process.cwd() + "./debug.svg", svgStr);
-    console.log("✅ Satori 渲染 SVG 成功");
-
-    const resvg = new Resvg(svgStr, {
-      fitTo: { mode: "width", value: width },
-      font: {
-        fontFiles: [font.path],
-        defaultFontFamily: font.name,
-        loadSystemFonts: false,
-      },
-    });
-
-    const pngBuffer = resvg.render().asPng();
-    return await sharp(pngBuffer)
-      .png({ quality: 80, compressionLevel: 6 })
-      .resize(width, height, { fit: "contain", background: "#fff" })
-      .toBuffer();
-  }
-
-  /**
-   * 兜底渲染 - 修复版
-   */
-  async fallbackRender(template, data = {}, type = "jsx") {
-    const { width, height } = this.config;
-
-    console.log("🔄 触发兜底渲染...");
-
-    let htmlStr = "";
-    if (type === "jsx") {
-      htmlStr = await this.preprocessor.preprocessJsxTemplate(template, data);
-    } else {
-      htmlStr = template;
-    }
-
-    const processedHtml = this.preprocessor.processDataBindings(htmlStr, data);
-    const styledHtml = this.preprocessor.processStyles(processedHtml);
-
-    console.log("📄 处理后的 HTML 长度:", styledHtml.length);
-
+  // 执行上下文回调
+  async executeContextCallback(e, context) {
     try {
-      const canvas = createCanvas(width, height);
-      const ctx = canvas.getContext("2d");
-
-      // 清空画布
-      ctx.fillStyle = "#f5f5f5";
-      ctx.fillRect(0, 0, width, height);
-
-      // 使用 Canvg 渲染
-      const v = await Canvg.from(ctx, styledHtml, {
-        ignoreMouse: true,
-        ignoreAnimation: true,
-        ignoreDimensions: true,
-        ignoreClear: true,
-        DOMParser: global.DOMParser, // 显式传递 DOMParser
-        // 图片加载器
-        loadImages: async (src) => {
-          try {
-            console.log(`🔄 加载图片: ${src.substring(0, 50)}...`);
-
-            // 如果是 data URL
-            if (src.startsWith("data:")) {
-              const matches = src.match(
-                /data:image\/([a-zA-Z]*);base64,([^"]*)/,
-              );
-              if (matches && matches.length === 3) {
-                const buffer = Buffer.from(matches[2], "base64");
-                return await loadImage(buffer);
-              }
-            }
-
-            // 如果是本地文件路径
-            if (src.startsWith("file://")) {
-              const filePath = src.replace("file://", "");
-              if (
-                await fs
-                  .access(filePath)
-                  .then(() => true)
-                  .catch(() => false)
-              ) {
-                const buffer = await fs.readFile(filePath);
-                return await loadImage(buffer);
-              }
-            }
-
-            // 如果是相对路径
-            if (!src.startsWith("http") && !src.startsWith("data:")) {
-              const localPath = path.resolve(process.cwd(), src);
-              if (
-                await fs
-                  .access(localPath)
-                  .then(() => true)
-                  .catch(() => false)
-              ) {
-                const buffer = await fs.readFile(localPath);
-                return await loadImage(buffer);
-              }
-            }
-
-            console.warn(`⚠️ 无法加载图片: ${src.substring(0, 50)}...`);
-            return null;
-          } catch (error) {
-            console.warn(`⚠️ 图片加载失败: ${error.message}`);
-            return null;
-          }
-        },
-      });
-
-      await v.render();
-      const fallbackPng = canvas.toBuffer("image/png");
-
-      console.log("✅ 兜底渲染成功");
-      return fallbackPng;
+      let res = await context.cfnc(e);
+      // 清除超时计时器，因为用户已响应
+      if (context.timer) {
+        clearTimeout(context.timer);
+        context.timer = null;
+      }
+      return res;
     } catch (error) {
-      console.error(`❌ 兜底渲染失败: ${error.message}`);
-      throw error;
+      console.error("执行上下文回调出错:", error);
+      await e.reply("处理出错，请重新操作").catch(console.error);
     }
   }
 
-  /**
-   * 渲染图片
-   */
-  async render(options = {}) {
-    const { data = {}, template, templateType = "jsx" } = options;
+  // 检查是否需要结束上下文
+  shouldEndContext(e, context) {
+    // 如果有结束消息且匹配，或者临时上下文已执行一次
+    return (context.endMsg && e.msg === context.endMsg) || !context.endMsg;
+  }
 
-    await this.initialize();
+  // 清理上下文
+  cleanupContexts(isPrivate, contextKey, userId, userContexts, result) {
+    if (!userContexts.length) return;
 
-    let reactElement;
-    try {
-      reactElement = await this.parseTemplate(template, data, templateType);
-      console.log("✅ 模板解析成功，开始渲染...");
-    } catch (error) {
-      console.error(`❌ 模板解析失败: ${error.message}`);
-      reactElement = this.buildDefaultReactElement(data);
+    const storage = isPrivate ? this.privateReply : this.groupReply;
+
+    if (result.shouldCleanPersistent) {
+      // 清理指令关闭的上下文
+      this.removeContextsByType(storage, contextKey, userId, true);
+    } else if (result.shouldCleanTemporary) {
+      // 清理临时上下文
+      this.removeLastTemporaryContext(storage, contextKey, userId);
     }
 
-    try {
-      // 首先尝试使用 Satori 渲染
-      return await this.renderWithSatori(reactElement);
-    } catch (satoriError) {
-      console.warn(`⚠️ Satori 渲染失败: ${satoriError.message}`);
+    // 如果所有上下文都处理完毕，清理整个用户条目
+    if (!storage[contextKey]?.[userId]?.length) {
+      this.cleanupUserContext(storage, contextKey, userId);
+    }
+  }
 
-      if (this.config.enableFallback && template) {
-        console.log("🔄 尝试使用兜底渲染...");
-        try {
-          return await this.fallbackRender(template, data, templateType);
-        } catch (fallbackError) {
-          console.error(`❌ 兜底渲染失败: ${fallbackError.message}`);
-          return await this.generateErrorImage(
-            "图片生成失败，请检查模板和资源",
-          );
+  // 按类型移除上下文
+  removeContextsByType(storage, contextKey, userId, isPersistent) {
+    if (!storage[contextKey]?.[userId]) return;
+
+    storage[contextKey][userId] = storage[contextKey][userId].filter(
+      (context) => {
+        const shouldRemove = isPersistent ? context.endMsg : !context.endMsg;
+        if (shouldRemove && context.timer) {
+          clearTimeout(context.timer);
         }
-      } else {
-        return await this.generateErrorImage("Satori 渲染失败，已禁用兜底渲染");
-      }
-    }
-  }
-
-  /**
-   * 生成错误图片
-   */
-  async generateErrorImage(message) {
-    const { width, height } = this.config;
-    const canvas = createCanvas(width, height);
-    const ctx = canvas.getContext("2d");
-
-    // 背景
-    ctx.fillStyle = "#ffe6e6";
-    ctx.fillRect(0, 0, width, height);
-
-    // 边框
-    ctx.strokeStyle = "#ff9999";
-    ctx.lineWidth = 4;
-    ctx.strokeRect(20, 20, width - 40, height - 40);
-
-    // 错误图标
-    ctx.fillStyle = "#ff3333";
-    ctx.font = "bold 60px Arial";
-    ctx.textAlign = "center";
-    ctx.fillText("⚠️", width / 2, height / 2 - 60);
-
-    // 错误标题
-    ctx.fillStyle = "#cc0000";
-    ctx.font = "bold 40px Arial";
-    ctx.fillText("图片生成失败", width / 2, height / 2);
-
-    // 错误信息
-    ctx.fillStyle = "#666666";
-    ctx.font = "24px Arial";
-
-    // 分割长文本
-    const maxWidth = width - 80;
-    const words = message.split("");
-    let line = "";
-    let lines = [];
-
-    for (let i = 0; i < words.length; i++) {
-      const testLine = line + words[i];
-      const metrics = ctx.measureText(testLine);
-
-      if (metrics.width > maxWidth && i > 0) {
-        lines.push(line);
-        line = words[i];
-      } else {
-        line = testLine;
-      }
-    }
-    lines.push(line);
-
-    // 绘制多行文本
-    lines.forEach((lineText, index) => {
-      ctx.fillText(lineText, width / 2, height / 2 + 60 + index * 35);
-    });
-
-    return canvas.toBuffer("image/png");
-  }
-
-  /**
-   * 构建默认 React 元素
-   */
-  buildDefaultReactElement(data = {}) {
-    const { font } = this.config;
-    return React.createElement(
-      "div",
-      {
-        style: {
-          width: "100%",
-          height: "100%",
-          backgroundColor: "#f5f5f5",
-          padding: "40px",
-          fontFamily: font.name,
-          display: "flex",
-          flexDirection: "column",
-        },
+        return !shouldRemove;
       },
-      React.createElement(
-        "div",
-        { style: { display: "flex", flexDirection: "column" } },
-        React.createElement(
-          "h1",
-          { style: { color: "#2d3748", margin: 0, fontSize: "36px" } },
-          data.title || "默认标题",
-        ),
-        React.createElement(
-          "p",
-          { style: { color: "#718096", fontSize: "18px", marginTop: "16px" } },
-          `生成时间：${new Date().toLocaleString()}`,
-        ),
-      ),
     );
   }
 
-  /**
-   * 保存图片
-   */
-  async save(imageBuffer, customPath) {
-    try {
-      let outputPath;
-      if (customPath) {
-        outputPath = path.isAbsolute(customPath)
-          ? customPath
-          : path.resolve(process.cwd(), customPath);
+  // 移除最后一个临时上下文
+  removeLastTemporaryContext(storage, contextKey, userId) {
+    if (!storage[contextKey]?.[userId]) return;
 
-        // 确保目录存在
-        const dir = path.dirname(outputPath);
-        await fs.mkdir(dir, { recursive: true });
+    const contexts = storage[contextKey][userId];
+    for (let i = contexts.length - 1; i >= 0; i--) {
+      if (!contexts[i].endMsg) {
+        if (contexts[i].timer) {
+          clearTimeout(contexts[i].timer);
+        }
+        contexts.splice(i, 1);
+        break;
+      }
+    }
+  }
+
+  // 清理用户上下文
+  cleanupUserContext(storage, contextKey, userId) {
+    if (storage[contextKey]?.[userId]) {
+      delete storage[contextKey][userId];
+    }
+
+    // 如果上下文键没有其他用户上下文，清理整个条目
+    if (storage[contextKey] && Object.keys(storage[contextKey]).length === 0) {
+      delete storage[contextKey];
+    }
+  }
+
+  reply(e) {
+    if (e.reply) {
+      console.log("e.reply存在");
+
+      e.replyNew = e.reply;
+      /**
+       * @param msg 发送的消息
+       * @param quote 是否引用回复
+       * @param data.recallMsg 群聊是否撤回消息，0-120秒，0不撤回
+       * @param data.at 是否at用户
+       */
+      e.reply = async (msg = "", quote = false, data = {}) => {
+        if (!msg) return false;
+
+        /** 禁言中 */
+        if (e.isGroup && e?.group?.mute_left > 0) return false;
+
+        let { recallMsg = 0, at = "" } = data;
+
+        if (at && e.isGroup) {
+          let text = "";
+          if (e?.sender?.card) {
+            text = lodash.truncate(e.sender.card, { length: 10 });
+          }
+          if (at === true) {
+            at = Number(e.user_id);
+          } else if (!isNaN(at)) {
+            if (e.isGuild) {
+              text = e.sender?.nickname;
+            } else {
+              let info = e.group.pickMember(at).info;
+              text = info?.card ?? info?.nickname;
+            }
+            text = lodash.truncate(text, { length: 10 });
+          }
+
+          if (Array.isArray(msg)) {
+            msg = [segment.at(at, text), ...msg];
+          } else {
+            msg = [segment.at(at, text), msg];
+          }
+        }
+
+        let wz = JSON.parse(await redis.get("qianyu:wz")) || "";
+        let isOpen = await redis.get("qianyu:iswzopen");
+        if (isOpen == 1) {
+          if (Array.isArray(msg)) {
+            let isImgMsg = false;
+            let vaule = msg.some((item) => {
+              if (item) {
+                if (item.type === "image") {
+                  isImgMsg = true;
+                }
+                if (
+                  item.type == "text" &&
+                  (item?.text.includes("尾缀已设置为") ||
+                    item?.text.includes("尾缀已开启"))
+                ) {
+                  return true;
+                }
+              }
+            });
+            if (!vaule && !isImgMsg) {
+              msg = Array.isArray(wz) ? [...msg, ...wz] : [...msg, wz];
+            }
+          } else if (
+            typeof msg === "string" &&
+            !msg.includes("尾缀已设置为") &&
+            !msg.includes("尾缀已开启")
+          ) {
+            msg = Array.isArray(wz) ? [msg, ...wz] : msg + wz;
+          }
+        }
+        let msgRes;
+        try {
+          msgRes = await e.replyNew(msg, quote);
+        } catch (err) {
+          if (typeof msg != "string") {
+            if (msg.type == "image" && Buffer.isBuffer(msg?.file))
+              msg.file = {};
+            msg = lodash.truncate(JSON.stringify(msg), { length: 300 });
+          }
+          logger.error(`发送消息错误:${msg}`);
+          logger.error(err);
+        }
+
+        // 频道一下是不是频道
+        if (!e.isGuild && recallMsg > 0 && msgRes?.message_id) {
+          if (e.isGroup) {
+            setTimeout(
+              () => e.group.recallMsg(msgRes.message_id),
+              recallMsg * 1000,
+            );
+          } else if (e.friend) {
+            setTimeout(
+              () => e.friend.recallMsg(msgRes.message_id),
+              recallMsg * 1000,
+            );
+          }
+        }
+        return msgRes;
+      };
+    } else {
+      console.log("e.reply不存在");
+      e.reply = async (msg = "", quote = false, data = {}) => {
+        console.log("reply对象的e:", e);
+        let msgRes;
+        let { recallMsg = 0, at = "" } = data;
+        if (!msg) return false;
+        if (quote) {
+          let new_msg = [
+            {
+              type: "reply",
+              data: {
+                message_seq: e.message_seq,
+              },
+            },
+          ];
+          Array.isArray(msg)
+            ? new_msg.push(...msg)
+            : new_msg.push({ type: "text", data: { text: msg } });
+          msg = new_msg;
+        }
+
+        if (e.group_id) {
+          msgRes = await e.sendMsg(e, msg).catch((err) => {
+            console.log(err);
+          });
+        } else {
+          console.log(e);
+
+          let friend = e.friend;
+          msgRes = await e.sendMsg(`${e.user_id}`, msg).catch((err) => {
+            logger.warn(err);
+          });
+        }
+        console.log(msgRes);
+
+        if (!e.isGuild && recallMsg > 0 && msgRes?.message_seq) {
+          setTimeout(
+            () =>
+              e.recallMessage({
+                peer_id: e.peer_id,
+                message_seq: msgRes.message_seq,
+                isGroup: e.isGroup,
+              }),
+            recallMsg * 1000,
+          );
+        }
+
+        return msgRes;
+      };
+    }
+  }
+
+  async dealMsg(e) {
+    if (e.msg) return;
+    if (e.segments) {
+      for (let val of e.segments) {
+        console.log(val.data);
+
+        switch (val.type) {
+          case "text":
+            /** 中文#转为英文 */
+            val.data.text = val.data.text?.replace(/＃|井/g, "#").trim();
+            if (e.msg) {
+              e.msg += val.data.text;
+            } else {
+              e.msg = val.data.text?.trim();
+            }
+            break;
+          case "image":
+            if (!e.img) {
+              e.img = [];
+            }
+            e.img.push(val.data.temp_url);
+            break;
+          case "mention":
+            if (val.data.user_id == e.self_id) {
+              e.atBot = true;
+            } else {
+              /** 多个at 以最后的为准 */
+              e.at = val.data.user_id;
+            }
+            break;
+          case "file":
+            e.file = { name: val.data.file_name, fid: val.data.file_id };
+            break;
+        }
+      }
+    }
+
+    e.logText = "";
+
+    if (e.message_scene == "friend" || e.message_scene == "temp") {
+      e.isPrivate = true;
+
+      if (e.sender) {
+        e.sender.card = e.sender.nickname;
       } else {
-        const outputDir = path.resolve(process.cwd(), this.config.outputDir);
-        await fs.mkdir(outputDir, { recursive: true });
-        outputPath = path.join(outputDir, `image-${Date.now()}.png`);
+        e.sender = {
+          card: e.friend?.nickname,
+          nickname: e.friend?.nickname,
+        };
       }
 
-      await fs.writeFile(outputPath, imageBuffer);
-      console.log(`✅ 图片保存成功：${outputPath}`);
-      return outputPath;
-    } catch (e) {
-      throw new Error(`图片保存失败：${e.message}`);
-    }
-  }
-
-  /**
-   * 快捷生成方法
-   */
-  async generateAndSave(options = {}) {
-    const { data = {}, template, templateType = "jsx", customPath } = options;
-
-    if (!template) {
-      throw new Error("template 参数是必需的");
+      e.logText = `[私聊][${e.sender.nickname}(${e.sender_id})]`;
     }
 
-    const buffer = await this.render({
-      data,
-      template,
-      templateType,
-    });
+    if (e.message_scene == "group" || e.notice_type == "group") {
+      e.group_id = e.peer_id;
+      e.isGroup = true;
+      e.sender = {
+        card: e.group_member?.card,
+        nickname: e.group_member?.nickname,
+      };
 
-    return await this.save(buffer, customPath);
+      if (!e.group_name) e.group_name = e.group?.group_name;
+
+      e.logText = `[${e.group_name}(${e.sender.card || e.sender.nickname})]`;
+    } else if (e.detail_type === "guild") {
+      e.isGuild = true;
+    }
+
+    if (e.sender_id == 1765629830) {
+      e.isMaster = true;
+    }
+
+    e.user_id = e.sender_id;
+
+    //let config = await this.getConfig();
+    // if (config) {
+    //   if (e.user_id && config.masterQQ.includes(Number(e.user_id))) {
+    //     e.isMaster = true;
+    //   }
+
+    //   /** 只关注主动at msg处理 */
+    //   if (e.msg && e.isGroup) {
+    //     let groupCfg = config.getGroup(e.group_id);
+    //     let alias = groupCfg.botAlias;
+    //     if (!Array.isArray(alias)) {
+    //       alias = [alias];
+    //     }
+    //     for (let name of alias) {
+    //       if (e.msg.startsWith(name)) {
+    //         e.msg = lodash.trimStart(e.msg, name).trim();
+    //         e.hasAlias = true;
+    //         break;
+    //       }
+    //     }
+    //   }
+    // }
   }
 }
-
-// 导出工具函数
-export const toReactElement = {
-  async jsxToReactElement(jsxCode, data = {}) {
-    return await ImageProcessor.jsxToReactElement(jsxCode, data);
-  },
-  htmlToReactElement(htmlCode) {
-    return ImageProcessor.htmlToReactElement(htmlCode);
-  },
-};
-
-export default ImageGenerator;
+export default new LloneBot();

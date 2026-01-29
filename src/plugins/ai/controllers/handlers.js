@@ -10,11 +10,17 @@ export function register(bot) {
   if (!bot || !bot.registerCommand) return;
   bot.registerCommand([""], async (ctx) => {
     console.log(ctx.segments);
-    ctx.sendGroupMessageReaction({
-      group_id: ctx.group_id,
-      message_seq: ctx.message_seq,
-      reaction: "277",
-    });
+    // if (ctx.isMaster) {
+    //   let rlist = ["4", "12", "16", "23", "38", "271", "272", "277", "285"];
+    //   for (let i of rlist) {
+    //     ctx.sendGroupMessageReaction({
+    //       group_id: ctx.group_id,
+    //       message_seq: ctx.message_seq,
+    //       reaction: i,
+    //     });
+    //   }
+    // }
+
     if (ctx.segments[0]?.type == "reply") {
       const replyMsg = ctx.segments[0]?.data?.message_seq;
       let msgInfo = await ctx.getMsg({
@@ -30,10 +36,7 @@ export function register(bot) {
         msglist[0].data.text.includes("id") ||
         msglist[0].data.text.includes("画师")
       ) {
-        return ctx.recallGroupMessage({
-          group_id: ctx.group_id,
-          message_seq: msgInfo.message.message_seq,
-        });
+        return ctx.recallMessage.call(ctx, msgInfo.message.message_seq);
       }
     }
     if (ctx.msg == "本地人设对话") {
@@ -69,7 +72,7 @@ export function register(bot) {
       return await aiDialogue(bot, selectedChatlist[0], ctx);
     }
 
-    if (!ctx.msg.includes("蔡喵")) return;
+    if (!ctx?.msg?.includes("蔡喵")) return;
     let { list } = await caimiaoAI.getChatList();
     selectedChatlist = list;
     if (list.length > 0) {
@@ -191,8 +194,4 @@ async function waitForUserChoice(bot, ctx, maxOption) {
       }
     });
   });
-}
-
-export function onBotEvent(event) {
-  console.log("[example-plugin] received bot event:", event);
 }
