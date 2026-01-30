@@ -3,7 +3,7 @@ import { HttpsProxyAgent } from "https-proxy-agent";
 import config from "../../../lib/config.js";
 class CaimiaoAI {
   constructor() {
-    this.proxyAgent = new HttpsProxyAgent(this.proxy || null);
+    this.proxyAgent = this.proxy ? new HttpsProxyAgent(this.proxy) : null;
   }
 
   get xToken() {

@@ -16,7 +16,7 @@ class xunLuEnv {
 
   get RootPath() {
     if (this.CurEnv == "QQBot-YunZai") {
-      return process.cwd() + "/plugins/xunlu-plugin/";
+      return process.cwd() + "/plugins/xunlu-core/";
     } else {
       return process.cwd() + "/";
     }

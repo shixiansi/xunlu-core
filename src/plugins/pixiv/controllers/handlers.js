@@ -1,12 +1,4 @@
-/**
- * @Author: 时先思
- * @Date: 2025-12-13 14:29:17
- * @LastEditTime: 2026-01-30 12:11:40
- * @LastEditors: 时先思
- * @Description:
- * @FilePath: \plugin-api\src\plugins\pixiv\controllers\handlers.js
- * @版权声明
- **/
+import { segment } from "../../../Bot/segment.js";
 import fetch from "node-fetch";
 import lodash from "lodash";
 import huanyin from "../model/phantomtank.js";
@@ -54,7 +46,7 @@ export function register(bot) {
     let imgUrl, pic;
     const SynthesisImg = async () => {
       let { data } = await (
-        await fetch(`http://localhost:2333/api/setu?type=json&tag=${tag}`)
+        await fetch(`http://127.0.0.1:2333/api/setu?type=json&tag=${tag}`)
       ).json();
       pic = data;
       if (!pic) {
@@ -79,18 +71,8 @@ export function register(bot) {
     await SynthesisImg();
     return ctx.reply(
       [
-        {
-          type: "text",
-          data: {
-            text: `id：${pic.id} \n画师：${pic.user.name}（${pic.user.id}）\n是否ai：${pic.aiType ? "是" : "否"}\n标题：${pic.title}\n上传时间：${pic.updateTime}\n♥：${pic.bookmarkCount}\n👁：${pic.viewCount}\ntag：${pic.tags}\n原图链接：${imgUrl}`,
-          },
-        },
-        {
-          type: "image",
-          data: {
-            uri: "file://" + process.cwd() + "/mirage_tank_web.png",
-          },
-        },
+        `id：${pic.id} \n画师：${pic.user.name}（${pic.user.id}）\n是否ai：${pic.aiType ? "是" : "否"}\n标题：${pic.title}\n上传时间：${pic.updateTime}\n♥：${pic.bookmarkCount}\n👁：${pic.viewCount}\ntag：${pic.tags}\n原图链接：${imgUrl}`,
+        segment.image("file://" + process.cwd() + "/mirage_tank_web.png"),
       ],
       false,
       { recallMsg: 120 },

@@ -1,3 +1,2 @@
-import { segment } from "./segment.js";
-export { segment }
-
+import { segment } from "../segment.js";
+export { segment };

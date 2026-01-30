@@ -1,6 +1,6 @@
 import puppeteer from "../component/puppeteer/puppeteer.js";
 import lodash from "lodash";
-import { segment } from "../Bot/icqq/segment.js";
+import { segment } from "../Bot/segment.js";
 import fs from "fs";
 import Path from "path"; // 新增：路径处理
 class Render {
@@ -15,7 +15,7 @@ class Render {
     path = path.replace(/.html$/, "");
     let paths = lodash.filter(
       path.split("/"),
-      (p) => !!p && typeof p === "string"
+      (p) => !!p && typeof p === "string",
     );
     if (paths.length === 0) {
       console.error("[Render] 路径解析后为空");
@@ -58,7 +58,7 @@ class Render {
         process.cwd(),
         `${
           process.env.xunLuEnv == "QQBot-YunZai" ? "" : "src/"
-        }plugins/${plugin}/resources/${path}.html`
+        }plugins/${plugin}/resources/${path}.html`,
       ),
       saveId: data.saveId || data.save_id || paths[paths.length - 1],
       pageGotoParams: {
@@ -78,7 +78,7 @@ class Render {
       let saveDir = mkdir(`ViewData/${plugin}`);
       let file = path.join(
         saveDir,
-        `${data._htmlPath.split("/").join("_")}.json`
+        `${data._htmlPath.split("/").join("_")}.json`,
       );
       fs.writeFileSync(file, JSON.stringify(data, null, 2));
     }

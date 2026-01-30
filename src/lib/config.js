@@ -1,6 +1,7 @@
 import Filemage from "../utils/Filemage.js";
 import YamlReader from "../utils/YamlReader.js";
 import chokidar from "chokidar";
+import env from "./env.js";
 import _ from "lodash";
 
 const PLUGIN_NAME = "xulu-plugin";
@@ -8,7 +9,7 @@ const CONFIG_BASE_PATH = "/config";
 const DEFAULT_CONFIG_DIR = "default_config";
 const USER_CONFIG_DIR = "config";
 const Path = {
-  qianyuPath: process.cwd(),
+  qianyuPath: env.RootPath,
 };
 
 class ConfigManager {
@@ -124,7 +125,7 @@ class ConfigManager {
       try {
         const defaultConfig = this.loadConfigData(
           configName,
-          this.defaultConfigPath
+          this.defaultConfigPath,
         );
         const userConfig = this.loadConfigData(configName, this.userConfigPath);
 
@@ -138,7 +139,7 @@ class ConfigManager {
       } catch (error) {
         console.warn(
           `[${PLUGIN_NAME}] 同步配置 ${configName} 失败:`,
-          error.message
+          error.message,
         );
       }
     }
@@ -154,7 +155,7 @@ class ConfigManager {
     } catch (error) {
       console.warn(
         `[${PLUGIN_NAME}] 加载配置文件失败: ${filePath}`,
-        error.message
+        error.message,
       );
       return null;
     }

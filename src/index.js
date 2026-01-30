@@ -5,11 +5,29 @@ import path from "path";
 import { logger } from "#utils";
 const __dirname = process.cwd();
 if (!global.logger) global.logger = logger;
+function getQQFromArray(arr) {
+  // QQ号规则：纯数字、长度4-13位、不以0开头
+  const qqReg = /^[1-9]\d{3,12}$/;
+  // 遍历数组，找到第一个匹配的QQ号
+  const qqItem = arr.find((item) => qqReg.test(item));
+  return qqItem || "未找到有效QQ号";
+}
 async function getBotInstance() {
   try {
     if (Bot) {
       //插件环境下通过全局BOT获取机器人实例
-      return Bot;
+      console.log("云崽环境");
+      let timer = setInterval(async () => {
+        let qq = getQQFromArray(Object.keys(Bot));
+        if (qq != "未找到有效QQ号") {
+          clearInterval(timer);
+          // console.log(bot);
+          const { ListenerLoader } =
+            await import("./Bot/icqq/EventListener.js");
+          Bot.botQQ = qq;
+          new ListenerLoader().load(Bot);
+        }
+      }, 10000);
     }
   } catch (error) {
     //作为api或者本体机器人时，选择合适的机器人实例
@@ -26,43 +44,8 @@ async function getBotInstance() {
 }
 
 async function loadLLbot() {
-  // LLBot.on("message_receive", async (event) => {
-  //   console.log(event.data.segments);
-  //   event.reply = (msg) => {
-  //     if (event.data.message_scene === "group") {
-  //       LLBot.sendGroupMessage({
-  //         message: [
-  //           {
-  //             type: "text",
-  //             data: {
-  //               text: msg,
-  //             },
-  //           },
-  //         ],
-  //         group_id: event.data.group?.group_id,
-  //       });
-  //     } else {
-  //       LLBot.sendPrivateMessage({});
-  //     }
-  //   };
-  //   const msg =
-  //     event.data.segments
-  //       .filter((i) => i.type == `text`)
-  //       .map((i) => i.data.text)
-  //       .join("") || "";
-  //   console.log(msg);
-  //   event.data.msg = msg;
-  //   let reg = Object.keys(p).find((key) => msg.includes(key));
-  //   if (reg && event.data.sender_id != event.self_id) {
-  //     console.log(reg);
-
-  //     p[reg](event);
-  //   }
-  // });
-
-  const { default: EventListener } = await import(
-    "./Bot/llonebot/event/index.js"
-  );
+  const { default: EventListener } =
+    await import("./Bot/llonebot/event/index.js");
   await new EventListener().load();
   process.env.xunLuEnv = "QQBot-LLoneBot";
   console.log(process.env.xunLuEnv);

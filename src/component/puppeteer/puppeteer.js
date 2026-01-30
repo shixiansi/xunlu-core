@@ -2,7 +2,7 @@ import Renderer from "../../lib/renderer/Renderer.js";
 import os from "node:os";
 import lodash from "lodash";
 import puppeteer from "puppeteer";
-import { segment } from "../../Bot/icqq/segment.js";
+import { segment } from "../../Bot/segment.js";
 import { logger } from "#utils";
 import path from "path";
 import fs from "fs"; // 新增：用于文件路径校验
@@ -211,7 +211,7 @@ class Puppeteer extends Renderer {
       // 页面跳转参数
       let pageGotoParams = lodash.extend(
         { timeout: 120000, waitUntil: "networkidle2" },
-        data.pageGotoParams || {}
+        data.pageGotoParams || {},
       );
 
       // 跳转页面（核心修复：使用正确的file路径）

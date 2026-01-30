@@ -1,0 +1,607 @@
+{
+  "name": "@icqqjs/icqq",
+  "version": "1.10.18",
+  "upday": "2025/12/12",
+  "description": "QQ protocol for NodeJS!",
+  "main": "./lib/index.js",
+  "module": "./lib/index.mjs",
+  "types": "./lib/index.d.ts",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "lint": "prettier --check ./**/*.{ts,js,vue}",
+    "lint:fix": "prettier --write ./**/*.{ts,js,vue,md}",
+    "docs": "typedoc src/index.ts",
+    "dev": "tsx src/test.ts",
+    "pub": "npm publish",
+    "clean": "rm -rf lib lib_cjs_temp"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "engines": {
+    "node": ">= v14"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/icqqjs/icqq.git"
+  },
+  "keywords": [
+    "qq",
+    "icqq",
+    "protocol",
+    "android",
+    "bot",
+    "coolq"
+  ],
+  "author": "icqqjs",
+  "license": "MPL-2.0",
+  "bugs": "https://github.com/icqqjs/icqq/issues",
+  "homepage": "https://github.com/icqqjs/icqq#readme",
+  "changelogs": "https://github.com/icqqjs/icqq/blob/main/CHANGELOG.md",
+  "dependencies": {
+    "axios": "1.12.0",
+    "log4js": "^6.9.1",
+    "long": "^5.2.3",
+    "pngjs": "^7.0.0",
+    "probe-image-size": "^7.2.3",
+    "silk-wasm": "^3.6.1",
+    "triptrap": "^0.0.17",
+    "ws": "8.18.0",
+    "protobufjs": "^6.10.0"
+  },
+  "devDependencies": {
+    "@icqqjs/icqq": "file:",
+    "@types/node": "^20.16.11",
+    "@types/pngjs": "^6.0.5",
+    "@types/probe-image-size": "^7.2.5",
+    "@types/ws": "^8.5.12",
+    "prettier": "^3.3.3",
+    "tsc-alias": "^1.8.10",
+    "tsx": "^4.20.6",
+    "typedoc": "^0.26.9",
+    "typescript": "^5.6.3",
+    "ws": "^8.18.0"
+  },
+  "files": [
+    "/lib/**/*.js",
+    "/lib/**/*.mjs",
+    "/lib/**/*.d.ts",
+    "/LICENSE",
+    "/README.md",
+    "/CHANGELOG.md"
+  ],
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.mjs",
+      "require": "./lib/index.js"
+    },
+    "./lib": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.mjs",
+      "require": "./lib/index.js"
+    },
+    "./channel": {
+      "types": "./lib/channel.d.ts",
+      "import": "./lib/channel.mjs",
+      "require": "./lib/channel.js"
+    },
+    "./lib/channel": {
+      "types": "./lib/channel.d.ts",
+      "import": "./lib/channel.mjs",
+      "require": "./lib/channel.js"
+    },
+    "./client": {
+      "types": "./lib/client.d.ts",
+      "import": "./lib/client.mjs",
+      "require": "./lib/client.js"
+    },
+    "./lib/client": {
+      "types": "./lib/client.d.ts",
+      "import": "./lib/client.mjs",
+      "require": "./lib/client.js"
+    },
+    "./common": {
+      "types": "./lib/common.d.ts",
+      "import": "./lib/common.mjs",
+      "require": "./lib/common.js"
+    },
+    "./lib/common": {
+      "types": "./lib/common.d.ts",
+      "import": "./lib/common.mjs",
+      "require": "./lib/common.js"
+    },
+    "./core/algo/aes": {
+      "types": "./lib/core/algo/aes.d.ts",
+      "import": "./lib/core/algo/aes.mjs",
+      "require": "./lib/core/algo/aes.js"
+    },
+    "./lib/core/algo/aes": {
+      "types": "./lib/core/algo/aes.d.ts",
+      "import": "./lib/core/algo/aes.mjs",
+      "require": "./lib/core/algo/aes.js"
+    },
+    "./core/algo": {
+      "types": "./lib/core/algo/index.d.ts",
+      "import": "./lib/core/algo/index.mjs",
+      "require": "./lib/core/algo/index.js"
+    },
+    "./lib/core/algo": {
+      "types": "./lib/core/algo/index.d.ts",
+      "import": "./lib/core/algo/index.mjs",
+      "require": "./lib/core/algo/index.js"
+    },
+    "./core/algo/rsa": {
+      "types": "./lib/core/algo/rsa.d.ts",
+      "import": "./lib/core/algo/rsa.mjs",
+      "require": "./lib/core/algo/rsa.js"
+    },
+    "./lib/core/algo/rsa": {
+      "types": "./lib/core/algo/rsa.d.ts",
+      "import": "./lib/core/algo/rsa.mjs",
+      "require": "./lib/core/algo/rsa.js"
+    },
+    "./core/base-client": {
+      "types": "./lib/core/base-client.d.ts",
+      "import": "./lib/core/base-client.mjs",
+      "require": "./lib/core/base-client.js"
+    },
+    "./lib/core/base-client": {
+      "types": "./lib/core/base-client.d.ts",
+      "import": "./lib/core/base-client.mjs",
+      "require": "./lib/core/base-client.js"
+    },
+    "./core/constants": {
+      "types": "./lib/core/constants.d.ts",
+      "import": "./lib/core/constants.mjs",
+      "require": "./lib/core/constants.js"
+    },
+    "./lib/core/constants": {
+      "types": "./lib/core/constants.d.ts",
+      "import": "./lib/core/constants.mjs",
+      "require": "./lib/core/constants.js"
+    },
+    "./core/device": {
+      "types": "./lib/core/device.d.ts",
+      "import": "./lib/core/device.mjs",
+      "require": "./lib/core/device.js"
+    },
+    "./lib/core/device": {
+      "types": "./lib/core/device.d.ts",
+      "import": "./lib/core/device.mjs",
+      "require": "./lib/core/device.js"
+    },
+    "./core/ecdh": {
+      "types": "./lib/core/ecdh.d.ts",
+      "import": "./lib/core/ecdh.mjs",
+      "require": "./lib/core/ecdh.js"
+    },
+    "./lib/core/ecdh": {
+      "types": "./lib/core/ecdh.d.ts",
+      "import": "./lib/core/ecdh.mjs",
+      "require": "./lib/core/ecdh.js"
+    },
+    "./core": {
+      "types": "./lib/core/index.d.ts",
+      "import": "./lib/core/index.mjs",
+      "require": "./lib/core/index.js"
+    },
+    "./lib/core": {
+      "types": "./lib/core/index.d.ts",
+      "import": "./lib/core/index.mjs",
+      "require": "./lib/core/index.js"
+    },
+    "./core/jce": {
+      "types": "./lib/core/jce/index.d.ts",
+      "import": "./lib/core/jce/index.mjs",
+      "require": "./lib/core/jce/index.js"
+    },
+    "./lib/core/jce": {
+      "types": "./lib/core/jce/index.d.ts",
+      "import": "./lib/core/jce/index.mjs",
+      "require": "./lib/core/jce/index.js"
+    },
+    "./core/jce/jce.lib": {
+      "types": "./lib/core/jce/jce.lib.d.ts",
+      "import": "./lib/core/jce/jce.lib.mjs",
+      "require": "./lib/core/jce/jce.lib.js"
+    },
+    "./lib/core/jce/jce.lib": {
+      "types": "./lib/core/jce/jce.lib.d.ts",
+      "import": "./lib/core/jce/jce.lib.mjs",
+      "require": "./lib/core/jce/jce.lib.js"
+    },
+    "./core/network": {
+      "types": "./lib/core/network.d.ts",
+      "import": "./lib/core/network.mjs",
+      "require": "./lib/core/network.js"
+    },
+    "./lib/core/network": {
+      "types": "./lib/core/network.d.ts",
+      "import": "./lib/core/network.mjs",
+      "require": "./lib/core/network.js"
+    },
+    "./core/protobuf": {
+      "types": "./lib/core/protobuf/index.d.ts",
+      "import": "./lib/core/protobuf/index.mjs",
+      "require": "./lib/core/protobuf/index.js"
+    },
+    "./lib/core/protobuf": {
+      "types": "./lib/core/protobuf/index.d.ts",
+      "import": "./lib/core/protobuf/index.mjs",
+      "require": "./lib/core/protobuf/index.js"
+    },
+    "./core/qsign": {
+      "types": "./lib/core/qsign.d.ts",
+      "import": "./lib/core/qsign.mjs",
+      "require": "./lib/core/qsign.js"
+    },
+    "./lib/core/qsign": {
+      "types": "./lib/core/qsign.d.ts",
+      "import": "./lib/core/qsign.mjs",
+      "require": "./lib/core/qsign.js"
+    },
+    "./core/reader": {
+      "types": "./lib/core/reader.d.ts",
+      "import": "./lib/core/reader.mjs",
+      "require": "./lib/core/reader.js"
+    },
+    "./lib/core/reader": {
+      "types": "./lib/core/reader.d.ts",
+      "import": "./lib/core/reader.mjs",
+      "require": "./lib/core/reader.js"
+    },
+    "./core/sign": {
+      "types": "./lib/core/sign.d.ts",
+      "import": "./lib/core/sign.mjs",
+      "require": "./lib/core/sign.js"
+    },
+    "./lib/core/sign": {
+      "types": "./lib/core/sign.d.ts",
+      "import": "./lib/core/sign.mjs",
+      "require": "./lib/core/sign.js"
+    },
+    "./core/silk": {
+      "types": "./lib/core/silk.d.ts",
+      "import": "./lib/core/silk.mjs",
+      "require": "./lib/core/silk.js"
+    },
+    "./lib/core/silk": {
+      "types": "./lib/core/silk.d.ts",
+      "import": "./lib/core/silk.mjs",
+      "require": "./lib/core/silk.js"
+    },
+    "./core/tea": {
+      "types": "./lib/core/tea.d.ts",
+      "import": "./lib/core/tea.mjs",
+      "require": "./lib/core/tea.js"
+    },
+    "./lib/core/tea": {
+      "types": "./lib/core/tea.d.ts",
+      "import": "./lib/core/tea.mjs",
+      "require": "./lib/core/tea.js"
+    },
+    "./core/tlv": {
+      "types": "./lib/core/tlv.d.ts",
+      "import": "./lib/core/tlv.mjs",
+      "require": "./lib/core/tlv.js"
+    },
+    "./lib/core/tlv": {
+      "types": "./lib/core/tlv.d.ts",
+      "import": "./lib/core/tlv.mjs",
+      "require": "./lib/core/tlv.js"
+    },
+    "./core/writer": {
+      "types": "./lib/core/writer.d.ts",
+      "import": "./lib/core/writer.mjs",
+      "require": "./lib/core/writer.js"
+    },
+    "./lib/core/writer": {
+      "types": "./lib/core/writer.d.ts",
+      "import": "./lib/core/writer.mjs",
+      "require": "./lib/core/writer.js"
+    },
+    "./entities": {
+      "types": "./lib/entities.d.ts",
+      "import": "./lib/entities.mjs",
+      "require": "./lib/entities.js"
+    },
+    "./lib/entities": {
+      "types": "./lib/entities.d.ts",
+      "import": "./lib/entities.mjs",
+      "require": "./lib/entities.js"
+    },
+    "./errors": {
+      "types": "./lib/errors.d.ts",
+      "import": "./lib/errors.mjs",
+      "require": "./lib/errors.js"
+    },
+    "./lib/errors": {
+      "types": "./lib/errors.d.ts",
+      "import": "./lib/errors.mjs",
+      "require": "./lib/errors.js"
+    },
+    "./events": {
+      "types": "./lib/events.d.ts",
+      "import": "./lib/events.mjs",
+      "require": "./lib/events.js"
+    },
+    "./lib/events": {
+      "types": "./lib/events.d.ts",
+      "import": "./lib/events.mjs",
+      "require": "./lib/events.js"
+    },
+    "./friend": {
+      "types": "./lib/friend.d.ts",
+      "import": "./lib/friend.mjs",
+      "require": "./lib/friend.js"
+    },
+    "./lib/friend": {
+      "types": "./lib/friend.d.ts",
+      "import": "./lib/friend.mjs",
+      "require": "./lib/friend.js"
+    },
+    "./gfs": {
+      "types": "./lib/gfs.d.ts",
+      "import": "./lib/gfs.mjs",
+      "require": "./lib/gfs.js"
+    },
+    "./lib/gfs": {
+      "types": "./lib/gfs.d.ts",
+      "import": "./lib/gfs.mjs",
+      "require": "./lib/gfs.js"
+    },
+    "./group": {
+      "types": "./lib/group.d.ts",
+      "import": "./lib/group.mjs",
+      "require": "./lib/group.js"
+    },
+    "./lib/group": {
+      "types": "./lib/group.d.ts",
+      "import": "./lib/group.mjs",
+      "require": "./lib/group.js"
+    },
+    "./guild": {
+      "types": "./lib/guild.d.ts",
+      "import": "./lib/guild.mjs",
+      "require": "./lib/guild.js"
+    },
+    "./lib/guild": {
+      "types": "./lib/guild.d.ts",
+      "import": "./lib/guild.mjs",
+      "require": "./lib/guild.js"
+    },
+    "./internal/contactable": {
+      "types": "./lib/internal/contactable.d.ts",
+      "import": "./lib/internal/contactable.mjs",
+      "require": "./lib/internal/contactable.js"
+    },
+    "./lib/internal/contactable": {
+      "types": "./lib/internal/contactable.d.ts",
+      "import": "./lib/internal/contactable.mjs",
+      "require": "./lib/internal/contactable.js"
+    },
+    "./internal/enctyption": {
+      "types": "./lib/internal/enctyption.d.ts",
+      "import": "./lib/internal/enctyption.mjs",
+      "require": "./lib/internal/enctyption.js"
+    },
+    "./lib/internal/enctyption": {
+      "types": "./lib/internal/enctyption.d.ts",
+      "import": "./lib/internal/enctyption.mjs",
+      "require": "./lib/internal/enctyption.js"
+    },
+    "./internal/guild": {
+      "types": "./lib/internal/guild.d.ts",
+      "import": "./lib/internal/guild.mjs",
+      "require": "./lib/internal/guild.js"
+    },
+    "./lib/internal/guild": {
+      "types": "./lib/internal/guild.d.ts",
+      "import": "./lib/internal/guild.mjs",
+      "require": "./lib/internal/guild.js"
+    },
+    "./internal/highway": {
+      "types": "./lib/internal/highway.d.ts",
+      "import": "./lib/internal/highway.mjs",
+      "require": "./lib/internal/highway.js"
+    },
+    "./lib/internal/highway": {
+      "types": "./lib/internal/highway.d.ts",
+      "import": "./lib/internal/highway.mjs",
+      "require": "./lib/internal/highway.js"
+    },
+    "./internal": {
+      "types": "./lib/internal/index.d.ts",
+      "import": "./lib/internal/index.mjs",
+      "require": "./lib/internal/index.js"
+    },
+    "./lib/internal": {
+      "types": "./lib/internal/index.d.ts",
+      "import": "./lib/internal/index.mjs",
+      "require": "./lib/internal/index.js"
+    },
+    "./internal/internal": {
+      "types": "./lib/internal/internal.d.ts",
+      "import": "./lib/internal/internal.mjs",
+      "require": "./lib/internal/internal.js"
+    },
+    "./lib/internal/internal": {
+      "types": "./lib/internal/internal.d.ts",
+      "import": "./lib/internal/internal.mjs",
+      "require": "./lib/internal/internal.js"
+    },
+    "./internal/listeners": {
+      "types": "./lib/internal/listeners.d.ts",
+      "import": "./lib/internal/listeners.mjs",
+      "require": "./lib/internal/listeners.js"
+    },
+    "./lib/internal/listeners": {
+      "types": "./lib/internal/listeners.d.ts",
+      "import": "./lib/internal/listeners.mjs",
+      "require": "./lib/internal/listeners.js"
+    },
+    "./internal/onlinepush": {
+      "types": "./lib/internal/onlinepush.d.ts",
+      "import": "./lib/internal/onlinepush.mjs",
+      "require": "./lib/internal/onlinepush.js"
+    },
+    "./lib/internal/onlinepush": {
+      "types": "./lib/internal/onlinepush.d.ts",
+      "import": "./lib/internal/onlinepush.mjs",
+      "require": "./lib/internal/onlinepush.js"
+    },
+    "./internal/pbgetmsg": {
+      "types": "./lib/internal/pbgetmsg.d.ts",
+      "import": "./lib/internal/pbgetmsg.mjs",
+      "require": "./lib/internal/pbgetmsg.js"
+    },
+    "./lib/internal/pbgetmsg": {
+      "types": "./lib/internal/pbgetmsg.d.ts",
+      "import": "./lib/internal/pbgetmsg.mjs",
+      "require": "./lib/internal/pbgetmsg.js"
+    },
+    "./internal/sysmsg": {
+      "types": "./lib/internal/sysmsg.d.ts",
+      "import": "./lib/internal/sysmsg.mjs",
+      "require": "./lib/internal/sysmsg.js"
+    },
+    "./lib/internal/sysmsg": {
+      "types": "./lib/internal/sysmsg.d.ts",
+      "import": "./lib/internal/sysmsg.mjs",
+      "require": "./lib/internal/sysmsg.js"
+    },
+    "./member": {
+      "types": "./lib/member.d.ts",
+      "import": "./lib/member.mjs",
+      "require": "./lib/member.js"
+    },
+    "./lib/member": {
+      "types": "./lib/member.d.ts",
+      "import": "./lib/member.mjs",
+      "require": "./lib/member.js"
+    },
+    "./message/converter": {
+      "types": "./lib/message/converter.d.ts",
+      "import": "./lib/message/converter.mjs",
+      "require": "./lib/message/converter.js"
+    },
+    "./lib/message/converter": {
+      "types": "./lib/message/converter.d.ts",
+      "import": "./lib/message/converter.mjs",
+      "require": "./lib/message/converter.js"
+    },
+    "./message/cqCode": {
+      "types": "./lib/message/cqCode.d.ts",
+      "import": "./lib/message/cqCode.mjs",
+      "require": "./lib/message/cqCode.js"
+    },
+    "./lib/message/cqCode": {
+      "types": "./lib/message/cqCode.d.ts",
+      "import": "./lib/message/cqCode.mjs",
+      "require": "./lib/message/cqCode.js"
+    },
+    "./message/elements": {
+      "types": "./lib/message/elements.d.ts",
+      "import": "./lib/message/elements.mjs",
+      "require": "./lib/message/elements.js"
+    },
+    "./lib/message/elements": {
+      "types": "./lib/message/elements.d.ts",
+      "import": "./lib/message/elements.mjs",
+      "require": "./lib/message/elements.js"
+    },
+    "./message/face": {
+      "types": "./lib/message/face.d.ts",
+      "import": "./lib/message/face.mjs",
+      "require": "./lib/message/face.js"
+    },
+    "./lib/message/face": {
+      "types": "./lib/message/face.d.ts",
+      "import": "./lib/message/face.mjs",
+      "require": "./lib/message/face.js"
+    },
+    "./message/file": {
+      "types": "./lib/message/file.d.ts",
+      "import": "./lib/message/file.mjs",
+      "require": "./lib/message/file.js"
+    },
+    "./lib/message/file": {
+      "types": "./lib/message/file.d.ts",
+      "import": "./lib/message/file.mjs",
+      "require": "./lib/message/file.js"
+    },
+    "./message/image": {
+      "types": "./lib/message/image.d.ts",
+      "import": "./lib/message/image.mjs",
+      "require": "./lib/message/image.js"
+    },
+    "./lib/message/image": {
+      "types": "./lib/message/image.d.ts",
+      "import": "./lib/message/image.mjs",
+      "require": "./lib/message/image.js"
+    },
+    "./message": {
+      "types": "./lib/message/index.d.ts",
+      "import": "./lib/message/index.mjs",
+      "require": "./lib/message/index.js"
+    },
+    "./lib/message": {
+      "types": "./lib/message/index.d.ts",
+      "import": "./lib/message/index.mjs",
+      "require": "./lib/message/index.js"
+    },
+    "./message/message": {
+      "types": "./lib/message/message.d.ts",
+      "import": "./lib/message/message.mjs",
+      "require": "./lib/message/message.js"
+    },
+    "./lib/message/message": {
+      "types": "./lib/message/message.d.ts",
+      "import": "./lib/message/message.mjs",
+      "require": "./lib/message/message.js"
+    },
+    "./message/parser": {
+      "types": "./lib/message/parser.d.ts",
+      "import": "./lib/message/parser.mjs",
+      "require": "./lib/message/parser.js"
+    },
+    "./lib/message/parser": {
+      "types": "./lib/message/parser.d.ts",
+      "import": "./lib/message/parser.mjs",
+      "require": "./lib/message/parser.js"
+    },
+    "./message/ptt": {
+      "types": "./lib/message/ptt.d.ts",
+      "import": "./lib/message/ptt.mjs",
+      "require": "./lib/message/ptt.js"
+    },
+    "./lib/message/ptt": {
+      "types": "./lib/message/ptt.d.ts",
+      "import": "./lib/message/ptt.mjs",
+      "require": "./lib/message/ptt.js"
+    },
+    "./message/share": {
+      "types": "./lib/message/share.d.ts",
+      "import": "./lib/message/share.mjs",
+      "require": "./lib/message/share.js"
+    },
+    "./lib/message/share": {
+      "types": "./lib/message/share.d.ts",
+      "import": "./lib/message/share.mjs",
+      "require": "./lib/message/share.js"
+    },
+    "./message/video": {
+      "types": "./lib/message/video.d.ts",
+      "import": "./lib/message/video.mjs",
+      "require": "./lib/message/video.js"
+    },
+    "./lib/message/video": {
+      "types": "./lib/message/video.d.ts",
+      "import": "./lib/message/video.mjs",
+      "require": "./lib/message/video.js"
+    }
+  }
+}

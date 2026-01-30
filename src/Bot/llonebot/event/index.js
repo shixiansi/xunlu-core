@@ -123,7 +123,7 @@ export default class LLoneBotEventListener {
     e.sendGroupMessageReaction =
       milkyAdapter.sendGroupMessageReaction.bind(milkyAdapter);
     e.recallMessage = recallMessage;
-    e.sendMsg = milkyAdapter?.sendMsg.bind(milkyAdapter);
+    e.sendMessage = milkyAdapter?.sendMsg.bind(milkyAdapter);
     e.getMsg = milkyAdapter.getMessage.bind(milkyAdapter);
     e.getUserInfo = milkyAdapter.getUserProfile.bind(milkyAdapter);
     e.acceptGroupRequest = milkyAdapter.acceptGroupRequest.bind(milkyAdapter);
