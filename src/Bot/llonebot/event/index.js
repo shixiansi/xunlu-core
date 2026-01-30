@@ -1,4 +1,4 @@
-import llbot from "../index.js";
+import LLoneBot from "../index.js";
 import MilkyAdapter from "../milky-adapter.js";
 import config from "../../../lib/config.js";
 import MessageDB from "../../../db/MessageDB.js";
@@ -31,7 +31,13 @@ export default class LLoneBotEventListener {
       };
       const loginInfo = await milkyAdapter.getLoginInfo();
       console.log(loginInfo);
+      const llbot = new LLoneBot();
       Bot.renderImg = llbot.renderImg;
+      const bingEvent = {
+        reply: llbot.reply,
+      };
+      LLoneBotEventListener.bindMilkyFnc(bingEvent);
+      llbot.bindEvent = bingEvent;
       await llbot.initBot();
       Object.keys(eventTypeMap).forEach((eventType) => {
         milkyAdapter.on(eventType, async (data) => {
@@ -89,9 +95,11 @@ export default class LLoneBotEventListener {
     } else {
       e.post_type = "notice";
     }
-    e[`${e.post_type}_type`] = e.message_scene == "group" ? "group" : "private";
+    e[`${e.post_type}_type`] =
+      e.message_scene == "group" ? "group" : e?.group_id ? "group" : "private";
 
     e.sub_type = eventType == "message_receive" ? "normal" : subMap[eventType];
+    console.log(e);
   }
 
   static bindMilkyFnc(e) {
@@ -117,6 +125,9 @@ export default class LLoneBotEventListener {
     e.recallMessage = recallMessage;
     e.sendMsg = milkyAdapter?.sendMsg.bind(milkyAdapter);
     e.getMsg = milkyAdapter.getMessage.bind(milkyAdapter);
+    e.getUserInfo = milkyAdapter.getUserProfile.bind(milkyAdapter);
+    e.acceptGroupRequest = milkyAdapter.acceptGroupRequest.bind(milkyAdapter);
+    e.rejectGroupRequest = milkyAdapter.rejectGroupRequest.bind(milkyAdapter);
   }
 }
 

@@ -33,10 +33,14 @@ export function register(bot) {
       console.log(msglist[0].data.text);
 
       if (
-        msglist[0].data.text.includes("id") ||
-        msglist[0].data.text.includes("画师")
+        msglist[0].data?.text.includes("id") ||
+        msglist[0].data?.text.includes("画师")
       ) {
-        return ctx.recallMessage.call(ctx, msgInfo.message.message_seq);
+        return ctx.recallMessage.call(ctx, {
+          peer_id: msgInfo.message.peer_id,
+          message_seq: msgInfo.message.message_seq,
+          isGroup: msgInfo.message.message_scene == "group",
+        });
       }
     }
     if (ctx.msg == "本地人设对话") {

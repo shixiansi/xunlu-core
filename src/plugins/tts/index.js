@@ -1,7 +1,7 @@
 import * as handlers from "./controllers/handlers.js";
 
 export default {
-  name: "ai-plugin",
+  name: "tts-plugin",
   register: handlers.register,
   apiRoutes: handlers.apiRoutes,
   onBotEvent: handlers.onBotEvent,

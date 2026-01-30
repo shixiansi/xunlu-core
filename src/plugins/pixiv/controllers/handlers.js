@@ -1,7 +1,7 @@
 /**
  * @Author: 时先思
  * @Date: 2025-12-13 14:29:17
- * @LastEditTime: 2026-01-29 17:33:37
+ * @LastEditTime: 2026-01-30 12:11:40
  * @LastEditors: 时先思
  * @Description:
  * @FilePath: \plugin-api\src\plugins\pixiv\controllers\handlers.js
@@ -47,6 +47,7 @@ export function register(bot) {
     ]);
   });
   bot.registerCommand(["^来张(.*)色图$"], async (ctx) => {
+    if (!ctx.isMaster) return true;
     let tag = ctx.msg.replace(/^来张(.+)色图$/, "$1");
     if (tag == "来张色图") tag = "萝莉";
     console.log(tag);

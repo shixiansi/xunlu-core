@@ -55,14 +55,30 @@ export default class Bot {
 
   async registerPlugin(plugin) {
     if (!plugin.implementation?.register) return;
-
+    let idx = 1;
     const pluginAPI = {
-      registerCommand: this.createCommandRegistrar(plugin.name),
+      registerCommand: this.createCommandRegistrar(plugin.name, idx),
       contextReply: this.createContextReplyHandler(),
       setTask: this.collectTimerTasks(),
+      callFnc: this.callPluginFnc(),
     };
 
     plugin.implementation.register(pluginAPI);
+  }
+
+  callPluginFnc() {
+    return async (name, ctx) => {
+      if (!ctx?.sendMsg) {
+        ctx = {
+          ...ctx,
+          ...this.bindEvent,
+        };
+        delete ctx.reply;
+        this.bindEvent.reply(ctx);
+      }
+      let p = Object.values(this.plugins).find((i) => i.id == name);
+      await p.fnc.call(ctx, ctx);
+    };
   }
 
   collectTimerTasks() {
@@ -74,14 +90,13 @@ export default class Bot {
     };
   }
 
-  createCommandRegistrar(pname) {
+  createCommandRegistrar(pname, idx) {
     return (command, handler) => {
       if (!command || !handler) return;
       console.log(command, handler);
-
       const commands = Array.isArray(command) ? command : [command];
-
       this.plugins[`${pname}-${commands[0] == "" ? null : commands[0]}`] = {
+        id: `${pname}-${idx}`,
         reg: commands[0],
         event: lodash.isString(commands[1]) ? commands[1] : "message",
         priority: lodash.isNumber(commands[1])
@@ -91,6 +106,7 @@ export default class Bot {
             : 5000,
         fnc: handler,
       };
+      idx++;
     };
   }
 

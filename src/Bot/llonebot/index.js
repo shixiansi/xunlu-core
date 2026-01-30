@@ -21,8 +21,6 @@ class LloneBot extends BotBase {
 
     if (!hasContext) {
       // 没有上下文时处理普通命令
-      console.log(this.plugins);
-
       return await this.processNormalCommands(e);
     }
 
@@ -39,8 +37,6 @@ class LloneBot extends BotBase {
 
   // 处理普通命令
   async processNormalCommands(e) {
-    console.log(e);
-
     let regs = lodash.orderBy(
       Object.values(this.plugins),
       ["priority"],
@@ -311,6 +307,8 @@ class LloneBot extends BotBase {
       };
     } else {
       console.log("e.reply不存在");
+      console.log(e);
+
       e.reply = async (msg = "", quote = false, data = {}) => {
         console.log("reply对象的e:", e);
         let msgRes;
@@ -343,18 +341,17 @@ class LloneBot extends BotBase {
             logger.warn(err);
           });
         }
-        console.log(msgRes);
+        console.log("这是发送后的msgTes", msgRes);
 
         if (!e.isGuild && recallMsg > 0 && msgRes?.message_seq) {
-          setTimeout(
-            () =>
-              e.recallMessage({
-                peer_id: e.peer_id,
-                message_seq: msgRes.message_seq,
-                isGroup: e.isGroup,
-              }),
-            recallMsg * 1000,
-          );
+          setTimeout(async () => {
+            if (!msgRes?.message_seq) return;
+            e.recallMessage({
+              peer_id: e.peer_id,
+              message_seq: msgRes.message_seq,
+              isGroup: e.message_scene == "group",
+            });
+          }, recallMsg * 1000);
         }
 
         return msgRes;
@@ -417,7 +414,7 @@ class LloneBot extends BotBase {
     }
 
     if (e.message_scene == "group" || e.notice_type == "group") {
-      e.group_id = e.peer_id;
+      e.group_id = e?.peer_id || e?.group_id;
       e.isGroup = true;
       e.sender = {
         card: e.group_member?.card,
@@ -435,7 +432,7 @@ class LloneBot extends BotBase {
       e.isMaster = true;
     }
 
-    e.user_id = e.sender_id;
+    e.user_id = e?.sender_id || e?.user_id;
 
     //let config = await this.getConfig();
     // if (config) {
@@ -461,4 +458,4 @@ class LloneBot extends BotBase {
     // }
   }
 }
-export default new LloneBot();
+export default LloneBot;
