@@ -1,7 +1,7 @@
 /**
  * @Author: 时先思
  * @Date: 2025-12-13 14:29:10
- * @LastEditTime: 2026-01-30 12:30:56
+ * @LastEditTime: 2026-01-30 17:32:43
  * @LastEditors: 时先思
  * @Description:
  * @FilePath: \plugin-api\src\plugins\group\index.js
@@ -14,7 +14,7 @@ export default {
   name: "group",
   register: handlers.register,
   apiRoutes(router) {
-    router.use(createRouter({ name: "example" }));
+    router.use(createRouter({ name: "group" }));
   },
   onBotEvent: handlers.onBotEvent,
 };

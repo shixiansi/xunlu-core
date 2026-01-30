@@ -14,6 +14,8 @@ export function register(bot) {
   if (!bot || !bot.registerCommand) return;
   //第一个参数是数组第一个是命令，第二个是事件，第三个是优先级（第二个和第三个都可以省略）
   bot.registerCommand(["", "request.group.add"], async (ctx) => {
+    console.log("触发群申请可", ctx);
+
     const user_id = ctx.initiator_id;
     let userInfo = await ctx.getUserInfo({ user_id });
     let passID = randomWithDigits(10);
@@ -67,12 +69,16 @@ export function register(bot) {
     } else return ctx.reply("未获取到申请信息");
   });
   bot.registerCommand(["", "notice.group.increase"], async (ctx) => {
-    console.log(ctx);
     let userInfo = await ctx.getUserInfo({ user_id: ctx.user_id });
     bot.callFnc("tts-plugin-1", {
       ...ctx,
-      msg: `可莉说欢迎${userInfo.nickname || "不知名的家伙"}入群`,
+      msg: `可莉说欢迎${userInfo.nickname || "不知名的家伙"}入群,要好好和大家相处哦！`,
     });
+  });
+  bot.registerCommand(["", "notice.group.decrease"], async (ctx) => {
+    console.log("减员的ctx", ctx);
+    let userInfo = await ctx.getUserInfo({ user_id: ctx.user_id });
+    ctx.reply(`把${userInfo.nickname || "不知名的家伙"}丢出群了！`);
   });
 
   // bot.callFnc("test", { group_id: 434343, user_id: 232332 });

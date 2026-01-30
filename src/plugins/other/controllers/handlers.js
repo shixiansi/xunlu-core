@@ -31,6 +31,10 @@ export function register(bot) {
     }
   });
 
+  bot.registerCommand(["", "notice.group.poke"], (ctx) => {
+    ctx.reply("戳一戳");
+  });
+
   bot.setTask("0 27 16 * * *", () => {
     Bot.sendMsg(
       {

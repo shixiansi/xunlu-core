@@ -95,7 +95,7 @@ export default class Bot {
       if (!command || !handler) return;
       console.log(command, handler);
       const commands = Array.isArray(command) ? command : [command];
-      this.plugins[`${pname}-${commands[0] == "" ? null : commands[0]}`] = {
+      this.plugins[`${pname}-${commands[0] == "" ? idx : commands[0]}`] = {
         id: `${pname}-${idx}`,
         reg: commands[0],
         event: lodash.isString(commands[1]) ? commands[1] : "message",

@@ -8,7 +8,6 @@ class LloneBot extends BotBase {
   async deal(e) {
     await this.dealMsg(e);
     await this.reply(e);
-
     if (e.user_id == e.self_id) return;
     //处理上下文
     const isPrivate = e.isPrivate;
@@ -42,8 +41,10 @@ class LloneBot extends BotBase {
       ["priority"],
       ["asc"],
     );
+
     for (let r of regs) {
       if (r.event && !this.filtEvent(e, r)) continue;
+
       if (new RegExp(r.reg).test(e?.msg?.trim())) {
         try {
           console.log("触发命令:", r);
