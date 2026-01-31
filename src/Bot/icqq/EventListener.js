@@ -128,6 +128,7 @@ class ListenerLoader {
           }
         }
       };
+      e.renderImg = pluginLoader.renderImg;
       // e.getMsg = milkyAdapter.getMessage.bind(milkyAdapter);
       // e.getUserInfo = milkyAdapter.getUserProfile.bind(milkyAdapter);
       // e.acceptGroupRequest = milkyAdapter.acceptGroupRequest.bind(milkyAdapter);

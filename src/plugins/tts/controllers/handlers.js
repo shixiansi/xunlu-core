@@ -1,8 +1,10 @@
 import { Filemage, Downloader } from "#utils";
 import Hobbyist from "../services/hobbyist.js";
+import env from "../../../lib/env.js";
 let hobbyist = new Hobbyist();
-let downloader = new Downloader("./src/plugins/tts/resources/");
-let file = new Filemage("./src/plugins/tts/resources/");
+const resPath = env.RootPath + "/src/plugins/tts/resources/";
+let downloader = new Downloader(resPath);
+let file = new Filemage(resPath);
 /**
  * 从字符串数组中找到与输入字符串匹配度最高的项
  * @param {string} inputStr - 输入的目标字符串
@@ -16,7 +18,7 @@ const downAudioFiles = async (url, name) => {
   }
   await downloader.downloadFile(
     url,
-    `audio/${file.sanitizeFilename(name)}.mp3`
+    `audio/${file.sanitizeFilename(name)}.mp3`,
   );
   return downloader.rootPath + `audio/${file.sanitizeFilename(name)}.mp3`;
 };
@@ -32,7 +34,7 @@ const dealCharacterName = (name) => {
       .replace("-日语-", "")
       .replace("-英语-", "")
       .replace("-韩语-", "")
-      .replace("-.ipynb_checkpoints-", "")
+      .replace("-.ipynb_checkpoints-", ""),
   );
 };
 
@@ -84,12 +86,12 @@ export function register(bot) {
 
     let model = findHighestMatch(
       strarr[0],
-      characterList.map((i) => i.name)
+      characterList.map((i) => i.name),
     );
     model = characterList.find(
       (i) =>
         i.name === model &&
-        (i.originalName.includes("ZH") || i.originalName.includes("中文"))
+        (i.originalName.includes("ZH") || i.originalName.includes("中文")),
     )?.originalName;
     console.log(model);
     if (!model) {
@@ -100,7 +102,7 @@ export function register(bot) {
     if (model) {
       let audio = await hobbyist.getModelAudio(
         model,
-        strarr[1].replace(/\（.*?\）/g, "")
+        strarr[1].replace(/\（.*?\）/g, ""),
       );
       console.log(audio);
       if (audio?.msg && !audio.audio_url) {
@@ -108,7 +110,7 @@ export function register(bot) {
       }
       let filePath = await downAudioFiles(
         audio.audio_url,
-        `${model}-${strarr[1].slice(0, 10)}`
+        `${model}-${strarr[1].slice(0, 10)}`,
       );
       return await ctx.reply([
         {
@@ -130,7 +132,7 @@ export function register(bot) {
 
     ctx.reply(
       "请选择需要查看的模型列表：\n" +
-        catelist.map((item, index) => `【${index + 1}】${item}`).join("\n")
+        catelist.map((item, index) => `【${index + 1}】${item}`).join("\n"),
     );
     bot.contextReply(ctx, async (rep) => {
       rep.msg = rep.msg.replace(/\D/g, "");
@@ -142,14 +144,14 @@ export function register(bot) {
               if (item.includes(catelist[index])) {
                 return dealCharacterName(item).replace(
                   `${catelist[index]}`,
-                  ""
+                  "",
                 );
               }
-            })
+            }),
           ),
         ];
         return await rep.reply(
-          await Bot.renderImg("tts", { ttsList: ttslist })
+          await rep.renderImg("tts", { ttsList: ttslist }),
         );
       } else {
         ctx.reply("非法选择，请重新选择！");
@@ -160,7 +162,7 @@ export function register(bot) {
   bot.registerCommand(["tts帮助"], async (ctx) => {
     console.log(process.env.xunLuEnv);
     ctx.reply(
-      "tts帮助:\n#语音模型列表（查看模型列表）\n模型名+说+内容（使用模型说话,如“可莉说你好”不需要加游戏名。只需要角色名即可）"
+      "tts帮助:\n#语音模型列表（查看模型列表）\n模型名+说+内容（使用模型说话,如“可莉说你好”不需要加游戏名。只需要角色名即可）",
     );
   });
 }

@@ -3,6 +3,7 @@ import lodash from "lodash";
 import { segment } from "../Bot/segment.js";
 import fs from "fs";
 import Path from "path"; // 新增：路径处理
+import env from "../lib/env.js";
 class Render {
   async render(plugin, path, data = {}, cfg = {}) {
     // 修复：路径处理，避免空值
@@ -26,7 +27,7 @@ class Render {
     // 创建目录（修复路径拼接）
     const mkdir = (check) => {
       if (!check) return "";
-      let currDir = Path.resolve(process.cwd(), "data");
+      let currDir = Path.resolve(env.RootPath, "data");
       for (let p of check.split("/")) {
         if (!p) continue;
         currDir = Path.join(currDir, p);
@@ -44,7 +45,9 @@ class Render {
     let pluResPath =
       lodash.repeat("../", resLevel) +
       `${
-        process.env.xunLuEnv == "QQBot-YunZai" ? "" : "src/"
+        process.env.xunLuEnv == "QQBot-YunZai"
+          ? "plugins/xunlu-core/src/"
+          : "src/"
       }plugins/${plugin}/resources/`;
 
     // 渲染数据（修复tplFile路径）
@@ -55,9 +58,9 @@ class Render {
       _htmlPath: path,
       pluResPath,
       tplFile: Path.resolve(
-        process.cwd(),
+        env.RootPath,
         `${
-          process.env.xunLuEnv == "QQBot-YunZai" ? "" : "src/"
+          process.env.xunLuEnv == "QQBot-YunZai" ? "src/" : "src/"
         }plugins/${plugin}/resources/${path}.html`,
       ),
       saveId: data.saveId || data.save_id || paths[paths.length - 1],

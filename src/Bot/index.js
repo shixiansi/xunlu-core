@@ -47,6 +47,7 @@ export default class Bot {
               env.RootPath + "/resources/html/common/" + "default.html",
             ...data,
             _res_path: resPath,
+            RootPath: env.RootPath,
             version: "0.0.1",
             botname: process.env.xunLuEnv,
             imgType: "png",
@@ -119,7 +120,8 @@ export default class Bot {
 
       const isPrivate = ctx.isPrivate;
       const contextKey = isPrivate ? ctx.user_id : ctx.group_id;
-      const userId = ctx.sender_id;
+      const userId = ctx.sender_id || ctx.user_id;
+      console.log(contextKey);
 
       if (!contextKey || !userId) {
         console.warn("缺少上下文Key或用户ID");

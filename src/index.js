@@ -25,6 +25,7 @@ async function getBotInstance() {
           const { ListenerLoader } =
             await import("./Bot/icqq/EventListener.js");
           Bot.botQQ = qq;
+          process.env.xunLuEnv = "QQBot-YunZai";
           new ListenerLoader().load(Bot);
         }
       }, 10000);
