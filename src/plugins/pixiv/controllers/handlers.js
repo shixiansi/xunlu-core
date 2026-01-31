@@ -19,23 +19,14 @@ export function register(bot) {
     //https://i.pximg.org/img-original/img/2026/01/25/01/47/34/140340597_p0.jpg
     //https://i.pximg.net/c/600x1200_90/img-master/img/2021/10/31/00/00/07/93790806_p0_master1200.jpg
     await ctx.reply([
-      {
-        type: "text",
-        data: {
-          text: `id：${pic.id} \n画师：${pic.user.name}（${pic.user.id}）\n是否ai：${pic.aiType ? "是" : "否"}\n标题：${pic.title}\n上传时间：${pic.updateTime}\n♥：${pic.bookmarkCount}\n👁：${pic.viewCount}\ntag：${pic.tags}`,
-        },
-      },
-      {
-        type: "image",
-        data: {
-          uri:
-            pic.urls.original?.replace("pximg.net", "pixiv.re") ||
-            pic.urls.large
-              .replace("pximg.net", "pixiv.re")
-              .replace("c/600x1200_90/img-master", "img-original")
-              .replace("_master1200", ""),
-        },
-      },
+      `id：${pic.id} \n画师：${pic.user.name}（${pic.user.id}）\n是否ai：${pic.aiType ? "是" : "否"}\n标题：${pic.title}\n上传时间：${pic.updateTime}\n♥：${pic.bookmarkCount}\n👁：${pic.viewCount}\ntag：${pic.tags}`,
+      segment.image(
+        pic.urls.original?.replace("pximg.net", "pixiv.re") ||
+          pic.urls.large
+            .replace("pximg.net", "pixiv.re")
+            .replace("c/600x1200_90/img-master", "img-original")
+            .replace("_master1200", ""),
+      ),
     ]);
   });
   bot.registerCommand(["^来张(.*)色图$"], async (ctx) => {

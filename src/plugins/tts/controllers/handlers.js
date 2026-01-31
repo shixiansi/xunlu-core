@@ -1,6 +1,7 @@
 import { Filemage, Downloader } from "#utils";
 import Hobbyist from "../services/hobbyist.js";
 import env from "../../../lib/env.js";
+import { segment } from "../../../Bot/segment.js";
 let hobbyist = new Hobbyist();
 const resPath = env.RootPath + "/src/plugins/tts/resources/";
 let downloader = new Downloader(resPath);
@@ -112,14 +113,7 @@ export function register(bot) {
         audio.audio_url,
         `${model}-${strarr[1].slice(0, 10)}`,
       );
-      return await ctx.reply([
-        {
-          type: "record",
-          data: {
-            uri: `file://${process.cwd()}/${filePath}`,
-          },
-        },
-      ]);
+      return await ctx.reply(segment.record(`file://${filePath}`));
     } else {
       return;
     }

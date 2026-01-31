@@ -14,3 +14,4 @@ temp/
 # logs
 logs/
 mirage_tank_web.png
+src/plugins/tts/resources/audio/

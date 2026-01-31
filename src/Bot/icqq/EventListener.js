@@ -96,8 +96,6 @@ class ListenerLoader {
       };
       e.sendGroupMessageReaction = ({ message_seq, reaction }) => {
         //console.log(this.bot);
-        console.log(targetE);
-
         this.bot.sendApi("set_msg_emoji_like", {
           message_id: targetE.message_id,
           emoji_id: Number(reaction),

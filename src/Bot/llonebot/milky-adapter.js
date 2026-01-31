@@ -451,8 +451,14 @@ class MilkyAdapter {
             summary: "你瞅个蛋",
           },
         };
-
         break;
+      case "record":
+        msg = {
+          type: "record",
+          data: {
+            uri: msg.file || msg.data.uri || "",
+          },
+        };
       default:
         break;
     }
