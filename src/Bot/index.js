@@ -430,6 +430,7 @@ export default class BaseBot {
               case "image":
                 m.summary = "你瞅尼玛的"
             }
+            return m
           })
         } else {
           switch (msg.type) {
