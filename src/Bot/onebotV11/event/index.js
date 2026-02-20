@@ -68,6 +68,7 @@ export default class OneBotV11EventListener {
     OneBotV11EventListener.bindOneBotFunctions(bindEvent, this.#oneBotAdapter, this.#oneBot)
     this.#oneBot.bindEvent = bindEvent
     await this.#oneBot.initBot()
+    await this.#oneBot.runMount()
   }
 
   /**

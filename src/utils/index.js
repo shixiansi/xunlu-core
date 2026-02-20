@@ -8,7 +8,6 @@
  * @版权声明
  **/
 
-import Filemage from "./Filemage.js";
-import * as logger from "./logger.js";
-import Downloader from "./download.js";
-export { Filemage, logger, Downloader };
+import Filemage from "./Filemage.js"
+import Downloader from "./download.js"
+export { Filemage, Downloader }

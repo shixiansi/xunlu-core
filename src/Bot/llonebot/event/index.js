@@ -95,6 +95,7 @@ export default class LLoneBotEventListener {
     LLoneBotEventListener.bindMilkyFunctions(bindEvent, this.#milkyAdapter)
     this.#llbot.bindEvent = bindEvent
     await this.#llbot.initBot()
+    await this.#llbot.runMount()
   }
 
   /**

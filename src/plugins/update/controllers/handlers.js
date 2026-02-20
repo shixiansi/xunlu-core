@@ -18,8 +18,12 @@ const pluginPath = env.CurEnv == "xunlu-core" ? "./" : `./plugins/${PLUGIN_CONFI
 /**
  * 初始化重启状态检查（原init逻辑）
  */
-async function initRestartStatus(bot) {
+async function initRestartStatus() {
+  console.log("执行更新了")
+
   let restart = await redis.get(PLUGIN_CONFIG.key)
+  console.log(restart)
+
   if (restart && process.argv[1].includes("pm2")) {
     restart = JSON.parse(restart)
     let time = restart.time || new Date().getTime()
@@ -28,9 +32,9 @@ async function initRestartStatus(bot) {
 
     try {
       if (restart.isGroup) {
-        await bot.pickGroup(restart.id).sendMsg(msg)
+        await Bot.pickGroup(restart.id).sendMsg(msg)
       } else {
-        await bot.pickUser(restart.id).sendMsg(msg)
+        await Bot.pickUser(restart.id).sendMsg(msg)
       }
       await redis.del(PLUGIN_CONFIG.key)
     } catch (error) {
@@ -189,7 +193,7 @@ async function getUpdateLog(ctx, plugin = "") {
   if (log.length <= 0) return ""
 
   let end = `更多详细信息，请前往gitee查看\n${PLUGIN_CONFIG.repoUrl}`
-  let forwardMsg = await ctx.makeGroupMsg(`${plugin || "Qianyu-Bot"}更新日志，共${line}条`, [
+  let forwardMsg = await ctx.makeForwardMsg(`${plugin || "Qianyu-Bot"}更新日志，共${line}条`, [
     { content: log },
     { content: end },
   ])
@@ -232,8 +236,13 @@ async function restartApp(ctx) {
     } else {
       await ctx.reply("当前为前台运行，重启将转为后台...")
     }
+    console.log(cm)
 
     exec(cm, { windowsHide: true }, (error, stdout, stderr) => {
+      console.log(stdout)
+      console.log(error)
+      console.log(stderr)
+
       if (error) {
         redis.del(PLUGIN_CONFIG.key)
         ctx.reply(`操作失败！\n${error.stack}`)
@@ -320,20 +329,22 @@ export function register(bot) {
   if (!bot || !bot.registerCommand) return
 
   // 初始化重启状态检查
-  initRestartStatus(bot).catch(err => logger.error(`[荨鹿更新] 初始化失败：${err.stack}`))
+  bot.onMount(() =>
+    initRestartStatus().catch(err => logger.error(`[荨鹿更新] 初始化失败：${err.stack}`)),
+  )
 
   // 注册「荨鹿更新」命令
-  bot.registerCommand(["荨鹿更新"], async ctx => {
+  bot.registerCommand(["^荨鹿更新$"], async ctx => {
     await runUpdate(ctx, false)
   })
 
   // 注册「荨鹿强制更新」命令
-  bot.registerCommand(["荨鹿强制更新"], async ctx => {
+  bot.registerCommand(["^荨鹿强制更新$"], async ctx => {
     await runUpdate(ctx, true)
   })
 
   // 注册「荨鹿更新日志」命令
-  bot.registerCommand(["荨鹿更新日志"], async ctx => {
+  bot.registerCommand(["^荨鹿更新日志$"], async ctx => {
     let log = await getUpdateLog(ctx)
     await ctx.reply(log || "暂无更新日志")
   })
@@ -353,3 +364,4 @@ export function onBotEvent(event) {
   }
   console.log("[qianyu-update] received bot event:", event)
 }
+console.log(process.argv[1])

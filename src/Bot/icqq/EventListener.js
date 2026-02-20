@@ -33,6 +33,7 @@ class ListenerLoader {
     let botenv = this.checkEnv()
 
     await pluginLoader.initBot()
+    await pluginLoader.runMount()
     const files = filemag.GetfileList().filter(file => file.endsWith(".js"))
     for (let File of files) {
       try {

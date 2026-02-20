@@ -10,6 +10,7 @@ export default class BaseBot {
     this.plugins = {}
     this.groupReply = {}
     this.privateReply = {}
+    this.onMount = []
   }
 
   async loadBotPlugins() {
@@ -62,9 +63,21 @@ export default class BaseBot {
       contextReply: this.createContextReplyHandler(),
       setTask: this.collectTimerTasks(),
       callFnc: this.callPluginFnc(),
+      onMount: fnc => this.onMount.push(fnc),
     }
-
     plugin.implementation.register(pluginAPI)
+  }
+
+  async runMount() {
+    for (let fnc of this.onMount) {
+      console.log("执行初始化任务" + fnc.toString())
+
+      try {
+        await fnc()
+      } catch (err) {
+        logger.error(`执行onMount函数时出错: ${err.stack}`)
+      }
+    }
   }
 
   callPluginFnc() {
