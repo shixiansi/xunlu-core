@@ -583,6 +583,8 @@ export default class BaseBot {
       e.isMaster = true
     }
 
+    e.self_id = Array.isArray(e.self_id) ? e.self_id[0] : e?.self_id
+
     if (e?.receiver_id) {
       e.target_id = e.receiver_id
       delete e.receiver_id
