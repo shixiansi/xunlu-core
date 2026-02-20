@@ -10,6 +10,7 @@ node index  #直接运行
 ```
 
 插件安装
+
 ```bash
 #github
 git clone --depth=1 https://github.com/shixiansi/xunlu-core plugins/xunlu-core
@@ -19,6 +20,7 @@ git clone --depth=1 https://gitee.com/think-first-sxs/xunlu-core plugins/xunlu-c
 pnpm install -P
 ```
 
+QQ群：428596438
 
 老插件保留的功能
 
@@ -41,6 +43,3 @@ pnpm install -P
 - 复读机禁言（随机禁言时长1-10分钟）
 - 学习功能随机发送
 - 随机复读
-  
-  
-  

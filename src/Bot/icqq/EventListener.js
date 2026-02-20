@@ -126,10 +126,6 @@ class ListenerLoader {
         }
       }
       e.renderImg = pluginLoader.renderImg
-      // e.getMsg = milkyAdapter.getMessage.bind(milkyAdapter);
-      // e.getUserInfo = milkyAdapter.getUserProfile.bind(milkyAdapter);
-      // e.acceptGroupRequest = milkyAdapter.acceptGroupRequest.bind(milkyAdapter);
-      // e.rejectGroupRequest = milkyAdapter.rejectGroupRequest.bind(milkyAdapter);
     } else if (env === "icqq") {
       const recallMessage = ({ peer_id, message_seq, isGroup }) => {
         try {
