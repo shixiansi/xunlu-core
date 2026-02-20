@@ -157,18 +157,20 @@ async function handleGitError(ctx, err, stdout) {
  * 获取更新日志
  * @param {Object} ctx 命令上下文
  * @param {string} plugin 插件目录
+ * @param {string} oldCommitId 更新前的CommitId（新增参数）
  */
-async function getUpdateLog(ctx, plugin = "") {
+async function getUpdateLog(ctx, plugin = "", oldCommitId = "") {
   plugin = plugin || PLUGIN_CONFIG.pluginDir
-  let cm = 'git log  -20 --oneline --pretty=format:"%h||[%cd]  %s" --date=format:"%m-%d %H:%M"'
+  // 修复：去掉--oneline，避免和--pretty冲突
+  let cm = 'git log -20 --pretty=format:"%h||[%cd]  %s" --date=format:"%m-%d %H:%M"'
   if (plugin) {
-    cm = `cd ${pluginPath} && ${cm}`
+    // 修复：给路径加引号
+    cm = `cd "${pluginPath}" && ${cm}`
   }
 
   let logAll
   try {
     logAll = await execSync(cm, { encoding: "utf-8" })
-    console.log(logAll)
   } catch (error) {
     logger.error(`[荨鹿更新] 获取更新日志失败：${error.toString()}`)
     await ctx.reply(error.toString())
@@ -177,23 +179,39 @@ async function getUpdateLog(ctx, plugin = "") {
 
   if (!logAll) return ""
 
-  logAll = logAll.split("\n")
-  const oldCommitId = await getCommitId(plugin)
+  // 过滤空行，避免分割后出现异常数据
+  logAll = logAll.split("\n").filter(line => line.trim())
+  console.log(logAll)
+
+  // 优先使用传入的oldCommitId，没有则重新获取（兼容旧调用）
+  let commitId = oldCommitId || (await getCommitId(plugin))
+
+  // 兼容CommitId获取失败的情况
+  if (!commitId) {
+    await ctx.reply("⚠️ 无法获取当前版本CommitId，将展示最新20条日志")
+  }
 
   let log = []
   for (let str of logAll) {
     str = str.split("||")
-    if (str[0] == oldCommitId) break
-    if (str[1]?.includes("Merge branch")) continue
+
+    // 跳过分割异常的数据
+    if (!str[0] || !str[1]) continue
+
+    // 只有commitId有效时才终止遍历
+    if (commitId && str[0] == commitId) break
+
+    // 放宽过滤条件，只过滤纯合并分支的提交
+    if (str[1]?.trim() === "Merge branch") continue
     log.push(str[1])
   }
+
+  if (log.length <= 0) return ""
 
   let line = log.length
   log = log.join("\n\n")
 
-  if (log.length <= 0) return ""
-
-  let end = `更多详细信息，请前往gitee查看\n${PLUGIN_CONFIG.repoUrl}`
+  let end = `更多详细信息，请前往GitHub查看\n${PLUGIN_CONFIG.repoUrl}`
   let forwardMsg = await ctx.makeForwardMsg(`${plugin || "Qianyu-Bot"}更新日志，共${line}条`, [
     { content: log },
     { content: end },
@@ -286,11 +304,15 @@ async function runUpdate(ctx, isForce = false) {
   let cm = isForce
     ? `git reset --hard && git pull --rebase --allow-unrelated-histories`
     : "git pull --no-rebase"
+  // 给路径加引号
   cm = `cd "${pluginPath}" && ${cm}`
 
-  // 记录旧CommitId
+  // 记录旧CommitId（现在真正用上了）
   const oldCommitId = await getCommitId(PLUGIN_CONFIG.pluginDir)
-  logger.mark(`${ctx.logFnc} 开始${type}：${PLUGIN_CONFIG.typeName}`)
+  // 优化：日志里加入oldCommitId，方便溯源
+  logger.mark(
+    `${ctx.logFnc} 开始${type}：${PLUGIN_CONFIG.typeName} | 更新前CommitId：${oldCommitId || "未知"}`,
+  )
 
   await ctx.reply(`开始#${type}${PLUGIN_CONFIG.typeName}`)
   uping = true
@@ -299,7 +321,9 @@ async function runUpdate(ctx, isForce = false) {
 
   // 处理更新错误
   if (ret.error) {
-    logger.mark(`${ctx.logFnc} 更新失败：${PLUGIN_CONFIG.typeName}`)
+    logger.mark(
+      `${ctx.logFnc} 更新失败：${PLUGIN_CONFIG.typeName} | 更新前CommitId：${oldCommitId || "未知"}`,
+    )
     await handleGitError(ctx, ret.error, ret.stdout)
     return false
   }
@@ -313,8 +337,8 @@ async function runUpdate(ctx, isForce = false) {
     return true
   } else {
     await ctx.reply(`${PLUGIN_CONFIG.typeName}更新成功\n更新时间：${updateTime}`)
-    // 获取并发送更新日志
-    let log = await getUpdateLog(ctx, PLUGIN_CONFIG.pluginDir)
+    // 优化：把oldCommitId传给getUpdateLog，避免重复获取
+    let log = await getUpdateLog(ctx, PLUGIN_CONFIG.pluginDir, oldCommitId)
     console.log(log)
 
     if (log) await ctx.reply(log)
@@ -348,7 +372,7 @@ export function register(bot) {
 
   // 注册「荨鹿更新日志」命令
   bot.registerCommand(["^荨鹿更新日志$"], async ctx => {
-    let log = await getUpdateLog(ctx)
+    let log = await getUpdateLog(ctx, "", "")
     await ctx.reply(log || "暂无更新日志")
   })
 

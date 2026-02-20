@@ -9,7 +9,7 @@ export function register(bot) {
       isStart = true
       ctx.reply(ctx.adapterType + "Bot启动成功！")
     }
-    if (ctx.isMaster && ctx.msg) {
+    if (ctx.isMaster && ctx.msg && ctx.isGroup) {
       let rlist = ["277"]
       for (let i of rlist) {
         ctx.sendGroupMessageReaction({
