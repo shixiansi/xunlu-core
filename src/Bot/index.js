@@ -440,14 +440,15 @@ export default class BaseBot {
 
         //this.count(e, msg)
         if (e.group_id) {
-          return await e.group.sendMsg(msg).catch(err => {
-            logger.warn(err)
-          })
+          return await Bot?.pickGroup(e.group_id)
+            .sendMsg(msg)
+            .catch(err => {
+              logger.warn(err)
+            })
         } else {
           let friend = e.bot.fl.get(e.user_id)
           if (!friend) return
-          return await e.bot
-            .pickUser(e.user_id)
+          return await Bot.pickUser(e.user_id)
             .sendMsg(msg)
             .catch(err => {
               logger.warn(err)
