@@ -9,6 +9,13 @@ npm i  #安装依赖
 node index  #直接运行
 ```
 
+插件安装
+```bash
+git clone --depth=1 https://github.com/shixiansi/xunlu-core plugins/miao-plugin
+pnpm install -P
+```
+
+
 预计实现的功能
 
 老插件保留的功能
