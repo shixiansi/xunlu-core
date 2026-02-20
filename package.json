@@ -35,6 +35,7 @@
     "node-schedule": "^2.1.1",
     "pm2": "^6.0.14",
     "puppeteer": "^24.35.0",
+    "qrcode": "^1.5.4",
     "react-dom": "^19.2.4",
     "redis": "^5.11.0",
     "satori": "^0.19.1",
