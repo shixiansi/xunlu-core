@@ -66,7 +66,7 @@ export default class LLoneBotEventListener {
       // 1. 初始化适配器并校验登录状态
       await this.#initAdapter()
       // 2. 初始化全局Bot对象
-      this.#initGlobalBot()
+      await this.#initGlobalBot()
       // 3. 绑定所有事件监听
       this.#bindAllEvents()
 
@@ -95,13 +95,12 @@ export default class LLoneBotEventListener {
     LLoneBotEventListener.bindMilkyFunctions(bindEvent, this.#milkyAdapter)
     this.#llbot.bindEvent = bindEvent
     await this.#llbot.initBot()
-    await this.#llbot.runMount()
   }
 
   /**
    * 初始化全局Bot对象（避免覆盖已有值）
    */
-  #initGlobalBot() {
+  async #initGlobalBot() {
     if (!global.Bot) {
       global.Bot = {
         ...this.#milkyAdapter,
@@ -112,6 +111,7 @@ export default class LLoneBotEventListener {
     } else {
       console.warn("[GlobalBot] 全局Bot对象已存在，跳过初始化")
     }
+    await this.#llbot.runMount()
   }
 
   /**

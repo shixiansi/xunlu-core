@@ -38,7 +38,7 @@ export default class OneBotV11EventListener {
       // 1. 初始化适配器并校验登录状态
       await this.#initAdapter()
       // 2. 初始化全局Bot对象
-      this.#initGlobalBot()
+      await this.#initGlobalBot()
       // 3. 绑定所有事件监听
       this.#bindAllEvents()
 
@@ -68,13 +68,12 @@ export default class OneBotV11EventListener {
     OneBotV11EventListener.bindOneBotFunctions(bindEvent, this.#oneBotAdapter, this.#oneBot)
     this.#oneBot.bindEvent = bindEvent
     await this.#oneBot.initBot()
-    await this.#oneBot.runMount()
   }
 
   /**
    * 初始化全局Bot对象（避免覆盖已有值）
    */
-  #initGlobalBot() {
+  async #initGlobalBot() {
     if (!global.Bot) {
       global.Bot = {
         ...this.#oneBotAdapter,
@@ -85,6 +84,7 @@ export default class OneBotV11EventListener {
     } else {
       console.warn("[GlobalBot] 全局Bot对象已存在，跳过初始化")
     }
+    await this.#oneBot.runMount()
   }
 
   /**

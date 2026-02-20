@@ -242,7 +242,7 @@ export default class BaseBot {
     await this.reply(e)
     console.log("处理的e", e)
 
-    //if (e.user_id == e.self_id) return
+    if (e.user_id == e.self_id && e.post_type == "message") return
     //处理上下文
     const isPrivate = e.isPrivate
     const contextKey = isPrivate ? e.user_id : e.group_id

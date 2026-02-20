@@ -6,6 +6,7 @@
   "main": "index.js",
   "scripts": {
     "start": "pm2 start ./config/config/pm2/pm2.json",
+    "restart": "pm2 start ./config/config/pm2/pm2.json",
     "dev": "nodemon src/index.js",
     "init-db": "node scripts/init-dbs.js"
   },
