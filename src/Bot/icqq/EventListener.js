@@ -178,10 +178,10 @@ class ListenerLoader {
         }
         return await Bot.pickFriend(e.user_id).getChatHistory(seq, 1)
       }
-      e.renderImg = pluginLoader.renderImg
-      e.makeForwardMsg = pluginLoader.makeForwardMsg
       e.getGroupMemberInfo = Bot.getGroupMemberInfo.bind(Bot)
     }
+    e.makeForwardMsg = pluginLoader.makeForwardMsg
+    e.renderImg = pluginLoader.renderImg
   }
 
   dealMsg(msg) {
