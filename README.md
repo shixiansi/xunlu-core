@@ -11,7 +11,11 @@ node index  #直接运行
 
 插件安装
 ```bash
+#github
 git clone --depth=1 https://github.com/shixiansi/xunlu-core plugins/xunlu-core
+pnpm install -P
+#gitee
+git clone --depth=1 https://gitee.com/think-first-sxs/xunlu-core plugins/xunlu-core
 pnpm install -P
 ```
 
