@@ -11,7 +11,7 @@ node index  #直接运行
 
 插件安装
 ```bash
-git clone --depth=1 https://github.com/shixiansi/xunlu-core plugins/miao-plugin
+git clone --depth=1 https://github.com/shixiansi/xunlu-core plugins/xunlu-core
 pnpm install -P
 ```
 
