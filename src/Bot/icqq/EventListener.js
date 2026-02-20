@@ -181,7 +181,6 @@ class ListenerLoader {
       e.renderImg = pluginLoader.renderImg
       e.makeForwardMsg = pluginLoader.makeForwardMsg
       e.getGroupMemberInfo = Bot.getGroupMemberInfo.bind(Bot)
-      delete e.client
     }
   }
 
