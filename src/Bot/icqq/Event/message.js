@@ -1,14 +1,16 @@
-import EventListener from '../EventListener.js'
-import GroupMessageDB from '../../../db/MessageDB.js'
+import EventListener from "../EventListener.js"
+import GroupMessageDB from "../../../db/MessageDB.js"
 /**
  * 监听群聊消息
  */
 export default class messageEvent extends EventListener {
   constructor() {
-    super({ event: 'message' })
+    super({ event: "message" })
   }
 
   async execute(e) {
+    console.log("进了额 ")
+
     this.dealUrl(e)
     this.dealJson(e)
     this.plugins.deal(e)
@@ -19,20 +21,22 @@ export default class messageEvent extends EventListener {
     let msg = e.msg || ""
     if (!e.msg) {
       e.message.forEach(element => {
-        if (element.type == 'text' || (element.type == 'at' && element.qq == 0)) {
+        if (element.type == "text" || (element.type == "at" && element.qq == 0)) {
           msg += element?.text?.trim()
         }
       })
     }
     if (!msg) return
-    const regurl = /(https?|http|ftp|file):\/\/[-A-Za-z0-9+&@#/%?=~_|!:,.;]+[-A-Za-z0-9+&@#/%=~_|]/g;
+    const regurl = /(https?|http|ftp|file):\/\/[-A-Za-z0-9+&@#/%?=~_|!:,.;]+[-A-Za-z0-9+&@#/%=~_|]/g
     let url = msg.match(regurl)
     if (!url) return
     e.url = url[0]
   }
 
   dealJson(e) {
-    if (e.raw_message.includes('[json消息]')) {
+    console.log("判断json的e", e)
+
+    if (e.raw_message.includes("[json消息]") || e.message.find(element => element.type == "json")) {
       e.json = JSON.parse(e.message[0].data)
     }
   }
@@ -44,7 +48,7 @@ export default class messageEvent extends EventListener {
       user_id: e.user_id,
       message: e.message,
       time: e.time,
-      sender: e?.sender
+      sender: e?.sender,
     })
   }
 }

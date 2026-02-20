@@ -1,8 +1,7 @@
-import BotBase from "../index.js";
-import lodash from "lodash";
+import BotBase from "../index.js"
 class LloneBot extends BotBase {
   constructor(Bot) {
-    super({ adapter: "llonebot" });
+    super({ adapter: "milkyBot" })
   }
 }
-export default LloneBot;
+export default LloneBot

@@ -1,201 +1,177 @@
-import CaimiaoAI from "../services/caimiao.js";
-import Hobbyist from "../../tts/services/hobbyist.js";
-import { Filemage } from "#utils";
-const historyDialogue = {};
-let caimiaoAI = new CaimiaoAI();
-let hobbyist = new Hobbyist();
-let selectedChatlist = [];
-let file = new Filemage("./src/plugins/ai/resources/CharacterDesign/");
+import CaimiaoAI from "../services/caimiao.js"
+import Hobbyist from "../../tts/services/hobbyist.js"
+import { Filemage } from "#utils"
+const historyDialogue = {}
+let caimiaoAI = new CaimiaoAI()
+let hobbyist = new Hobbyist()
+let selectedChatlist = []
+let file = new Filemage("./src/plugins/ai/resources/CharacterDesign/")
 export function register(bot) {
-  if (!bot || !bot.registerCommand) return;
-  bot.registerCommand([""], async (ctx) => {
-    console.log(ctx.segments);
-    // if (ctx.isMaster) {
-    //   let rlist = ["4", "12", "16", "23", "38", "271", "272", "277", "285"];
-    //   for (let i of rlist) {
-    //     ctx.sendGroupMessageReaction({
-    //       group_id: ctx.group_id,
-    //       message_seq: ctx.message_seq,
-    //       reaction: i,
-    //     });
-    //   }
-    // }
+  if (!bot || !bot.registerCommand) return
+  bot.registerCommand(["", 5000], async ctx => {
+    console.log(ctx.message)
 
-    if (ctx.segments[0]?.type == "reply") {
-      const replyMsg = ctx.segments[0]?.data?.message_seq;
-      let msgInfo = await ctx.getMsg({
-        message_scene: ctx.message_scene,
-        peer_id: ctx.peer_id,
-        message_seq: replyMsg,
-      });
-      console.log(msgInfo);
-      let msglist = msgInfo.message.segments;
-      console.log(msglist[0].data.text);
+    if (ctx?.message?.[0]?.type == "reply" || ctx?.source) {
+      console.log(ctx.message)
 
-      if (
-        msglist[0].data?.text.includes("id") ||
-        msglist[0].data?.text.includes("画师")
-      ) {
+      const replyMsg_seq = ctx?.source?.seq || ctx.message[0]?.message_seq || ctx.message[0]?.id
+      console.log(replyMsg_seq)
+
+      let msgInfo = await ctx.getMsg(replyMsg_seq)
+      console.log(msgInfo)
+      let msglist = msgInfo?.message
+      let raw_message = msglist?.raw_message || msglist[0]?.text
+      console.log(raw_message)
+      if (raw_message?.includes("id") || raw_message.includes("画师")) {
         return ctx.recallMessage.call(ctx, {
-          peer_id: msgInfo.message.peer_id,
-          message_seq: msgInfo.message.message_seq,
-          isGroup: msgInfo.message.message_scene == "group",
-        });
+          peer_id: msgInfo?.message?.peer_id || msgInfo[0].group_id,
+          message_seq: msgInfo?.message?.message_seq || msgInfo[0]?.message_id,
+          isGroup: msgInfo?.message?.message_scene == "group" || msgInfo[0].group_id,
+        })
       }
     }
     if (ctx.msg == "本地人设对话") {
-      let setlist = file.GetfileList();
+      let setlist = file.GetfileList()
       ctx.reply(
         "本地人设对话列表：\n" +
-          setlist
-            .map((item, index) => `${index + 1}. ${item.replace(".txt", "")}`)
-            .join("\n"),
-      );
-      console.log(ctx.msg);
+          setlist.map((item, index) => `${index + 1}. ${item.replace(".txt", "")}`).join("\n"),
+      )
+      console.log(ctx.msg)
 
-      const selectedNum = await waitForUserChoice(bot, ctx, setlist.length);
-      if (selectedNum === -1) return;
-      ctx.reply(`你选择的是第${selectedNum + 1}个人设`);
-      let setData = file.getFileData(setlist[selectedNum]);
-      let selectedChat = await caimiaoAI.getNewChat();
+      const selectedNum = await waitForUserChoice(bot, ctx, setlist.length)
+      if (selectedNum === -1) return
+      ctx.reply(`你选择的是第${selectedNum + 1}个人设`)
+      let setData = file.getFileData(setlist[selectedNum])
+      let selectedChat = await caimiaoAI.getNewChat()
 
-      return await AiDialogueContinuous(bot, selectedChat, ctx, setData);
+      return await AiDialogueContinuous(bot, selectedChat, ctx, setData)
     }
 
     if (ctx.atBot) {
-      console.log(selectedChatlist);
+      console.log(selectedChatlist)
 
       if (selectedChatlist.length == 0 || !selectedChatlist) {
-        let res = await caimiaoAI.getChatList();
-        console.log(res);
+        let res = await caimiaoAI.getChatList()
+        console.log(res)
 
-        selectedChatlist = res.list;
+        selectedChatlist = res.list
       }
-      console.log(selectedChatlist);
+      console.log(selectedChatlist)
 
-      return await aiDialogue(bot, selectedChatlist[0], ctx);
+      return await aiDialogue(bot, selectedChatlist[0], ctx)
     }
 
-    if (!ctx?.msg?.includes("蔡喵")) return;
-    let { list } = await caimiaoAI.getChatList();
-    selectedChatlist = list;
+    if (!ctx?.msg?.includes("蔡喵")) return
+    let { list } = await caimiaoAI.getChatList()
+    selectedChatlist = list
     if (list.length > 0) {
       ctx.reply(
         "检测到存在对话，请选择对话主题：\n" +
           list.map((item, index) => `${index + 1}. ${item.title}`).join("\n"),
-      );
+      )
 
-      const selectedNum = await waitForUserChoice(bot, ctx, list.length);
+      const selectedNum = await waitForUserChoice(bot, ctx, list.length)
 
-      if (selectedNum === -1) return; // 输入超时或无效
+      if (selectedNum === -1) return // 输入超时或无效
 
-      const selectedChat = list[selectedNum];
-      await ctx.reply(
-        `已选择“${selectedChat.title}”，开始聊天吧！输入“#结束蔡喵对话”退出。`,
-      );
+      const selectedChat = list[selectedNum]
+      await ctx.reply(`已选择“${selectedChat.title}”，开始聊天吧！输入“#结束蔡喵对话”退出。`)
 
       //开启ai对话（主动）
-      await AiDialogueContinuous(bot, selectedChat, ctx);
+      await AiDialogueContinuous(bot, selectedChat, ctx)
     } else {
     }
     // ctx.reply("蔡喵AI正在思考...");
-  });
-  console.log("[example-plugin] registered with bot shim");
+  })
+  console.log("[example-plugin] registered with bot shim")
 }
 
 //自动发消息方法
 async function autoSendAIMsg() {
   //重新设置一个群友一个人格
-  let getgroupHistrory = await getHistorybyGroup(ctx.group_id);
+  let getgroupHistrory = await getHistorybyGroup(ctx.group_id)
 }
 
 async function aiDialogue(bot, selectedChat, ctx, setData) {
-  const selectList = ["", ""];
+  const selectList = ["", ""]
   try {
-    const response = await caimiaoAI.chat(
-      selectedChat.chat_id,
-      setData || ctx.msg,
-      {
-        onProgress: (chunk, fullText, choiceIndex) => {
-          console.log(`候选 ${choiceIndex} 实时更新:`, chunk);
-          if (chunk) {
-            selectList[choiceIndex] += chunk;
-          }
-        },
+    const response = await caimiaoAI.chat(selectedChat.chat_id, setData || ctx.msg, {
+      onProgress: (chunk, fullText, choiceIndex) => {
+        console.log(`候选 ${choiceIndex} 实时更新:`, chunk)
+        if (chunk) {
+          selectList[choiceIndex] += chunk
+        }
       },
-    );
-    setData = "";
-    console.log("触发了对话结果是：", response);
-    console.log(selectList);
-    let choices;
+    })
+    setData = ""
+    console.log("触发了对话结果是：", response)
+    console.log(selectList)
+    let choices
     if (response?.code) {
-      await ctx.reply(response.detail);
-      let { list } = await caimiaoAI.getmessageslist(selectedChat.chat_id);
-      choices = list[0].choices;
+      await ctx.reply(response.detail)
+      let { list } = await caimiaoAI.getmessageslist(selectedChat.chat_id)
+      choices = list[0].choices
       if (choices) {
-        choices.map((c, index) => (selectList[index] = c.content));
+        choices.map((c, index) => (selectList[index] = c.content))
       }
     }
     if (selectList[0] && selectList[1]) {
       await ctx.reply(
-        "请选择:" +
-          selectList
-            .map((item, index) => `\n选项${index + 1}：${item}`)
-            .join(""),
-      );
-      const selectedNum = await waitForUserChoice(bot, ctx, 2);
+        "请选择:" + selectList.map((item, index) => `\n选项${index + 1}：${item}`).join(""),
+      )
+      const selectedNum = await waitForUserChoice(bot, ctx, 2)
       if (selectedNum == -1) {
-        selectedNum = 0;
-        ctx.reply(`用户没有做出选择，已默认第一个选项！`);
+        selectedNum = 0
+        ctx.reply(`用户没有做出选择，已默认第一个选项！`)
       }
       if (choices) {
-        response.msg_id = choices[selectedNum].msg_id;
+        response.msg_id = choices[selectedNum].msg_id
       }
-      await ctx.reply(`你选择的是第${selectedNum + 1}个选项`);
-      await caimiaoAI.choice(selectedNum, response.msg_id);
-      response.text = selectList[selectedNum];
+      await ctx.reply(`你选择的是第${selectedNum + 1}个选项`)
+      await caimiaoAI.choice(selectedNum, response.msg_id)
+      response.text = selectList[selectedNum]
     }
-    await ctx.reply(response.text);
+    await ctx.reply(response.text)
   } catch (error) {
-    console.log(error);
+    console.log(error)
 
-    await ctx.reply("蔡喵AI出错了，请稍后再试！");
+    await ctx.reply("蔡喵AI出错了，请稍后再试！")
   }
 }
 
 async function AiDialogueContinuous(bot, selectedChat, ctx, setData) {
-  if (!historyDialogue[ctx.group_id]) historyDialogue[ctx.group_id] = [];
+  if (!historyDialogue[ctx.group_id]) historyDialogue[ctx.group_id] = []
 
   if (!historyDialogue[ctx.group_id].includes(ctx.user_id))
-    historyDialogue[ctx.group_id].push(ctx.user_id);
+    historyDialogue[ctx.group_id].push(ctx.user_id)
 
   bot.contextReply(
     ctx,
-    async (rep) => {
-      if (rep.msg === "#结束蔡喵对话") return rep.reply("对话已结束", true);
-      await aiDialogue(bot, selectedChat, rep, setData);
-      setData = "";
+    async rep => {
+      if (rep.msg === "#结束蔡喵对话") return rep.reply("对话已结束", true)
+      await aiDialogue(bot, selectedChat, rep, setData)
+      setData = ""
     },
     "#结束蔡喵对话",
-  );
+  )
 }
 
 async function waitForUserChoice(bot, ctx, maxOption) {
-  return new Promise((resolve) => {
+  return new Promise(resolve => {
     const timeoutId = setTimeout(() => {
-      resolve(-1); // 超时处理
-    }, 30000);
-    bot.contextReply(ctx, async (e) => {
-      const num = parseInt(e.msg);
+      resolve(-1) // 超时处理
+    }, 30000)
+    bot.contextReply(ctx, async e => {
+      const num = parseInt(e.msg)
 
       if (num > 0 && num <= maxOption) {
-        resolve(num - 1);
-        clearTimeout(timeoutId);
-        return true;
+        resolve(num - 1)
+        clearTimeout(timeoutId)
+        return true
       } else {
-        await e.reply(`请输入1-${maxOption}之间的数字`);
-        return false;
+        await e.reply(`请输入1-${maxOption}之间的数字`)
+        return false
       }
-    });
-  });
+    })
+  })
 }

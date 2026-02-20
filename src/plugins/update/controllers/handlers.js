@@ -1,0 +1,355 @@
+import { createRequire } from "module"
+import lodash from "lodash"
+import env from "../../../lib/env.js"
+const require = createRequire(import.meta.url)
+const { exec, execSync } = require("child_process")
+
+// 全局状态：防止重复更新
+let uping = false
+// 插件常量配置
+const PLUGIN_CONFIG = {
+  typeName: "荨鹿核心",
+  key: "xunlu-core",
+  pluginDir: "xunlu-core",
+  repoUrl: "https://github.com/shixiansi/xunlu-core",
+}
+
+const pluginPath = env.CurEnv == "xunlu-core" ? "./" : `./plugins/${PLUGIN_CONFIG.pluginDir}/`
+/**
+ * 初始化重启状态检查（原init逻辑）
+ */
+async function initRestartStatus(bot) {
+  let restart = await redis.get(PLUGIN_CONFIG.key)
+  if (restart && process.argv[1].includes("pm2")) {
+    restart = JSON.parse(restart)
+    let time = restart.time || new Date().getTime()
+    time = (new Date().getTime() - time) / 1000
+    let msg = `重启成功：耗时${time.toFixed(2)}秒`
+
+    try {
+      if (restart.isGroup) {
+        await bot.pickGroup(restart.id).sendMsg(msg)
+      } else {
+        await bot.pickUser(restart.id).sendMsg(msg)
+      }
+      await redis.del(PLUGIN_CONFIG.key)
+    } catch (error) {
+      logger.error(`[荨鹿更新] 重启成功通知失败：${error.stack}`)
+    }
+  }
+}
+
+/**
+ * 检查Git是否安装
+ * @param {Object} ctx 命令上下文
+ */
+async function checkGit(ctx) {
+  try {
+    let ret = await execSync("git --version", { encoding: "utf-8" })
+    if (!ret || !ret.includes("git version")) {
+      await ctx.reply("请先安装git")
+      return false
+    }
+    return true
+  } catch (error) {
+    await ctx.reply("Git命令执行失败，请检查Git是否正确安装")
+    logger.error(`[荨鹿更新] 检查Git失败：${error.stack}`)
+    return false
+  }
+}
+
+/**
+ * 异步执行shell命令
+ * @param {string} cmd 命令字符串
+ */
+async function execSyncCmd(cmd) {
+  return new Promise((resolve, reject) => {
+    exec(cmd, { windowsHide: true }, (error, stdout, stderr) => {
+      resolve({ error, stdout: stdout.toString(), stderr: stderr.toString() })
+    })
+  })
+}
+
+/**
+ * 获取当前commitId
+ * @param {string} plugin 插件目录
+ */
+async function getCommitId(plugin = "") {
+  try {
+    let cm = "git rev-parse --short HEAD"
+    if (plugin) {
+      cm = `git -C ${pluginPath} rev-parse --short HEAD`
+    }
+    let commitId = await execSync(cm, { encoding: "utf-8" })
+    return lodash.trim(commitId)
+  } catch (error) {
+    logger.error(`[荨鹿更新] 获取CommitId失败：${error.stack}`)
+    return ""
+  }
+}
+
+/**
+ * 获取最后更新时间
+ * @param {string} plugin 插件目录
+ */
+async function getUpdateTime(plugin = "") {
+  let cm = 'git log  -1 --oneline --pretty=format:"%cd" --date=format:"%m-%d %H:%M"'
+  if (plugin) {
+    cm = `cd ${pluginPath} && git log -1 --oneline --pretty=format:"%cd" --date=format:"%m-%d %H:%M"`
+  }
+
+  try {
+    let time = await execSync(cm, { encoding: "utf-8" })
+    return lodash.trim(time)
+  } catch (error) {
+    logger.error(`[荨鹿更新] 获取更新时间失败：${error.toString()}`)
+    return "获取时间失败"
+  }
+}
+
+/**
+ * Git错误处理
+ * @param {Object} ctx 命令上下文
+ * @param {Error} err 错误对象
+ * @param {string} stdout 命令输出
+ */
+async function handleGitError(ctx, err, stdout) {
+  let msg = "更新失败！"
+  let errMsg = err.toString()
+
+  if (errMsg.includes("Timed out")) {
+    let remote = errMsg.match(/'(.+?)'/g)?.[0]?.replace(/'/g, "") || "未知仓库"
+    await ctx.reply(msg + `\n连接超时：${remote}`)
+    return
+  }
+
+  if (/Failed to connect|unable to access/g.test(errMsg)) {
+    let remote = errMsg.match(/'(.+?)'/g)?.[0]?.replace(/'/g, "") || "未知仓库"
+    await ctx.reply(msg + `\n连接失败：${remote}`)
+    return
+  }
+
+  if (errMsg.includes("be overwritten by merge")) {
+    await ctx.reply(
+      msg + `存在冲突：\n${errMsg}\n` + "请解决冲突后再更新，或者执行#荨鹿强制更新，放弃本地修改",
+    )
+    return
+  }
+
+  if (stdout.includes("CONFLICT")) {
+    await ctx.reply([
+      msg + "存在冲突\n",
+      errMsg,
+      stdout,
+      "\n请解决冲突后再更新，或者执行#荨鹿强制更新，放弃本地修改",
+    ])
+    return
+  }
+
+  await ctx.reply([errMsg, stdout])
+}
+
+/**
+ * 获取更新日志
+ * @param {Object} ctx 命令上下文
+ * @param {string} plugin 插件目录
+ */
+async function getUpdateLog(ctx, plugin = "") {
+  plugin = plugin || PLUGIN_CONFIG.pluginDir
+  let cm = 'git log  -20 --oneline --pretty=format:"%h||[%cd]  %s" --date=format:"%m-%d %H:%M"'
+  if (plugin) {
+    cm = `cd ${pluginPath} && ${cm}`
+  }
+
+  let logAll
+  try {
+    logAll = await execSync(cm, { encoding: "utf-8" })
+  } catch (error) {
+    logger.error(`[荨鹿更新] 获取更新日志失败：${error.toString()}`)
+    await ctx.reply(error.toString())
+    return ""
+  }
+
+  if (!logAll) return ""
+
+  logAll = logAll.split("\n")
+  const oldCommitId = await getCommitId(plugin)
+
+  let log = []
+  for (let str of logAll) {
+    str = str.split("||")
+    if (str[0] == oldCommitId) break
+    if (str[1]?.includes("Merge branch")) continue
+    log.push(str[1])
+  }
+
+  let line = log.length
+  log = log.join("\n\n")
+
+  if (log.length <= 0) return ""
+
+  let end = `更多详细信息，请前往gitee查看\n${PLUGIN_CONFIG.repoUrl}`
+  let forwardMsg = await ctx.makeGroupMsg(`${plugin || "Qianyu-Bot"}更新日志，共${line}条`, [
+    { content: log },
+    { content: end },
+  ])
+
+  return forwardMsg
+}
+
+/**
+ * 检查pnpm/npm
+ */
+async function checkPnpm() {
+  let npm = "npm"
+  let ret = await execSyncCmd("pnpm -v")
+  if (ret.stdout) npm = "pnpm"
+  return npm
+}
+
+/**
+ * 重启应用
+ * @param {Object} ctx 命令上下文
+ */
+async function restartApp(ctx) {
+  await ctx.reply("开始执行重启，请稍等...")
+  logger.mark(`${ctx.logFnc} 开始执行重启，请稍等...`)
+
+  let data = JSON.stringify({
+    isGroup: !!ctx.isGroup,
+    id: ctx.isGroup ? ctx.group_id : ctx.user_id,
+    time: new Date().getTime(),
+  })
+
+  let npm = await checkPnpm()
+
+  try {
+    await redis.set(PLUGIN_CONFIG.key, data, { EX: 120 })
+    let cm = `${npm} start`
+
+    if (process.argv[1].includes("pm2")) {
+      cm = `${npm} run restart`
+    } else {
+      await ctx.reply("当前为前台运行，重启将转为后台...")
+    }
+
+    exec(cm, { windowsHide: true }, (error, stdout, stderr) => {
+      if (error) {
+        redis.del(PLUGIN_CONFIG.key)
+        ctx.reply(`操作失败！\n${error.stack}`)
+        logger.error(`[荨鹿更新] 重启失败\n${error.stack}`)
+      } else if (stdout) {
+        logger.mark("重启成功，运行已由前台转为后台")
+        logger.mark(`查看日志请用命令：${npm} run log`)
+        logger.mark(`停止后台运行命令：${npm} stop`)
+        process.exit()
+      }
+    })
+  } catch (error) {
+    await redis.del(PLUGIN_CONFIG.key)
+    let e = error.stack ?? error
+    await ctx.reply(`操作失败！\n${e}`)
+  }
+
+  return true
+}
+
+/**
+ * 执行更新逻辑
+ * @param {Object} ctx 命令上下文
+ * @param {boolean} isForce 是否强制更新
+ */
+async function runUpdate(ctx, isForce = false) {
+  // 权限校验：仅主人可执行
+  if (!ctx.isMaster) return false
+  // 防重复更新
+  if (uping) {
+    await ctx.reply("已有命令更新中..请勿重复操作")
+    return false
+  }
+
+  // 检查Git
+  if (!(await checkGit(ctx))) return false
+
+  // 构建更新命令
+  let type = isForce ? "强制更新" : "更新"
+  let cm = isForce
+    ? `git reset --hard && git pull --rebase --allow-unrelated-histories`
+    : "git pull --no-rebase"
+  cm = `cd "${pluginPath}" && ${cm}`
+
+  // 记录旧CommitId
+  const oldCommitId = await getCommitId(PLUGIN_CONFIG.pluginDir)
+  logger.mark(`${ctx.logFnc} 开始${type}：${PLUGIN_CONFIG.typeName}`)
+
+  await ctx.reply(`开始#${type}${PLUGIN_CONFIG.typeName}`)
+  uping = true
+  let ret = await execSyncCmd(cm)
+  uping = false
+
+  // 处理更新错误
+  if (ret.error) {
+    logger.mark(`${ctx.logFnc} 更新失败：${PLUGIN_CONFIG.typeName}`)
+    await handleGitError(ctx, ret.error, ret.stdout)
+    return false
+  }
+
+  // 获取更新时间
+  let updateTime = await getUpdateTime(PLUGIN_CONFIG.pluginDir)
+
+  // 处理更新结果
+  if (/Already up|已经是最新/g.test(ret.stdout)) {
+    await ctx.reply(`${PLUGIN_CONFIG.typeName}已经是最新\n最后更新时间：${updateTime}`)
+    return true
+  } else {
+    await ctx.reply(`${PLUGIN_CONFIG.typeName}更新成功\n更新时间：${updateTime}`)
+    // 获取并发送更新日志
+    let log = await getUpdateLog(ctx, PLUGIN_CONFIG.pluginDir)
+    if (log) await ctx.reply(log)
+    // 执行重启
+    setTimeout(async () => await restartApp(ctx), 2000)
+    return true
+  }
+}
+
+/**
+ * 注册命令（核心入口）
+ * @param {Object} bot 机器人实例
+ */
+export function register(bot) {
+  if (!bot || !bot.registerCommand) return
+
+  // 初始化重启状态检查
+  initRestartStatus(bot).catch(err => logger.error(`[荨鹿更新] 初始化失败：${err.stack}`))
+
+  // 注册「荨鹿更新」命令
+  bot.registerCommand(["荨鹿更新"], async ctx => {
+    await runUpdate(ctx, false)
+  })
+
+  // 注册「荨鹿强制更新」命令
+  bot.registerCommand(["荨鹿强制更新"], async ctx => {
+    await runUpdate(ctx, true)
+  })
+
+  // 注册「荨鹿更新日志」命令
+  bot.registerCommand(["荨鹿更新日志"], async ctx => {
+    let log = await getUpdateLog(ctx)
+    await ctx.reply(log || "暂无更新日志")
+  })
+
+  logger.mark("[荨鹿更新] 命令注册完成：荨鹿更新、荨鹿强制更新、荨鹿更新日志")
+}
+
+/**
+ * 机器人事件监听
+ * @param {Object} event 事件对象
+ */
+export function onBotEvent(event) {
+  // 可根据需要处理机器人事件（如启动、消息等）
+  // 示例：监听机器人启动事件
+  if (event.type === "bot_ready") {
+    logger.mark("[荨鹿更新] 机器人已就绪，更新功能可用")
+  }
+  console.log("[qianyu-update] received bot event:", event)
+}

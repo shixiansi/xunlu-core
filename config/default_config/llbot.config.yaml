@@ -12,3 +12,6 @@ useTLS: false
 
 # 是否使用SSE
 useSSE: false
+
+# 日志等级:trace,debug,info,warn,fatal,mark,error,off
+log_level: debug

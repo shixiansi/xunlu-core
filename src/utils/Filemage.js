@@ -1,170 +1,170 @@
-import fs from "fs";
-import PATH from "path";
-import YamlReader from "./YamlReader.js";
+import fs from "fs"
+import PATH from "path"
+import YamlReader from "./YamlReader.js"
+import env from "../lib/env.js"
 export default class Filemage {
   constructor(RootPath) {
-    this.RootPath = RootPath || process.cwd();
+    this.RootPath = RootPath || env.RootPath
   }
 
   //获取文件内容
   getFileData(path, type = "utf-8") {
-    return fs.readFileSync(this.RootPath + path, { encoding: type });
+    return fs.readFileSync(this.RootPath + path, { encoding: type })
   }
 
   getFileDataToJson(fileName, type = "utf-8") {
     return JSON.parse(
-      fs.readFileSync(PATH.join(this.RootPath, fileName), { encoding: type }) ||
-        null
-    );
+      fs.readFileSync(PATH.join(this.RootPath, fileName), { encoding: type }) || null,
+    )
   }
 
   sanitizeFilename(filename, options = {}) {
     // 默认配置
-    const { isUnix = false, replacement = "_" } = options;
+    const { isUnix = false, replacement = "_" } = options
 
     // 空文件名处理
     if (!filename || filename.trim() === "") {
-      return "unnamed_file";
+      return "unnamed_file"
     }
 
     // 定义非法字符正则
-    let illegalCharsRegex;
+    let illegalCharsRegex
     if (isUnix) {
       // Unix/Linux/macOS 仅禁止 /
-      illegalCharsRegex = /[\/]/g;
+      illegalCharsRegex = /[\/]/g
     } else {
       // Windows 禁止的字符：< > : " / \ | ? *
-      illegalCharsRegex = /[<>:"\/\\|?*]/g;
+      illegalCharsRegex = /[<>:"\/\\|?*]/g
     }
 
     // 1. 替换非法字符
-    let sanitized = filename.replace(illegalCharsRegex, replacement);
+    let sanitized = filename.replace(illegalCharsRegex, replacement)
 
     // 2. 移除首尾的空格和点（避免Windows下的特殊限制）
-    sanitized = sanitized.trim().replace(/^\.+|\.+$/g, "");
+    sanitized = sanitized.trim().replace(/^\.+|\.+$/g, "")
 
     // 3. 处理替换后为空的情况
     if (sanitized === "") {
-      sanitized = "unnamed_file";
+      sanitized = "unnamed_file"
     }
 
-    return sanitized;
+    return sanitized
   }
 
   getYamlData(path) {
-    return new YamlReader(this.RootPath + path).jsonData;
+    return new YamlReader(this.RootPath + path).jsonData
   }
 
   writeFile(fileName, data) {
-    return fs.writeFileSync(this.RootPath + fileName, data);
+    return fs.writeFileSync(this.RootPath + fileName, data)
   }
 
   writeFileJsonData(fileName, data) {
-    return fs.writeFileSync(this.RootPath + fileName, JSON.stringify(data));
+    return fs.writeFileSync(this.RootPath + fileName, JSON.stringify(data))
   }
 
   //获取文件列表
   GetfileList(path = "", withFileTypes = false) {
     return fs.readdirSync(this.RootPath + path, {
       withFileTypes: withFileTypes,
-    });
+    })
   }
 
   //创建文件夹
   CreatDir(path = "") {
     if (!fs.existsSync(this.RootPath + path)) {
-      fs.mkdirSync(this.RootPath + path);
+      fs.mkdirSync(this.RootPath + path)
     }
   }
 
   //删除文件夹
   DeleteFile(path = "") {
     //防止误删
-    if (!path) return;
+    if (!path) return
     if (fs.statSync(this.RootPath + path).isDirectory()) {
-      fs.rmdirSync(this.RootPath + path);
+      fs.rmdirSync(this.RootPath + path)
     } else {
-      fs.unlinkSync(this.RootPath + path);
+      fs.unlinkSync(this.RootPath + path)
     }
   }
 
   //移动文件
   RemoveFile(oldPath = "", newPath = "") {
-    fs.renameSync(this.RootPath + oldPath, this.RootPath + newPath);
+    fs.renameSync(this.RootPath + oldPath, this.RootPath + newPath)
   }
 
   CopyFile(copyFile = "", newPath = "") {
-    fs.copyFileSync(this.RootPath + copyFile, this.RootPath + newPath);
+    fs.copyFileSync(this.RootPath + copyFile, this.RootPath + newPath)
   }
 
   isDirectory(path) {
     try {
-      return fs.statSync(this.RootPath + path).isDirectory();
+      return fs.statSync(this.RootPath + path).isDirectory()
     } catch (error) {
-      return false;
+      return false
     }
   }
 
   //复制整个文件夹
   CopyDir(copyPath = "", newPath = "") {
-    let files = this.GetfileList(copyPath, true);
+    let files = this.GetfileList(copyPath, true)
     if (!this.ExistsFile(this.RootPath + newPath)) {
-      this.CreatDir(newPath);
+      this.CreatDir(newPath)
     }
     for (let f of files) {
-      let c = PATH.join(copyPath, f.name);
-      let p = PATH.join(newPath, f.name);
+      let c = PATH.join(copyPath, f.name)
+      let p = PATH.join(newPath, f.name)
       if (fs.statSync(this.RootPath + c).isDirectory()) {
-        this.CreatDir(p);
-        this.CopyDir(c, p);
+        this.CreatDir(p)
+        this.CopyDir(c, p)
       } else {
-        this.CopyFile(c, p);
+        this.CopyFile(c, p)
       }
     }
   }
 
   deleteFile(path = "") {
-    fs.unlinkSync(path);
+    fs.unlinkSync(path)
   }
 
   //删除所有文件
   DeleteAllFile(path = "") {
-    if (!path) return;
-    if (!this.ExistsFile(path)) return;
-    let fileList = this.GetfileList(path);
+    if (!path) return
+    if (!this.ExistsFile(path)) return
+    let fileList = this.GetfileList(path)
     for (let f of fileList) {
-      let newPath = path + "/" + f;
+      let newPath = path + "/" + f
       if (fs.statSync(this.RootPath + newPath).isDirectory()) {
-        this.DeleteAllFile(newPath);
+        this.DeleteAllFile(newPath)
       } else {
-        this.DeleteFile(newPath);
+        this.DeleteFile(newPath)
       }
     }
-    this.DeleteFile(path);
+    this.DeleteFile(path)
   }
 
   //是否存在文件或者路径
   ExistsFile(path = "") {
-    return fs.existsSync(this.RootPath + path);
+    return fs.existsSync(this.RootPath + path)
   }
 
   //查询文件地址
   SearchFile(name = "", filepath = "") {
-    if (!name) return;
-    let fileList = this.GetfileList(filepath);
-    if (fileList.length == 0) return;
+    if (!name) return
+    let fileList = this.GetfileList(filepath)
+    if (fileList.length == 0) return
     if (fileList.includes(name)) {
-      return PATH.join(this.RootPath, filepath);
+      return PATH.join(this.RootPath, filepath)
     } else {
       for (let f of fileList) {
-        let newPath = filepath ? filepath + "/" + f : "/" + f;
+        let newPath = filepath ? filepath + "/" + f : "/" + f
         if (fs.statSync(this.RootPath + newPath).isDirectory()) {
           if (this.SearchFile(name, newPath)) {
-            return PATH.join(this.RootPath, newPath);
+            return PATH.join(this.RootPath, newPath)
           }
         }
       }
-      return false;
+      return false
     }
   }
 }

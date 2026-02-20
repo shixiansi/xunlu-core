@@ -1,30 +1,33 @@
-import _ from "lodash";
-const groupPass = {};
+import _ from "lodash"
+import moment from "moment"
+import { segment } from "../../../Bot/segment.js"
+import Filemage from "../../../utils/Filemage.js"
+const filemage = new Filemage()
+const groupPass = {}
 
 function randomWithDigits(digits) {
   if (!Number.isInteger(digits) || digits <= 0) {
-    throw new Error("位数必须是正整数");
+    throw new Error("位数必须是正整数")
   }
-  const min = Math.pow(10, digits - 1); // 最小值，例如 3 位数 -> 100
-  const max = Math.pow(10, digits) - 1; // 最大值，例如 3 位数 -> 999
-  return _.random(min, max);
+  const min = Math.pow(10, digits - 1) // 最小值，例如 3 位数 -> 100
+  const max = Math.pow(10, digits) - 1 // 最大值，例如 3 位数 -> 999
+  return _.random(min, max)
 }
 
 export function register(bot) {
-  if (!bot || !bot.registerCommand) return;
+  if (!bot || !bot.registerCommand) return
   //第一个参数是数组第一个是命令，第二个是事件，第三个是优先级（第二个和第三个都可以省略）
-  bot.registerCommand(["", "request.group.add"], async (ctx) => {
-    console.log("触发群申请可", ctx);
+  bot.registerCommand(["", "request.group.add"], async ctx => {
+    console.log("触发群申请可", ctx)
 
-    const user_id = ctx.initiator_id;
-    let userInfo = await ctx.getUserInfo({ user_id });
-    let passID = randomWithDigits(10);
+    const user_id = ctx.user_id
+    let userInfo = await ctx.getUserInfo({ user_id })
+    let passID = randomWithDigits(10)
     groupPass[passID] = {
-      notification_seq: ctx.notification_seq,
-      notification_type: "join_request",
+      flag: ctx.flag,
+      type: "join_request",
       group_id: ctx.group_id,
-      is_filtered: false,
-    };
+    }
     ctx.reply([
       {
         type: "text",
@@ -44,46 +47,57 @@ export function register(bot) {
           text: ctx.comment,
         },
       },
-    ]);
-  });
-  bot.registerCommand(["(开门|关门)"], async (ctx) => {
+    ])
+  })
+  bot.registerCommand(["(开门|关门)"], async ctx => {
     if (ctx.segments[0]?.type == "reply") {
-      const replyMsg = ctx.segments[0]?.data?.message_seq;
-      let msgInfo = await ctx.getMsg({
-        message_scene: ctx.message_scene,
-        peer_id: ctx.peer_id,
-        message_seq: replyMsg,
-      });
+      const replyMsg = ctx.message[0]?.data?.message_seq
+      let msgInfo = await ctx.getMsg(replyMsg)
 
-      let msglist = msgInfo.message.segments;
+      let msglist = msgInfo.message.segments
       if (msglist[0].data?.text.includes("临时通行证ID")) {
-        let passID = msglist[0].data?.text.split("ID:")[1].trim();
+        let passID = msglist[0].data?.text.split("ID:")[1].trim()
         if (groupPass[passID] && ctx.msg == "开门") {
-          ctx.acceptGroupRequest(groupPass[passID]);
-          return ctx.reply("已开门！");
+          ctx.acceptGroupRequest(groupPass[passID])
+          return ctx.reply("已开门！")
         } else {
-          ctx.rejectGroupRequest(groupPass[passID]);
-          return ctx.reply("已经把这个家伙拒之门外了！");
+          ctx.rejectGroupRequest(groupPass[passID])
+          return ctx.reply("已经把这个家伙拒之门外了！")
         }
       }
-    } else return ctx.reply("未获取到申请信息");
-  });
-  bot.registerCommand(["", "notice.group.increase"], async (ctx) => {
-    let userInfo = await ctx.getUserInfo({ user_id: ctx.user_id });
+    } else return ctx.reply("未获取到申请信息")
+  })
+  bot.registerCommand(["", "notice.group.increase"], async ctx => {
+    let userInfo = await ctx.getUserInfo({ user_id: ctx.user_id })
     bot.callFnc("tts-plugin-1", {
       ...ctx,
       msg: `可莉说欢迎${userInfo.nickname || "不知名的家伙"}入群,要好好和大家相处哦！`,
-    });
-  });
-  bot.registerCommand(["", "notice.group.decrease"], async (ctx) => {
-    console.log("减员的ctx", ctx);
-    let userInfo = await ctx.getUserInfo({ user_id: ctx.user_id });
-    ctx.reply(`把${userInfo.nickname || "不知名的家伙"}丢出群了！`);
-  });
+    })
+  })
+  bot.registerCommand(["", "notice.group.decrease"], async ctx => {
+    console.log("减员的ctx", ctx)
+    let userInfo = await ctx.getUserInfo({ user_id: ctx.user_id })
+    ctx.reply(`把${userInfo.nickname || "不知名的家伙"}丢出群了！`)
+  })
+  bot.registerCommand(["保存群员信息"], async ctx => {
+    const member_list = await Bot.getGroupMemberList(ctx.group_id)
+    console.log(member_list)
+    let msglist = []
+    for (let [key, value] of member_list) {
+      msglist.push([
+        segment.image(`https://q1.qlogo.cn/g?b=qq&nk=${value.user_id}}&s=100`),
+        `昵称：${value.nickname}\n群名片：${value.card}\nQQ号：${value.user_id}\n等级：${value.level}\n加入时间:${moment(value.join_time * 1000).format("YYYY-MM-DD HH:mm:ss")}`,
+      ])
+    }
+    let file = filemage.writeFileJsonData(`resources/${ctx.group_id}.json`, msglist)
+
+    await ctx.reply(segment.file(filemage.RootPath + `resources/${ctx.group_id}.json`))
+    return await ctx.reply(await ctx.makeForwardMsg(ctx, msglist))
+  })
 
   // bot.callFnc("test", { group_id: 434343, user_id: 232332 });
 }
 
 export function onBotEvent(event) {
-  console.log("[example-plugin] received bot event:", event);
+  console.log("[example-plugin] received bot event:", event)
 }
