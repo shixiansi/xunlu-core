@@ -424,9 +424,9 @@ export default class BaseBot {
       e.reply = async (msg = "", quote = false, data = {}) => {
         if (Array.isArray(msg)) {
           console.log(msg)
-
+          msg = msg.filter(m => m && m.type)
           msg = msg.map(m => {
-            switch (m.type) {
+            switch (m?.type) {
               case "image":
                 m.summary = "你瞅尼玛的"
             }

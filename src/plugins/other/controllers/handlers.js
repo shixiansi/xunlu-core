@@ -5,10 +5,10 @@ export function register(bot) {
   if (!bot || !bot.registerCommand) return
   //第一个参数是数组第一个是命令，第二个是事件,如果是其他事件就是事件列表中的事件名称，第二个是方法，第三个是下文函数
   bot.registerCommand(["", 1000], async ctx => {
-    if (!isStart) {
-      isStart = true
-      ctx.reply(ctx.adapterType + "Bot启动成功！")
-    }
+    // if (!isStart) {
+    //   isStart = true
+    //   ctx.reply(ctx.adapterType + "Bot启动成功！")
+    // }
     if (ctx.isMaster && ctx.msg && ctx.isGroup) {
       let rlist = ["277"]
       for (let i of rlist) {
