@@ -168,6 +168,7 @@ async function getUpdateLog(ctx, plugin = "") {
   let logAll
   try {
     logAll = await execSync(cm, { encoding: "utf-8" })
+    console.log(logAll)
   } catch (error) {
     logger.error(`[荨鹿更新] 获取更新日志失败：${error.toString()}`)
     await ctx.reply(error.toString())
@@ -314,6 +315,8 @@ async function runUpdate(ctx, isForce = false) {
     await ctx.reply(`${PLUGIN_CONFIG.typeName}更新成功\n更新时间：${updateTime}`)
     // 获取并发送更新日志
     let log = await getUpdateLog(ctx, PLUGIN_CONFIG.pluginDir)
+    console.log(log)
+
     if (log) await ctx.reply(log)
     // 执行重启
     setTimeout(async () => await restartApp(ctx), 2000)
