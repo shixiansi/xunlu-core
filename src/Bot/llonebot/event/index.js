@@ -2,6 +2,7 @@ import LLoneBot from "../index.js"
 import MilkyAdapter from "../milky-adapter.js"
 import config from "../../../lib/config.js"
 import MessageDB from "../../../db/MessageDB.js"
+import getImageDisplay from "../../../utils/imgdisplay.js"
 
 /**
  * LLoneBot事件监听处理类
@@ -139,7 +140,7 @@ export default class LLoneBotEventListener {
           // 标准化事件格式
           this.#normalizeEventData(eventData, eventType)
           // 分发事件到LLoneBot处理
-          this.dealMessage(eventData)
+          await this.dealMessage(eventData)
           this.#llbot.deal({
             ...eventData,
             self_id: data.self_id,
@@ -249,7 +250,7 @@ export default class LLoneBotEventListener {
           peer_id: target.peer_id,
           message_seq: seq,
         })
-        return new LLoneBotEventListener().dealMessage(message)
+        return await new LLoneBotEventListener().dealMessage(message)
       } catch (error) {
         console.error(`[MilkyAdapter] 获取消息 ${seq} 失败：`, error)
         return null
@@ -280,12 +281,12 @@ export default class LLoneBotEventListener {
    * @param {Object} e 原始消息数据
    * @returns {Object} 标准化后的消息数据
    */
-  dealMessage(e) {
+  async dealMessage(e) {
     if (!e) return {}
 
     // 转换segments为标准格式
     if (e.segments) {
-      e.message = this.dealMsg(e.segments)
+      e.message = await this.dealMsg(e.segments)
       delete e.segments
     }
 
@@ -303,9 +304,9 @@ export default class LLoneBotEventListener {
    * @param {Array} message 原始消息段数组
    * @returns {Array} 标准化后的消息段数组
    */
-  dealMsg(message) {
+  async dealMsg(message) {
     if (!Array.isArray(message)) return []
-
+    let imgdisplay = await getImageDisplay()
     return message.map(item => {
       const result = { type: item.type, ...item.data }
       // 图片类型特殊处理
@@ -315,7 +316,7 @@ export default class LLoneBotEventListener {
           url: item.data.temp_url,
           width: item.data.width,
           height: item.data.height,
-          summary: item.data.summary,
+          summary: imgdisplay || item.data.summary,
         }
       }
       return result

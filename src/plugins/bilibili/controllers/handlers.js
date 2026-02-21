@@ -59,7 +59,6 @@ export function register(bot) {
     let glist = filemage.GetfileList("src/plugins/bilibili/data")
     if (glist.length == 0) return
     for (let g of glist.map(i => i.replace(".json", ""))) {
-      console.log(g)
       let flist = filemage.getFileDataToJson(`src/plugins/bilibili/data/${g}.json`)
       for (let u in flist) {
         if (!flist[u]) continue
@@ -76,12 +75,11 @@ export function register(bot) {
           ]
           try {
             let res = await Bot.sendMessage({ group_id: g }, content)
-            console.log(res)
             if (!res) throw new Error("直播推送消息失败")
             logger.info(`[Bilibili] 直播推送成功，房间ID：${room_id}，群ID：${g}`)
             writeLiveData(g, u, roomInfo)
           } catch (e) {
-            console.log(e)
+            logger.error(e)
           }
         } else if (roomInfo?.live_status == 0 && flist[u]?.live?.live_time) {
           let { title, user_cover, area_name, live_time } = flist[u]?.live
@@ -95,11 +93,10 @@ export function register(bot) {
               writeLiveData(g, u, {})
               logger.info(`[Bilibili] 直播结束推送成功，房间ID：${room_id}，群ID：${g}`)
             } catch (e) {
-              console.log(e)
+              logger.error(e)
             }
           }
         }
-        console.log(roomInfo)
       }
     }
   })

@@ -26,7 +26,7 @@ const segment = new (class segment {
     return toSegment(type, data)
   }
   image(file, name) {
-    const img = toSegment("image", { file, name, summary: "测试为这" })
+    const img = toSegment("image", { file, name })
     return img
   }
   at(qq, name) {

@@ -1,6 +1,7 @@
 import Filemage from "../../utils/Filemage.js"
 import lodash from "lodash"
 import pluginLoader from "./pluginLoader.js"
+import getImageDisplay from "../../utils/imgdisplay.js"
 
 export default class EventListener {
   /**
@@ -44,10 +45,10 @@ class ListenerLoader {
         } else if (ctx.group_id) {
           // 群聊消息 - 确保group_id是数字
           let msg = Array.isArray(message)
-            ? this.dealMsg(message)
+            ? await this.dealMsg(message)
             : typeof message === "string"
               ? [{ type: "text", data: { text: message } }]
-              : [this.dealMsg(message)]
+              : [await this.dealMsg(message)]
           return await Bot.pickGroup(ctx.group_id).sendMsg(msg)
         }
       }
@@ -134,10 +135,10 @@ class ListenerLoader {
           } else if (ctx.group_id) {
             // 群聊消息 - 确保group_id是数字
             let msg = Array.isArray(message)
-              ? this.dealMsg(message)
+              ? await this.dealMsg(message)
               : typeof message === "string"
                 ? [{ type: "text", data: { text: message } }]
-                : [this.dealMsg(message)]
+                : [await this.dealMsg(message)]
             return await this.sendGroupMessage(msg)
           }
         }
@@ -173,10 +174,10 @@ class ListenerLoader {
           } else if (ctx.group_id) {
             // 群聊消息 - 确保group_id是数字
             let msg = Array.isArray(message)
-              ? this.dealMsg(message)
+              ? await this.dealMsg(message)
               : typeof message === "string"
                 ? [{ type: "text", data: { text: message } }]
-                : [this.dealMsg(message)]
+                : [await this.dealMsg(message)]
             console.log(msg)
 
             return await Bot.pickGroup(ctx.group_id).sendMsg(msg)
@@ -196,10 +197,10 @@ class ListenerLoader {
     }
     e.makeForwardMsg = pluginLoader.makeForwardMsg
     e.renderImg = pluginLoader.renderImg
-    delete e.client
+    //delete e.client
   }
 
-  dealMsg(msg) {
+  async dealMsg(msg) {
     console.log(msg)
 
     switch (msg.type) {
@@ -211,7 +212,7 @@ class ListenerLoader {
           data: {
             file: msg.file || msg.data.uri || "",
             sub_type: "normal",
-            summary: "你瞅个蛋",
+            summary: await getImageDisplay(),
           },
         }
 

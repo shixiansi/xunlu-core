@@ -4,6 +4,7 @@ import path from "path"
 import lodash from "lodash"
 import schedule from "node-schedule"
 import env from "../lib/env.js"
+import getImageDisplay from "../utils/imgdisplay.js"
 export default class BaseBot {
   constructor(config) {
     this.adapter = config.adapter
@@ -424,18 +425,19 @@ export default class BaseBot {
       e.reply = async (msg = "", quote = false, data = {}) => {
         if (Array.isArray(msg)) {
           console.log(msg)
+          let imgdisplay = await getImageDisplay()
           msg = msg.filter(m => m && m.type)
           msg = msg.map(m => {
             switch (m?.type) {
               case "image":
-                m.summary = "你瞅尼玛的"
+                m.summary = imgdisplay || ""
             }
             return m
           })
         } else {
           switch (msg.type) {
             case "image":
-              msg.summary = "你瞅尼玛的"
+              msg.summary = imgdisplay || ""
           }
         }
 

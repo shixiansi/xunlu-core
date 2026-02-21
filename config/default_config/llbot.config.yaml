@@ -7,6 +7,8 @@ basePath: :3010
 # 访问令牌（可选）
 accessToken:
 
+image_display: true
+
 # 是否使用TLS
 useTLS: false
 

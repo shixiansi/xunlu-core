@@ -2,7 +2,7 @@ import OneBotV11Adapter from "../onebot.js"
 import config from "../../../lib/config.js"
 import MessageDB from "../../../db/MessageDB.js"
 import OneBot from "../index.js"
-
+import getImageDisplay from "../../../utils/imgdisplay.js"
 /**
  * OneBot V11 事件监听处理类
  * 负责绑定OneBotV11适配器事件、标准化事件格式、处理消息存储与分发
@@ -107,7 +107,7 @@ export default class OneBotV11EventListener {
           // 标准化事件格式
           this.#normalizeEventData(data)
           // 分发事件到OneBot核心处理
-          this.dealMessage(data)
+          await OneBotV11EventListener.dealMessage(data)
           this.#oneBot.deal(data)
 
           console.debug(`[OneBotV11Adapter] 处理完成事件：${eventType}`)
@@ -206,7 +206,12 @@ export default class OneBotV11EventListener {
     }
 
     // 绑定核心方法
-    target.sendMessage = adapter.sendMsg.bind(adapter)
+    target.sendMessage = async (ctx, msg) => {
+      msg = await OneBotV11EventListener.dealMessage({ message: msg })
+      console.log("发送方法绑的msg", msg)
+
+      return await adapter.sendMsg.call(adapter, ctx, msg)
+    }
 
     // 获取消息（增加参数校验，优化类型转换）
     target.getMsg = async message_id => {
@@ -216,7 +221,7 @@ export default class OneBotV11EventListener {
       }
       try {
         const msgData = await adapter.getMessage(Number(message_id))
-        return new OneBotV11EventListener().dealMessage(msgData)
+        return await OneBotV11EventListener.dealMessage({ message: msgData })
       } catch (error) {
         console.error(`[OneBotV11Adapter] 获取消息 ${message_id} 失败：`, error)
         return null
@@ -248,20 +253,18 @@ export default class OneBotV11EventListener {
    * @param {Object} e 原始消息数据
    * @returns {Object} 标准化后的消息数据
    */
-  dealMessage(e) {
-    if (!e || !e.message) return e
-
+  static async dealMessage(e) {
+    if (!e || !e.message || typeof e.message === "string") return e
+    if (!Array.isArray(e.message)) e.message = [e.message]
+    let imgdisplay = (await getImageDisplay()) || ""
     // 简化数组处理，移除冗余的展开/包裹
     e.message = e.message.map(item => {
       const result = { type: item.type, ...item.data }
       // 图片类型特殊处理
       if (item.type === "image") {
         result.data = {
-          fid: item.data.resource_id,
-          url: item.data.temp_url,
-          width: item.data.width,
-          height: item.data.height,
-          summary: item.data.summary,
+          file: item.file,
+          summary: imgdisplay || item?.data?.summary,
         }
       }
       return result

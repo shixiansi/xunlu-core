@@ -434,6 +434,8 @@ class OneBotV11Adapter {
    * @returns {Promise<Object>}
    */
   async sendGroupMessage(params) {
+    console.log("处理后的消息", this.dealOneBotMsg(params.message))
+
     return await this.callApi("send_msg", {
       message_type: "group",
       group_id: Number(params.group_id),
@@ -559,6 +561,7 @@ class OneBotV11Adapter {
    * @returns {Promise<Object>}
    */
   async sendMsg(target, message) {
+    if (message?.message) message = message.message
     if (typeof target === "string" || typeof target === "number") {
       // 私聊消息
       if (message.find(i => i.type == "node")) {
@@ -600,6 +603,8 @@ class OneBotV11Adapter {
     if (typeof msg === "string") {
       return msg
     }
+    console.log("onebot自身消息处理前", msg)
+    if (!Array.isArray(msg)) msg = [msg]
     if (Array.isArray(msg)) {
       return msg.map(item => {
         if (typeof item === "string") {
@@ -610,7 +615,8 @@ class OneBotV11Adapter {
             return {
               type: "image",
               data: {
-                file: item.file || item.data.uri || "",
+                file: item.data.file || item.data.uri || "",
+                summary: item.data.summary || "",
               },
             }
           case "record":
