@@ -424,7 +424,7 @@ export default class BaseBot {
        */
       e.reply = async (msg = "", quote = false, data = {}) => {
         let imgdisplay = ""
-        if (msg?.find(i => i.type == "image") || msg?.type == "image") {
+        if ((Array.isArray(msg) && msg?.find(i => i.type == "image")) || msg?.type == "image") {
           imgdisplay = await getImageDisplay()
         }
         if (Array.isArray(msg)) {
