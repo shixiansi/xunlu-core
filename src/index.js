@@ -30,10 +30,16 @@ async function getBotInstance() {
     loadLLbot().catch(async err => {
       console.error("加载LLbot失败:", err)
       console.log("开始加载api服务器")
-      const { startServer } = await import("./lib/server.js")
-      startServer()
-      process.env.xunLuEnv = "API-Server"
-      console.log(process.env.xunLuEnv)
+      try {
+        await import("./Bot/onebotV11/event/index.js")
+        process.env.xunLuEnv = "QQBot-onebotV11"
+        console.log(process.env.xunLuEnv)
+      } catch (error) {
+        const { startServer } = await import("./lib/server.js")
+        startServer()
+        process.env.xunLuEnv = "API-Server"
+        console.log(process.env.xunLuEnv)
+      }
     })
     console.log(process.env.xunLuEnv)
   }

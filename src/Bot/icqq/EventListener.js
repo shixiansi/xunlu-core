@@ -43,13 +43,12 @@ class ListenerLoader {
           )
         } else if (ctx.group_id) {
           // 群聊消息 - 确保group_id是数字
-          return await Bot.pickGroup(ctx).sendMsg(
-            Array.isArray(message)
-              ? this.dealMsg(message)
-              : typeof message === "string"
-                ? [{ type: "text", data: { text: message } }]
-                : [this.dealMsg(message)],
-          )
+          let msg = Array.isArray(message)
+            ? this.dealMsg(message)
+            : typeof message === "string"
+              ? [{ type: "text", data: { text: message } }]
+              : [this.dealMsg(message)]
+          return await Bot.pickGroup(ctx.group_id).sendMsg(msg)
         }
       }
     }
@@ -134,13 +133,12 @@ class ListenerLoader {
               )
           } else if (ctx.group_id) {
             // 群聊消息 - 确保group_id是数字
-            return await this.sendGroupMessage(
-              Array.isArray(message)
-                ? this.dealMsg(message)
-                : typeof message === "string"
-                  ? [{ type: "text", data: { text: message } }]
-                  : [this.dealMsg(message)],
-            )
+            let msg = Array.isArray(message)
+              ? this.dealMsg(message)
+              : typeof message === "string"
+                ? [{ type: "text", data: { text: message } }]
+                : [this.dealMsg(message)]
+            return await this.sendGroupMessage(msg)
           }
         }
       }
@@ -174,13 +172,14 @@ class ListenerLoader {
             )
           } else if (ctx.group_id) {
             // 群聊消息 - 确保group_id是数字
-            return await Bot.pickGroup(ctx).sendGroupMessage(
-              Array.isArray(message)
-                ? this.dealMsg(message)
-                : typeof message === "string"
-                  ? [{ type: "text", data: { text: message } }]
-                  : [this.dealMsg(message)],
-            )
+            let msg = Array.isArray(message)
+              ? this.dealMsg(message)
+              : typeof message === "string"
+                ? [{ type: "text", data: { text: message } }]
+                : [this.dealMsg(message)]
+            console.log(msg)
+
+            return await Bot.pickGroup(ctx.group_id).sendMsg(msg)
           }
         }
       }

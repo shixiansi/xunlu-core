@@ -58,7 +58,7 @@ function processSetuImgUrl(pic) {
   return (
     pic.urls.original?.replace("i.pximg.net", "i.pixiv.re") ||
     pic.urls.large
-      .replace("i.pximg.net", "img.shithink.xyz")
+      .replace("i.pximg.net", "i.pixiv.re")
       .replace("c/600x1200_90/img-master", "img-original")
       .replace("_master1200", "")
   )
