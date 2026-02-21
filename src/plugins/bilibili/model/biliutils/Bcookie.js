@@ -7,7 +7,6 @@ async function getCookie() {
 
   let b_nut = await getB_nt()
   const jsonData = await redis.get("bilibili_cookie")
-  console.log(jsonData)
 
   const { SESSDATA } = jsonData ? JSON.parse(jsonData) : {}
   return [Buvid, bili_ticket, b_nut, `SESSDATA=${SESSDATA}`].join(";")
@@ -27,10 +26,8 @@ async function getB_nt() {
       "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
     },
   })
-  console.log(rep.headers)
 
   let cookie = rep.headers.get("set-cookie")
-  console.log(cookie)
 
   let b_nut = cookie
     .split(";")

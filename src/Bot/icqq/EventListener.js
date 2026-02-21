@@ -34,6 +34,27 @@ class ListenerLoader {
 
     await pluginLoader.initBot()
     await pluginLoader.runMount()
+    Bot.sendMessage = async (ctx, message) => {
+      if (ctx.group_id) {
+        if (typeof ctx === "string") {
+          // 私聊消息 - 将字符串ID转换为数字
+          return await Bot.pickFriend(ctx).sendMsg(
+            Array.isArray(message) ? message : [{ type: "text", data: { text: message } }],
+          )
+        } else if (ctx.group_id) {
+          // 群聊消息 - 确保group_id是数字
+          return await Bot.pickGroup(ctx).sendMsg(
+            Array.isArray(message)
+              ? this.dealMsg(message)
+              : typeof message === "string"
+                ? [{ type: "text", data: { text: message } }]
+                : [this.dealMsg(message)],
+          )
+        }
+      }
+    }
+    Bot.makeForwardMsg = pluginLoader.makeForwardMsg
+    Bot.renderImg = pluginLoader.renderImg
     const files = filemag.GetfileList().filter(file => file.endsWith(".js"))
     for (let File of files) {
       try {
@@ -69,8 +90,6 @@ class ListenerLoader {
 
   checkEnv() {
     const Botkeys = Object.keys(this.client)
-    console.log(this.client)
-
     console.log(Object.keys(this.client))
     if (Botkeys.includes("lain")) {
       this.bot = this.client[this.client.botQQ]
@@ -178,6 +197,7 @@ class ListenerLoader {
     }
     e.makeForwardMsg = pluginLoader.makeForwardMsg
     e.renderImg = pluginLoader.renderImg
+    delete e.client
   }
 
   dealMsg(msg) {

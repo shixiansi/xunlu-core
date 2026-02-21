@@ -765,8 +765,12 @@ class Bilibili {
 
   // 根据room_id获取直播间信息
   async getRoomInfo(room_id) {
+    console.log(room_id)
+
     try {
       const url = Bapi("liveRoomInfo", { room_id })
+      console.log(url)
+
       const { data } = await this.fetchWithHeaders(url)
       return this.parseRoomInfoData(data)
     } catch (error) {
@@ -789,6 +793,7 @@ class Bilibili {
       user_cover,
       live_time,
       title,
+      room_id,
     } = data
     return {
       uid,

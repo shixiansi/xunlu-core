@@ -22,6 +22,7 @@ export function register(bot) {
       let msglist = msgInfo?.message
       let raw_message = msglist?.raw_message || msglist[0]?.text
       console.log(raw_message)
+      if (!raw_message) return false
       if (raw_message?.includes("id") || raw_message.includes("画师")) {
         return ctx.recallMessage.call(ctx, {
           peer_id: msgInfo?.message?.peer_id || msgInfo[0].group_id,

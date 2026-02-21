@@ -105,7 +105,9 @@ export default class LLoneBotEventListener {
       global.Bot = {
         ...this.#milkyAdapter,
         ...{ reply: this.#llbot.reply },
-        makeForwardMsg: this.makeLLOneBotForwardMsg.bind(this),
+        pickUser: this.#milkyAdapter.pickUser.bind(this.#milkyAdapter),
+        pickGroup: this.#milkyAdapter.pickGroup.bind(this.#milkyAdapter),
+        ...this.#llbot.bindEvent,
       }
       console.log("[GlobalBot] 全局Bot对象初始化完成：", Object.keys(global.Bot))
     } else {
