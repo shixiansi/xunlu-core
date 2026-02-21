@@ -137,7 +137,7 @@ export function register(bot) {
     })
   })
 
-  bot.registerCommand(["tts帮助"], async ctx => {
+  bot.registerCommand(["^tts帮助$"], async ctx => {
     console.log(process.env.xunLuEnv)
     ctx.reply(
       "tts帮助:\n#语音模型列表（查看模型列表）\n模型名+说+内容（使用模型说话,如“可莉说你好”不需要加游戏名。只需要角色名即可）",
