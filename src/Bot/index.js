@@ -423,9 +423,13 @@ export default class BaseBot {
        * @param data.at 是否at用户
        */
       e.reply = async (msg = "", quote = false, data = {}) => {
+        let imgdisplay = ""
+        if (msg?.find(i => i.type == "image") || msg?.type == "image") {
+          imgdisplay = await getImageDisplay()
+        }
         if (Array.isArray(msg)) {
           console.log(msg)
-          let imgdisplay = await getImageDisplay()
+
           msg = msg.filter(m => m && m.type)
           msg = msg.map(m => {
             switch (m?.type) {
