@@ -270,15 +270,23 @@ export default class OneBotV11EventListener {
       if (typeof item === "string") return { type: "text", data: { text: item } }
       const result = { type: item.type, data: item.data, ...item.data }
       // 图片类型特殊处理
-      if (item.type === "image") {
-        result.data = {
-          file: item.file,
-          summary: imgdisplay || item?.data?.summary,
-        }
-      } else if (item.type === "face") {
-        result.data = {
-          id: item?.id || item?.data?.id,
-        }
+      switch (item.type) {
+        case "image":
+          result.data = {
+            file: item.file,
+            summary: imgdisplay || item?.data?.summary,
+          }
+          break
+        case "face":
+          result.data = {
+            id: item?.id || item?.data?.id,
+          }
+          break
+        case "text":
+          result.data = {
+            text: item?.data?.text || item?.text,
+          }
+          break
       }
       return result
     })
