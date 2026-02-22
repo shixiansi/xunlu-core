@@ -1,0 +1,319 @@
+原始bot {
+  '2548285036': {
+    adapter: OneBotv11Adapter {
+      id: 'QQ',
+      name: 'OneBotv11',
+      path: 'OneBotv11',
+      echo: {},
+      timeout: 120000,
+      self_id: 2548285036,
+      user_agent: 'LLOneBot/7.9.1',
+      ws: [WebSocket
+            ]
+        },
+    ws: WebSocket {
+      _events: [Object: null prototype
+            ],
+      _eventsCount: 2,
+      _maxListeners: undefined,
+      _binaryType: 'nodebuffer',
+      _closeCode: 1006,
+      _closeFrameReceived: false,
+      _closeFrameSent: false,
+      _closeMessage: <Buffer >,
+      _closeTimer: null,
+      _errorEmitted: false,
+      _extensions: {},
+      _paused: false,
+      _protocol: '',
+      _readyState: 1,
+      _receiver: [Receiver
+            ],
+      _sender: [Sender
+            ],
+      _socket: [Socket
+            ],
+      _autoPong: true,
+      _isServer: true,
+            [Symbol(shapeMode)
+            ]: false,
+            [Symbol(kCapture)
+            ]: false
+        },
+    sendApi: [Function: bound sendApi
+        ],
+    stat: {
+      start_time: 1771768441,
+      stat: {},
+      lost_pkt_cnt: [Getter
+            ],
+      lost_times: [Getter
+            ],
+      recv_msg_cnt: [Getter
+            ],
+      recv_pkt_cnt: [Getter
+            ],
+      sent_msg_cnt: [Getter
+            ],
+      sent_pkt_cnt: [Getter
+            ]
+        },
+    model: 'OneBotV11WS ',
+    info: { user_id: 2548285036, nickname: '可莉可莉'
+        },
+    uin: [Getter
+        ],
+    nickname: [Getter
+        ],
+    avatar: [Getter
+        ],
+    setProfile: [Function: bound setProfile
+        ],
+    setNickname: [Function: setNickname
+        ],
+    setAvatar: [Function: bound setAvatar
+        ] AsyncFunction,
+    pickFriend: [Function: bound pickFriend
+        ],
+    pickUser: [Getter
+        ],
+    getFriendArray: [Function: bound getFriendArray
+        ] AsyncFunction,
+    getFriendList: [Function: bound getFriendList
+        ] AsyncFunction,
+    getFriendMap: [Function: bound getFriendMap
+        ] AsyncFunction,
+    fl: Map(4) {
+            2548285036 => [Object
+            ],
+            1765629830 => [Object
+            ],
+            3239716086 => [Object
+            ],
+            820109436 => [Object
+            ]
+        },
+    pickMember: [Function: bound pickMember
+        ],
+    pickGroup: [Function: bound pickGroup
+        ],
+    getGroupArray: [Function: bound getGroupArray
+        ] AsyncFunction,
+    getGroupList: [Function: bound getGroupList
+        ] AsyncFunction,
+    getGroupMap: [Function: bound getGroupMap
+        ] AsyncFunction,
+    getGroupMemberMap: [Function: bound getGroupMemberMap
+        ] AsyncFunction,
+    gl: Map(5) {
+            1061170515 => [Object
+            ],
+            788233591 => [Object
+            ],
+            744578316 => [Object
+            ],
+            629661253 => [Object
+            ],
+            428596438 => [Object
+            ]
+        },
+    gml: Map(5) {
+            1061170515 => [Map
+            ],
+            788233591 => [Map
+            ],
+            744578316 => [Map
+            ],
+            629661253 => [Map
+            ],
+            428596438 => [Map
+            ]
+        },
+    request_list: [],
+    getSystemMsg: [Function: getSystemMsg
+        ],
+    setFriendAddRequest: [Function: bound setFriendAddRequest
+        ],
+    setGroupAddRequest: [Function: bound setGroupAddRequest
+        ],
+    setEssenceMessage: [Function: bound setEssenceMsg
+        ],
+    removeEssenceMessage: [Function: bound deleteEssenceMsg
+        ],
+    cookies: {
+      'qun.qq.com': 'pt2gguin=o2548285036; uin=o2548285036; skey=@aCFdw9Gv5; pt_recent_uins=176d344f5c5425d5ad4a739822d8b489ab33ab4dd114cd3518d694d080e979d8ed541c5c6452a51515785d663b270412c187f8f747410aa9; RK=5QaXEEXU89; ptnick_2548285036=e58fafe88e89e58fafe88e89; ptcz=43db3583ad451dc39996a7254235ec1d362230abdbcc112aa54fbd55ababf4b4; p_uin=o2548285036; pt4_token=yyYuJyOz8qHGXWktzyOP1gfn4uag0M33GiTHt6zPbKM_; 
+p_skey=SyEV*-a-MLuZ-R9sTjVYDZXQjl63Pfu8gE*yStsY6NI_; tgw_l7_route=f1dd34063017ea8b03d2c90177ee5ce6',
+      'aq.qq.com': 'uin=o2548285036; skey=@aCFdw9Gv5; pt2gguin=o2548285036; pt_recent_uins=5cb47cb0920ad41fc1bff24ca999c32f6c6a697a0146580c681f9e7e2ba50c0d85f287edb7bad29768d10df1e16a372dc2f129cf034bc588; RK=5QaXEEXU89; ptnick_2548285036=e58fafe88e89e58fafe88e89; ptcz=eb9ceaf6064181b1214f8b891f345b5bf6120d737a45a9f40d5f87d6bab14694',
+      'connect.qq.com': 'pt2gguin=o2548285036; uin=o2548285036; skey=@aCFdw9Gv5; pt_recent_uins=ebbe2a23d9aa13d33a1dfc53b36886667faa1e3d2f7fbdde720b6624f37b7037f50181af159476e52bb4e080e10ef9e4eed0c8a168512e8c; RK=5QaXEEXU89; ptnick_2548285036=e58fafe88e89e58fafe88e89; ptcz=d340664ef35779a7cb4aa6de977c3dbc0e63ed7a1b5d22563ff8f69f1fd3dd2b; p_uin=o2548285036; pt4_token=tU*IOEaG5skDLurP2ceFPRMatNQgSYyLdk5OkjH6jy0_; p_skey=vfyILBhQvFo0bVqBmquvPUInvFqgQin1R3g2H9DXQWw_; tgw_l7_route=863b2455c8c425e93affec98504318f7',
+      'docs.qq.com': 'tgw_l7_route=1f0d10393295a2fb1170a017103fd324; fingerprint=af7a034bf16943b89993cce6f62dfc2a14; TOK=937c8fb216c24127; p_skey=FURlOqg7lapdElmavudX1bHVjDqEkO*QPKp7YtxaZYo_',
+      'game.qq.com': 'uin=o2548285036; skey=@aCFdw9Gv5; pt2gguin=o2548285036; pt_recent_uins=5419c6fb0f54904a096a5d268c17ad719c28c86c3c585767e70f8ca57a2f32177c77593cb5c1bb92f3228607ebcae9e716f9ead9fc4d555b; RK=5QaXEEXU89; ptnick_2548285036=e58fafe88e89e58fafe88e89; ptcz=d88aef2c000a34407ccf48aac6be7c7c5c7517bee6b1ad5e75455455ad892c2d',
+      'gamecenter.qq.com': 'uin=o2548285036; skey=@aCFdw9Gv5; pt2gguin=o2548285036; pt_recent_uins=f0c9a1827d1d9529d0074d12907c77175f3621794e6598105e35e018d1f7d2baf8640ca7920e7fa9cd402c9536191f906ed3b65442a6a235; RK=5QaXEEXU89; ptnick_2548285036=e58fafe88e89e58fafe88e89; ptcz=5128c9cb338d3e9a827f36570e5a3c11e9fdaf8c7105049c42e9df424e0f984a; p_skey=mvQOym9jJUBCllSXd1A0kYt7xYGXHaRSSaWxCi4qJ7g_',
+      'haoma.qq.com': 'uin=o2548285036; skey=@aCFdw9Gv5; pt2gguin=o2548285036; pt_recent_uins=780383cbf3b38818847bc98891c04b366da110855d3db52723f6c1e138da80516667a04bc6e294bd794a85ce177bac5cbea18dfa8d98d1b1; RK=5QaXEEXU89; ptnick_2548285036=e58fafe88e89e58fafe88e89; ptcz=1cf41cf493f2cccba4f10aa24388e9fd6835e0bf426357947b574dffbbc5a270',
+      'id.qq.com': 'pt2gguin=o2548285036; uin=o2548285036; skey=@aCFdw9Gv5; pt_recent_uins=2a9a1c0d3fa8522f82f3fa842a3cb23865c954aaf93c241921c1d3317597a4549dcde4c7b3ea915b5b0c0b54dba7395ef6ed2f3380ef3c94; RK=5QaXEEXU89; ptnick_2548285036=e58fafe88e89e58fafe88e89; ptcz=f0297755a580b51576fcc0c0af08d0aae620784cf3b53a816884e24e1b8ff9a5; p_uin=o2548285036; pt4_token=G3a20FTz7sftillV-*mWK6LtgAiYt*XxocOfG*w2qs8_; p_skey=YpX3FO1xrN-qkrcwQ9xjGJqetgRNnbBYKqzVtMfu6xo_',
+      'kg.qq.com': 'pt2gguin=o2548285036; uin=o2548285036; skey=@aCFdw9Gv5; pt_recent_uins=dfaa9f2baddf5099531b3cbe098b7e211d3a4a1b7547a761726163234519bcbc4ae922d296707fc6b0dc348a6da35320e044854d6aa8de73; RK=5QaXEEXU89; ptnick_2548285036=e58fafe88e89e58fafe88e89; ptcz=169ecba2c04700c2b28fb3c1bbb92e3c5d1a47fabe9bfe3db1388818730736cc; p_uin=o2548285036; pt4_token=*bH6CyUDKtymHR8woDPlQZ4oh4jU3iFUXKMBwUPMI0o_; p_skey=PZBXOuVmbC5kPrJMi234kvKl3zs*dGrgt0mEEhQL4Og_',
+      'mail.qq.com': 'pt2gguin=o2548285036; uin=o2548285036; skey=@aCFdw9Gv5; pt_recent_uins=82244531edca0ee07ac41bce5f8eaaa457a87ff060d3c3f227fb0fcade50701e45f52928f5e121da6f8812960f469e489f454623ea72cfcc; RK=5QaXEEXU89; ptnick_2548285036=e58fafe88e89e58fafe88e89; ptcz=ce62a332d0c1d10d6e0bdeabca1978a18aaeb676ad0d15d746599509930fbec7; p_uin=o2548285036; pt4_token=1-kGsVfcgtM*w8Wp23Bla6glH7ARnRsoUVxEgkd9lBQ_; p_skey=8LErBcGgpZVbjf5PHLHAjD-6Ra1UUJJ4-DYdEKAq8Cc_',
+      'mma.qq.com': 'pt2gguin=o2548285036; uin=o2548285036; skey=@aCFdw9Gv5; pt_recent_uins=d0442d058257906b17165809737e22d2e77b952a91a9eed93fbe219aabc236ad7701e0d520352525b4aff993e21da96addf6335331c6c479; RK=5QaXEEXU89; ptnick_2548285036=e58fafe88e89e58fafe88e89; ptcz=b5a8bed755ebbd0d3fbece09eb75487d6705489afec489dc8ef2a3017645fb38; p_uin=o2548285036; pt4_token=YUIsMAMtVeVPM6sspNxFNTIiQn8CSgb9uF0DSp3PggU_; 
+p_skey=XQ68tEyYlz5pi9Xy2YKZZR7u1hmvRL9Up*0kgLV-5*g_',
+      'office.qq.com': '',
+      'openmobile.qq.com': 'uin=o2548285036; skey=@aCFdw9Gv5; pt2gguin=o2548285036; pt_recent_uins=fae4fc4e53cea024f3fc9fcc13ad2e3e406d4881d612ac3612c7c55259ad0cb6190cd2903b407fd1b4cf92b8d2c22730876446a5640d646d; RK=5QaXEEXU89; ptnick_2548285036=e58fafe88e89e58fafe88e89; ptcz=77126d9bcbdc26f4bab2f158a4438c78fb54b90a4a9f2dc43e369542b8eab425',
+      'qqweb.qq.com': 'uin=o2548285036; skey=@aCFdw9Gv5; pt2gguin=o2548285036; pt_recent_uins=605a958200db8a3c6109eba5109e207b68a9d6a9964958cf74de633441963bbfcc519c6e45584db831e75717754566162b51eacda7ab1686; RK=5QaXEEXU89; ptnick_2548285036=e58fafe88e89e58fafe88e89; ptcz=c51e42b40ea06f79ec467cac6d733bb06d0df490b5d0bca2eba20f071b2884ff; tgw_l7_route=ee9437ddb580d6345340994f6f1da7dc',
+      'qzone.qq.com': 'pt2gguin=o2548285036; uin=o2548285036; skey=@aCFdw9Gv5; pt_recent_uins=f0c09294771f72edf09a95df36dcd46c305b77f84f716585ad3e72c42070314217f45b67ba3a6b4e5571173b5e9e6fea7c4423add84eaa99; RK=5QaXEEXU89; ptnick_2548285036=e58fafe88e89e58fafe88e89; ptcz=81984d4b6359d73adcaebc5bb31b5a3d41d8efee2d3568014f59271241001f5d; p_uin=o2548285036; pt4_token=pofJwhSoGsveCl4y4LZcxA8-Uw6gicE8ZoBbvfi7FTs_; p_skey=Oi4ITu*vffFzS-ynJ8sDA1kk2lrXQSRiDU9y-EN8QU4_',
+      'ti.qq.com': 'pt2gguin=o2548285036; uin=o2548285036; skey=@aCFdw9Gv5; pt_recent_uins=c08360fcc3bffe90ea30873e324c7c22d1905d359bb633042de932abe4a15cd01f670470ac70e4f6813629dfdad0c0383e5210a705d6973d; RK=5QaXEEXU89; ptnick_2548285036=e58fafe88e89e58fafe88e89; ptcz=f0a9bceca9f810c5c686874cb1780d0e240f3705a38b2fb1a53860c1cd14cd57; p_uin=o2548285036; pt4_token=GZq3Fysl69DVojGvMctSY33ntvK38ZUnjwJnqCDcVAk_; p_skey=7OCcp*TEqWcJHe9zonxRfyprSnTCuY*PqxTI1iPfPVQ_',
+      'v.qq.com': '',
+      'vip.qq.com': 'uin=o2548285036; skey=@aCFdw9Gv5; pt2gguin=o2548285036; pt_recent_uins=3977c00ef6175605cf5334f9604d1a80922e70d489d772f84d714013e18f4cfa4989d934a4ee82004f0417e907b5451d9e255e7bd8e74902; RK=5QaXEEXU89; ptnick_2548285036=e58fafe88e89e58fafe88e89; ptcz=2cc93c597846b9d466dbf018a59f3a24f4f68651f67ea04c6ed57b9210e74192; p_skey=ORiUrun4APRuP50TKekk9aJBKgj4eFdz-vMKHnHWn34_',
+      'y.qq.com': ''
+        },
+    getCookies: [Function: getCookies
+        ],
+    getCsrfToken: [Function: getCsrfToken
+        ],
+    guild_info: null,
+    clients: undefined,
+    version: {
+      app_name: 'LLOneBot',
+      protocol_version: 'v11',
+      app_version: '7.9.1',
+      id: 'QQ',
+      name: 'OneBotv11',
+      version: [Getter
+            ]
+        },
+    bkn: 787353205
+    },
+  lain: {
+    name: 'lain-plugin',
+    version: '1.4.8',
+    author: 'sky-summer, snowtafir Lain.',
+    gitee: 'https: //gitee.com/snowtafir/Lain-plugin.git',
+    type: 'module',
+    scripts: {
+      commitmsg: 'validate-commit-msg',
+      log: 'conventional-changelog -p angular -i CHANGELOG.md -s -r 1'
+        },
+    imports: { '#Lain': './lib/init.js'
+        },
+    adapter: {
+      lain: [Object
+            ],
+      QQGuild: [Object
+            ],
+      ComWeChat: [Object
+            ],
+      stdin: [Object
+            ],
+      Shamrock: [Object
+            ],
+      QQBot: [Object
+            ],
+      WeXin: [Object
+            ]
+        },
+    dependencies: {
+      axios: '^1.7.7',
+      'conventional-changelog-cli': '^5.0.0',
+      express: '^4.21.0',
+      'file-type': '^19.5.0',
+      '@karinjs/geturls': '^1.0.2',
+      icqq: '0.6.10',
+      'get-urls': '^12.1.0',
+      'qq-official-bot': '1.0.7',
+      qrcode: '^1.5.4',
+      sharp: '^0.33.5',
+      'silk-wasm': '^3.6.3',
+      wechat4u: '^0.7.14',
+      ws: '^8.18.0',
+      ulid: '2.3.0',
+      'node-fetch': '3.3.2'
+        },
+    devDependencies: {
+      'cz-conventional-changelog': '^3.3.0',
+      eslint: '^9.9.0',
+      'eslint-config-standard': '^17.1.0',
+      'eslint-plugin-import': '^2.31.0',
+      'eslint-plugin-n': '^16.0.0',
+      'eslint-plugin-promise': '^6.0.0',
+      'express-art-template': '^1.0.1',
+      husky: '^9.1.6',
+      'validate-commit-msg': '^2.14.0'
+        },
+    config: { commitizen: [Object
+            ]
+        },
+    _path: 'F:\\编程\\项目\\QQBot\\trss-yunzai\\Yunzai/plugins/Lain-plugin/config',
+    BotCfg: {
+      log_level: 'info',
+      port: 2536,
+      ignore_self: false,
+      chromium_path: null,
+      puppeteer_ws: null,
+      proxyAddress: null,
+      online_msg: true,
+      online_msg_exp: 86400,
+      logLength: 1000
+        },
+    guilds: {},
+    loginMap: Map(0) {}
+    },
+  stdin: {
+    adapter: stdinAdapter { id: 'stdin', name: '标准输入', path: 'data/stdin/'
+        },
+    uin: 'stdin',
+    nickname: '标准输入',
+    version: { id: 'stdin', name: '标准输入'
+        },
+    pickFriend: [Function: pickFriend
+        ],
+    stat: [Getter
+        ],
+    pickUser: [Getter
+        ],
+    pickMember: [Getter
+        ],
+    pickGroup: [Getter
+        ],
+    fl: Map(1) { 'stdin' => [Object
+            ]
+        },
+    gl: [Getter
+        ],
+    gml: Map(1) { 'stdin' => [Map
+            ]
+        }
+    },
+  Buffer: [AsyncFunction (anonymous)
+    ],
+  Base64: [AsyncFunction (anonymous)
+    ],
+  Stream: [AsyncFunction (anonymous)
+    ],
+  uploadQQ: [AsyncFunction (anonymous)
+    ],
+  FileToUrl: [AsyncFunction (anonymous)
+    ],
+  FileToPath: [AsyncFunction (anonymous)
+    ],
+  toType: [Function (anonymous)
+    ],
+  FormatFile: [AsyncFunction (anonymous)
+    ],
+  getUrls: [Function (anonymous)
+    ],
+  Button: [Function (anonymous)
+    ],
+  HandleURL: [AsyncFunction (anonymous)
+    ],
+  _eventsCount: 4,
+  botQQ: '2548285036',
+  uin: '2548285036'
+}
+[
+  '2548285036',   'lain',
+  'stdin',        'Buffer',
+  'Base64',       'Stream',
+  'uploadQQ',     'FileToUrl',
+  'FileToPath',   'toType',
+  'FormatFile',   'getUrls',
+  'Button',       'HandleURL',
+  '_eventsCount', 'botQQ',
+  'uin'
+]
