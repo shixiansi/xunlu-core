@@ -167,6 +167,12 @@ class ListenerLoader {
           message_id: msg_id,
         })
       }
+      e.getGroupMemberInfo = async (group_id, user_id) => {
+        return await Bot[Bot.botQQ].sendApi("get_group_member_info", {
+          group_id,
+          user_id,
+        })
+      }
     } else if (env === "icqq") {
       const recallMessage = ({ peer_id, message_seq, isGroup }) => {
         try {
