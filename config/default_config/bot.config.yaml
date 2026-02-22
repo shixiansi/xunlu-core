@@ -9,6 +9,8 @@ accessToken:
 
 image_display: true
 
+suffix_text: "[face:277][face:123]"
+
 # 是否使用TLS
 useTLS: false
 

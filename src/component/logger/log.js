@@ -47,7 +47,7 @@ export default function setLog() {
       },
     },
     categories: {
-      default: { appenders: ["console"], level: cfg.getConfig("llbot").log_level },
+      default: { appenders: ["console"], level: cfg.getConfig("bot").log_level },
       command: { appenders: ["console", "command"], level: "warn" },
       error: { appenders: ["console", "command", "error"], level: "error" },
     },

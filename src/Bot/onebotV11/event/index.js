@@ -18,6 +18,7 @@ export default class OneBotV11EventListener {
     group_decrease: "decrease",
     group_increase: "increase",
     group_recall: "recall",
+    notify: "poke",
   }
 
   // 私有字段：封装核心依赖，避免外部篡改
@@ -256,18 +257,26 @@ export default class OneBotV11EventListener {
   static async dealMessage(e) {
     if (!e || !e.message || typeof e.message === "string") return e
     if (!Array.isArray(e.message)) e.message = [e.message]
-    let imgdisplay = (await getImageDisplay()) || ""
+    let imgdisplay
+    if (e.user_id === e.self_id) {
+      imgdisplay = await getImageDisplay()
+    }
+
     // 简化数组处理，移除冗余的展开/包裹
     console.log("处理消息dealmesg", e.message)
 
     e.message = e.message.map(item => {
       if (typeof item === "string") return { type: "text", data: { text: item } }
-      const result = { type: item.type, ...item.data }
+      const result = { type: item.type, data: item.data, ...item.data }
       // 图片类型特殊处理
       if (item.type === "image") {
         result.data = {
           file: item.file,
           summary: imgdisplay || item?.data?.summary,
+        }
+      } else if (item.type === "face") {
+        result.data = {
+          id: item.id,
         }
       }
       return result

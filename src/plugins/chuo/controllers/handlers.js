@@ -24,6 +24,8 @@ const textChuo = [
 export function register(bot) {
   if (!bot || !bot.registerCommand) return
   bot.registerCommand(["", "notice.group.poke"], ctx => {
+    console.log("触发戳一戳了", ctx)
+
     if (ctx.target_id !== ctx.self_id) return false
     return ctx.reply(textChuo[lodash.random(0, textChuo.length - 1)])
   })

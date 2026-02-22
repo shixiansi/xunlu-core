@@ -9,7 +9,11 @@ export function register(bot) {
     //   isStart = true
     //   ctx.reply(ctx.adapterType + "Bot启动成功！")
     // }
+    console.log("ctx", ctx)
+
     if (ctx.isMaster && ctx.msg && ctx.isGroup) {
+      console.log("进了了")
+
       let rlist = ["277"]
       for (let i of rlist) {
         ctx.sendGroupMessageReaction({
@@ -57,7 +61,7 @@ export function register(bot) {
   })
 
   bot.setTask("0 15 16 * * *", () => {
-    Bot.sendMsg(
+    Bot.sendMessage(
       {
         group_id: 428596438,
       },

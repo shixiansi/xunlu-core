@@ -3,6 +3,52 @@ import lodash from "lodash"
 import pluginLoader from "./pluginLoader.js"
 import getImageDisplay from "../../utils/imgdisplay.js"
 
+const dealMsg = async (e, msg) => {
+  console.log(msg)
+  let imgdisplay
+  if (e.user_id === e.self_id) {
+    imgdisplay = await getImageDisplay()
+  }
+
+  switch (msg.type) {
+    case "text":
+      break
+    case "image":
+      msg = {
+        type: "image",
+        data: {
+          file: msg.file || msg.data.uri || "",
+          sub_type: "normal",
+          summary: imgdisplay || msg.summary || "",
+        },
+      }
+
+      break
+    default:
+      break
+  }
+  return msg
+}
+
+const sendMessage = async (ctx, message) => {
+  if (ctx.group_id) {
+    if (typeof ctx === "string") {
+      // 私聊消息 - 将字符串ID转换为数字
+      return await Bot.pickFriend(ctx).sendMsg(
+        Array.isArray(message) ? message : [{ type: "text", data: { text: message } }],
+      )
+    } else if (ctx.group_id) {
+      // 群聊消息 - 确保group_id是数字
+      let msg = Array.isArray(message)
+        ? await dealMsg(ctx, message)
+        : typeof message === "string"
+          ? [{ type: "text", data: { text: message } }]
+          : [await dealMsg(ctx, message)]
+      return await Bot.pickGroup(ctx.group_id).sendMsg(msg)
+    }
+  }
+}
+
 export default class EventListener {
   /**
    * 事件监听
@@ -35,24 +81,7 @@ class ListenerLoader {
 
     await pluginLoader.initBot()
     await pluginLoader.runMount()
-    Bot.sendMessage = async (ctx, message) => {
-      if (ctx.group_id) {
-        if (typeof ctx === "string") {
-          // 私聊消息 - 将字符串ID转换为数字
-          return await Bot.pickFriend(ctx).sendMsg(
-            Array.isArray(message) ? message : [{ type: "text", data: { text: message } }],
-          )
-        } else if (ctx.group_id) {
-          // 群聊消息 - 确保group_id是数字
-          let msg = Array.isArray(message)
-            ? await this.dealMsg(message)
-            : typeof message === "string"
-              ? [{ type: "text", data: { text: message } }]
-              : [await this.dealMsg(message)]
-          return await Bot.pickGroup(ctx.group_id).sendMsg(msg)
-        }
-      }
-    }
+    Bot.sendMessage = sendMessage
     Bot.makeForwardMsg = pluginLoader.makeForwardMsg
     Bot.renderImg = pluginLoader.renderImg
     const files = filemag.GetfileList().filter(file => file.endsWith(".js"))
@@ -115,7 +144,6 @@ class ListenerLoader {
         }
       }
       e.sendGroupMessageReaction = ({ message_seq, reaction }) => {
-        //console.log(this.bot);
         this.bot.sendApi("set_msg_emoji_like", {
           message_id: targetE.message_id,
           emoji_id: Number(reaction),
@@ -123,26 +151,7 @@ class ListenerLoader {
       }
 
       e.recallMessage = recallMessage
-      e.sendMessage = async (ctx, message) => {
-        if (ctx.group_id) {
-          if (typeof ctx === "string") {
-            // 私聊消息 - 将字符串ID转换为数字
-            return await this.bot
-              .pickFriend(ctx)
-              .sendMsg(
-                Array.isArray(message) ? message : [{ type: "text", data: { text: message } }],
-              )
-          } else if (ctx.group_id) {
-            // 群聊消息 - 确保group_id是数字
-            let msg = Array.isArray(message)
-              ? await this.dealMsg(message)
-              : typeof message === "string"
-                ? [{ type: "text", data: { text: message } }]
-                : [await this.dealMsg(message)]
-            return await this.sendGroupMessage(msg)
-          }
-        }
-      }
+      e.sendMessage = sendMessage
       e.renderImg = pluginLoader.renderImg
     } else if (env === "icqq") {
       const recallMessage = ({ peer_id, message_seq, isGroup }) => {
@@ -157,33 +166,10 @@ class ListenerLoader {
         }
       }
       e.sendGroupMessageReaction = ({ message_seq, reaction }) => {
-        //console.log(this.bot);
-        // console.log(targetE)
-
         Bot.pickGroup(targetE.group_id).setReaction(targetE.seq, Number(reaction))
       }
-
       e.recallMessage = recallMessage
-      e.sendMessage = async (ctx, message) => {
-        if (ctx.group_id) {
-          if (typeof ctx === "string") {
-            // 私聊消息 - 将字符串ID转换为数字
-            return await Bot.pickFriend(ctx).sendMsg(
-              Array.isArray(message) ? message : [{ type: "text", data: { text: message } }],
-            )
-          } else if (ctx.group_id) {
-            // 群聊消息 - 确保group_id是数字
-            let msg = Array.isArray(message)
-              ? await this.dealMsg(message)
-              : typeof message === "string"
-                ? [{ type: "text", data: { text: message } }]
-                : [await this.dealMsg(message)]
-            console.log(msg)
 
-            return await Bot.pickGroup(ctx.group_id).sendMsg(msg)
-          }
-        }
-      }
       e.getMsg = async msg_id => {
         return await Bot.getMsg(msg_id)
       }
@@ -195,32 +181,10 @@ class ListenerLoader {
       }
       e.getGroupMemberInfo = Bot.getGroupMemberInfo.bind(Bot)
     }
+    e.sendMessage = sendMessage
     e.makeForwardMsg = pluginLoader.makeForwardMsg
     e.renderImg = pluginLoader.renderImg
     //delete e.client
-  }
-
-  async dealMsg(msg) {
-    console.log(msg)
-
-    switch (msg.type) {
-      case "text":
-        break
-      case "image":
-        msg = {
-          type: "image",
-          data: {
-            file: msg.file || msg.data.uri || "",
-            sub_type: "normal",
-            summary: await getImageDisplay(),
-          },
-        }
-
-        break
-      default:
-        break
-    }
-    return msg
   }
 }
 

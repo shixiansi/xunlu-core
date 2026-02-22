@@ -53,7 +53,7 @@ export default class LLoneBotEventListener {
   }
 
   // 配置项（语义化命名）
-  #llbotConfig = config.getConfig("llbot") || {}
+  #llbotConfig = config.getConfig("bot") || {}
   // Milky适配器实例
   #milkyAdapter = new MilkyAdapter({ ...this.#llbotConfig })
   // LLoneBot实例
@@ -286,7 +286,7 @@ export default class LLoneBotEventListener {
 
     // 转换segments为标准格式
     if (e.segments) {
-      e.message = await this.dealMsg(e.segments)
+      e.message = await this.dealMsg(e, e.segments)
       delete e.segments
     }
 
@@ -304,9 +304,13 @@ export default class LLoneBotEventListener {
    * @param {Array} message 原始消息段数组
    * @returns {Array} 标准化后的消息段数组
    */
-  async dealMsg(message) {
+  async dealMsg(e, message) {
     if (!Array.isArray(message)) return []
-    let imgdisplay = await getImageDisplay()
+    let imgdisplay
+    if (e.user_id === e.self_id) {
+      imgdisplay = await getImageDisplay()
+    }
+
     return message.map(item => {
       const result = { type: item.type, ...item.data }
       // 图片类型特殊处理

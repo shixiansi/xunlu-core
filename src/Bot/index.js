@@ -2,6 +2,7 @@ import { loadPlugins } from "../lib/pluginLoader.js"
 import Render from "../utils/render.js"
 import path from "path"
 import lodash from "lodash"
+import cfg from "../lib/config.js"
 import schedule from "node-schedule"
 import env from "../lib/env.js"
 import getImageDisplay from "../utils/imgdisplay.js"
@@ -231,6 +232,8 @@ export default class BaseBot {
   }
 
   async deal(e) {
+    console.log(e)
+
     await this.dealMsg(e)
     await this.reply(e)
     if (e.user_id == e.self_id && e.post_type == "message") return
@@ -408,6 +411,7 @@ export default class BaseBot {
        */
       e.reply = async (msg = "", quote = false, data = {}) => {
         let imgdisplay = ""
+        if (typeof msg === "string") msg = this.dealSuffix(msg)
         if ((Array.isArray(msg) && msg?.find(i => i.type == "image")) || msg?.type == "image") {
           imgdisplay = await getImageDisplay()
         }
@@ -446,6 +450,7 @@ export default class BaseBot {
     } else {
       e.reply = async (msg = "", quote = false, data = {}) => {
         let msgRes
+        if (typeof msg === "string") msg = this.dealSuffix(msg)
         let { recallMsg = 0, at = "" } = data
         if (!msg) return false
         if (quote) {
@@ -487,6 +492,56 @@ export default class BaseBot {
         return msgRes
       }
     }
+  }
+
+  dealSuffix(msg) {
+    if (typeof msg !== "string") return msg
+    let suffix_text = cfg.getConfig("bot").suffix_text
+    const parseFaceText = str => {
+      // 定义匹配[face:数字]的正则（全局+带捕获组）
+      const facePattern = /\[face:(\d+)\]/g
+      // 存储最终结构化结果
+      const result = []
+      // 记录上一次匹配结束的位置，初始为0
+      let lastIndex = 0
+
+      // 遍历所有匹配项
+      let match
+      while ((match = facePattern.exec(str)) !== null) {
+        const [fullMatch, faceId] = match // fullMatch是[face:xxx]，faceId是数字字符串
+        const matchStart = match.index // 匹配项在字符串中的起始位置
+
+        // 1. 处理匹配项之前的文本（如果有内容）
+        if (matchStart > lastIndex) {
+          const textContent = str.slice(lastIndex, matchStart)
+          result.push({
+            type: "text",
+            data: { text: textContent },
+          })
+        }
+
+        // 2. 处理表情项（转换faceId为数字类型）
+        result.push({
+          type: "face",
+          id: Number(faceId),
+        })
+
+        // 3. 更新上一次结束位置为当前匹配项的结束位置
+        lastIndex = facePattern.lastIndex
+      }
+
+      // 4. 处理最后一个匹配项之后的剩余文本（如果有内容）
+      if (lastIndex < str.length) {
+        const textContent = str.slice(lastIndex)
+        result.push({
+          type: "text",
+          data: { text: textContent },
+        })
+      }
+
+      return result
+    }
+    return parseFaceText(msg + suffix_text)
   }
 
   async dealMsg(e) {
