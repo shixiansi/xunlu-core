@@ -206,13 +206,11 @@ async function getUpdateLog(ctx, plugin = "", oldCommitId = "") {
     if (!str[0] || !str[1]) continue;
 
     // 只有commitId有效时才终止遍历
+    if (commitId && str[0] == commitId) break;
 
     // 放宽过滤条件，只过滤纯合并分支的提交
     if (str[1]?.trim() === "Merge branch") continue;
-    if (commitId && str[0] == commitId) {
-      log.push(str[1]);
-      break;
-    }
+
     log.push(str[1]);
   }
 
