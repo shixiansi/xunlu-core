@@ -440,6 +440,12 @@ class MilkyAdapter {
       }
     }
     switch (msg.type) {
+      case "text":
+        msg = {
+          type: "text",
+          data: { text: msg?.data?.text || msg?.text },
+        }
+        break
       case "image":
         msg = {
           type: "image",
@@ -457,6 +463,15 @@ class MilkyAdapter {
             uri: msg.file || msg.data.uri || "",
           },
         }
+        break
+      case "face":
+        msg = {
+          type: "face",
+          data: {
+            face_id: `${msg.id}`,
+          },
+        }
+        break
       default:
         break
     }

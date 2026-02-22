@@ -9,8 +9,6 @@ export default class messageEvent extends EventListener {
   }
 
   async execute(e) {
-    console.log("进了额 ")
-
     this.dealUrl(e)
     this.dealJson(e)
     this.plugins.deal(e)
@@ -34,8 +32,6 @@ export default class messageEvent extends EventListener {
   }
 
   dealJson(e) {
-    console.log("判断json的e", e)
-
     if (e.raw_message.includes("[json消息]") || e.message.find(element => element.type == "json")) {
       e.json = JSON.parse(e.message[0].data)
     }

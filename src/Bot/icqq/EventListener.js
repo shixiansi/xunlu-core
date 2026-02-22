@@ -22,7 +22,6 @@ const dealMsg = async (e, msg) => {
           summary: imgdisplay || msg.summary || "",
         },
       }
-
       break
     default:
       break
@@ -184,7 +183,7 @@ class ListenerLoader {
     e.sendMessage = sendMessage
     e.makeForwardMsg = pluginLoader.makeForwardMsg
     e.renderImg = pluginLoader.renderImg
-    //delete e.client
+    delete e.client
   }
 }
 

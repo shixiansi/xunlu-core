@@ -322,6 +322,10 @@ export default class LLoneBotEventListener {
           height: item.data.height,
           summary: imgdisplay || item.data.summary,
         }
+      } else if (item.type === "face") {
+        console.log(item)
+
+        result.id = item.face_id || item.data.face_id
       }
       return result
     })

@@ -232,7 +232,7 @@ export default class BaseBot {
   }
 
   async deal(e) {
-    console.log(e)
+    //console.log(e)
 
     await this.dealMsg(e)
     await this.reply(e)
@@ -412,6 +412,8 @@ export default class BaseBot {
       e.reply = async (msg = "", quote = false, data = {}) => {
         let imgdisplay = ""
         if (typeof msg === "string") msg = this.dealSuffix(msg)
+        console.log(msg)
+
         if ((Array.isArray(msg) && msg?.find(i => i.type == "image")) || msg?.type == "image") {
           imgdisplay = await getImageDisplay()
         }
@@ -516,7 +518,7 @@ export default class BaseBot {
           const textContent = str.slice(lastIndex, matchStart)
           result.push({
             type: "text",
-            data: { text: textContent },
+            text: textContent,
           })
         }
 
@@ -535,7 +537,7 @@ export default class BaseBot {
         const textContent = str.slice(lastIndex)
         result.push({
           type: "text",
-          data: { text: textContent },
+          text: textContent,
         })
       }
 
