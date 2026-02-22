@@ -1,4 +1,4 @@
-import cfg from "../../../lib/config.js"
+import fs from "fs"
 export function register(bot) {
   if (!bot || !bot.registerCommand) return
   //第一个参数是数组第一个是命令，第二个是事件，第三个是优先级（第二个和第三个都可以省略）
@@ -24,7 +24,7 @@ export function register(bot) {
   })
 
   bot.registerCommand(["^(|#)我是什么bot"], async ctx => {
-    const name = cfg.packageInfo.name
+    const name = JSON.parse(fs.readFileSync("./package.json")).name
     ctx.reply(`我是运行在${name}的${ctx.adapterType}_Bot`)
   })
 }

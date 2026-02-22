@@ -15,13 +15,17 @@ export function register(bot) {
       console.log("进了了")
 
       let rlist = ["277"]
-      for (let i of rlist) {
-        ctx.sendGroupMessageReaction({
-          group_id: ctx.group_id,
-          message_id: ctx?.message_id,
-          message_seq: ctx?.seq,
-          reaction: i,
-        })
+      try {
+        for (let i of rlist) {
+          ctx.sendGroupMessageReaction({
+            group_id: ctx.group_id,
+            message_id: ctx?.message_id,
+            message_seq: ctx?.seq,
+            reaction: i,
+          })
+        }
+      } catch (error) {
+        return false
       }
     }
   })
