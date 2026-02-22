@@ -666,6 +666,30 @@ class OneBotV11Adapter {
     }
   }
 
+  /**
+   * 构造OneBot V11 转发消息格式（修正只处理第一条的逻辑）
+   * @param {Array} msg 原始消息列表
+   * @returns {Array} 标准化转发消息格式
+   */
+  makeForwardMsg(msg) {
+    if (!Array.isArray(msg) || msg.length === 0) {
+      console.warn("[OneBotV11Adapter] 构造转发消息失败：消息列表为空")
+      return []
+    }
+
+    // 遍历所有消息，而非仅处理第一条
+    return [
+      {
+        type: "node",
+        data: {
+          uin: msg[0].user_id,
+          name: msg[0].nickname,
+          content: this.dealOneBotMsg(msg.map(i => i.message)),
+        },
+      },
+    ]
+  }
+
   // ==================== 资源清理（Milky风格） ====================
   /**
    * 释放资源

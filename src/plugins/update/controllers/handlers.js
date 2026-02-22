@@ -1,45 +1,44 @@
-import { createRequire } from "module";
-import lodash from "lodash";
-import env from "../../../lib/env.js";
-const require = createRequire(import.meta.url);
-const { exec, execSync } = require("child_process");
+import { createRequire } from "module"
+import lodash from "lodash"
+import env from "../../../lib/env.js"
+const require = createRequire(import.meta.url)
+const { exec, execSync } = require("child_process")
 
 // 全局状态：防止重复更新
-let uping = false;
+let uping = false
 // 插件常量配置
 const PLUGIN_CONFIG = {
   typeName: "荨鹿核心",
   key: "xunlu-core",
   pluginDir: "xunlu-core",
   repoUrl: "https://github.com/shixiansi/xunlu-core",
-};
+}
 
-const pluginPath =
-  env.CurEnv == "xunlu-core" ? "./" : `./plugins/${PLUGIN_CONFIG.pluginDir}/`;
+const pluginPath = env.CurEnv == "xunlu-core" ? "./" : `./plugins/${PLUGIN_CONFIG.pluginDir}/`
 /**
  * 初始化重启状态检查（原init逻辑）
  */
 async function initRestartStatus() {
-  console.log("执行更新了");
+  console.log("执行更新了")
 
-  let restart = await redis.get(PLUGIN_CONFIG.key);
-  console.log(restart);
+  let restart = await redis.get(PLUGIN_CONFIG.key)
+  console.log(restart)
 
   if (restart && process.argv[1].includes("pm2")) {
-    restart = JSON.parse(restart);
-    let time = restart.time || new Date().getTime();
-    time = (new Date().getTime() - time) / 1000;
-    let msg = `重启成功：耗时${time.toFixed(2)}秒`;
+    restart = JSON.parse(restart)
+    let time = restart.time || new Date().getTime()
+    time = (new Date().getTime() - time) / 1000
+    let msg = `重启成功：耗时${time.toFixed(2)}秒`
 
     try {
       if (restart.isGroup) {
-        await Bot.pickGroup(restart.id).sendMsg(msg);
+        await Bot.pickGroup(restart.id).sendMsg(msg)
       } else {
-        await Bot.pickUser(restart.id).sendMsg(msg);
+        await Bot.pickUser(restart.id).sendMsg(msg)
       }
-      await redis.del(PLUGIN_CONFIG.key);
+      await redis.del(PLUGIN_CONFIG.key)
     } catch (error) {
-      logger.error(`[荨鹿更新] 重启成功通知失败：${error.stack}`);
+      logger.error(`[荨鹿更新] 重启成功通知失败：${error.stack}`)
     }
   }
 }
@@ -50,16 +49,16 @@ async function initRestartStatus() {
  */
 async function checkGit(ctx) {
   try {
-    let ret = await execSync("git --version", { encoding: "utf-8" });
+    let ret = await execSync("git --version", { encoding: "utf-8" })
     if (!ret || !ret.includes("git version")) {
-      await ctx.reply("请先安装git");
-      return false;
+      await ctx.reply("请先安装git")
+      return false
     }
-    return true;
+    return true
   } catch (error) {
-    await ctx.reply("Git命令执行失败，请检查Git是否正确安装");
-    logger.error(`[荨鹿更新] 检查Git失败：${error.stack}`);
-    return false;
+    await ctx.reply("Git命令执行失败，请检查Git是否正确安装")
+    logger.error(`[荨鹿更新] 检查Git失败：${error.stack}`)
+    return false
   }
 }
 
@@ -70,9 +69,9 @@ async function checkGit(ctx) {
 async function execSyncCmd(cmd) {
   return new Promise((resolve, reject) => {
     exec(cmd, { windowsHide: true }, (error, stdout, stderr) => {
-      resolve({ error, stdout: stdout.toString(), stderr: stderr.toString() });
-    });
-  });
+      resolve({ error, stdout: stdout.toString(), stderr: stderr.toString() })
+    })
+  })
 }
 
 /**
@@ -81,15 +80,15 @@ async function execSyncCmd(cmd) {
  */
 async function getCommitId(plugin = "") {
   try {
-    let cm = "git rev-parse --short HEAD";
+    let cm = "git rev-parse --short HEAD"
     if (plugin) {
-      cm = `git -C ${pluginPath} rev-parse --short HEAD`;
+      cm = `git -C ${pluginPath} rev-parse --short HEAD`
     }
-    let commitId = await execSync(cm, { encoding: "utf-8" });
-    return lodash.trim(commitId);
+    let commitId = await execSync(cm, { encoding: "utf-8" })
+    return lodash.trim(commitId)
   } catch (error) {
-    logger.error(`[荨鹿更新] 获取CommitId失败：${error.stack}`);
-    return "";
+    logger.error(`[荨鹿更新] 获取CommitId失败：${error.stack}`)
+    return ""
   }
 }
 
@@ -98,18 +97,17 @@ async function getCommitId(plugin = "") {
  * @param {string} plugin 插件目录
  */
 async function getUpdateTime(plugin = "") {
-  let cm =
-    'git log  -1 --oneline --pretty=format:"%cd" --date=format:"%m-%d %H:%M"';
+  let cm = 'git log  -1 --oneline --pretty=format:"%cd" --date=format:"%m-%d %H:%M"'
   if (plugin) {
-    cm = `cd ${pluginPath} && git log -1 --oneline --pretty=format:"%cd" --date=format:"%m-%d %H:%M"`;
+    cm = `cd ${pluginPath} && git log -1 --oneline --pretty=format:"%cd" --date=format:"%m-%d %H:%M"`
   }
 
   try {
-    let time = await execSync(cm, { encoding: "utf-8" });
-    return lodash.trim(time);
+    let time = await execSync(cm, { encoding: "utf-8" })
+    return lodash.trim(time)
   } catch (error) {
-    logger.error(`[荨鹿更新] 获取更新时间失败：${error.toString()}`);
-    return "获取时间失败";
+    logger.error(`[荨鹿更新] 获取更新时间失败：${error.toString()}`)
+    return "获取时间失败"
   }
 }
 
@@ -120,28 +118,26 @@ async function getUpdateTime(plugin = "") {
  * @param {string} stdout 命令输出
  */
 async function handleGitError(ctx, err, stdout) {
-  let msg = "更新失败！";
-  let errMsg = err.toString();
+  let msg = "更新失败！"
+  let errMsg = err.toString()
 
   if (errMsg.includes("Timed out")) {
-    let remote = errMsg.match(/'(.+?)'/g)?.[0]?.replace(/'/g, "") || "未知仓库";
-    await ctx.reply(msg + `\n连接超时：${remote}`);
-    return;
+    let remote = errMsg.match(/'(.+?)'/g)?.[0]?.replace(/'/g, "") || "未知仓库"
+    await ctx.reply(msg + `\n连接超时：${remote}`)
+    return
   }
 
   if (/Failed to connect|unable to access/g.test(errMsg)) {
-    let remote = errMsg.match(/'(.+?)'/g)?.[0]?.replace(/'/g, "") || "未知仓库";
-    await ctx.reply(msg + `\n连接失败：${remote}`);
-    return;
+    let remote = errMsg.match(/'(.+?)'/g)?.[0]?.replace(/'/g, "") || "未知仓库"
+    await ctx.reply(msg + `\n连接失败：${remote}`)
+    return
   }
 
   if (errMsg.includes("be overwritten by merge")) {
     await ctx.reply(
-      msg +
-        `存在冲突：\n${errMsg}\n` +
-        "请解决冲突后再更新，或者执行#荨鹿强制更新，放弃本地修改",
-    );
-    return;
+      msg + `存在冲突：\n${errMsg}\n` + "请解决冲突后再更新，或者执行#荨鹿强制更新，放弃本地修改",
+    )
+    return
   }
 
   if (stdout.includes("CONFLICT")) {
@@ -150,11 +146,11 @@ async function handleGitError(ctx, err, stdout) {
       errMsg,
       stdout,
       "\n请解决冲突后再更新，或者执行#荨鹿强制更新，放弃本地修改",
-    ]);
-    return;
+    ])
+    return
   }
 
-  await ctx.reply([errMsg, stdout]);
+  await ctx.reply([errMsg, stdout])
 }
 
 /**
@@ -164,81 +160,80 @@ async function handleGitError(ctx, err, stdout) {
  * @param {string} oldCommitId 更新前的CommitId（新增参数）
  */
 async function getUpdateLog(ctx, plugin = "", oldCommitId = "") {
-  plugin = plugin || PLUGIN_CONFIG.pluginDir;
+  plugin = plugin || PLUGIN_CONFIG.pluginDir
   // 修复：去掉--oneline，避免和--pretty冲突
-  let cm =
-    'git log -20 --pretty=format:"%h||[%cd]  %s" --date=format:"%m-%d %H:%M"';
+  let cm = 'git log -20 --pretty=format:"%h||[%cd]  %s" --date=format:"%m-%d %H:%M"'
   if (plugin) {
     // 修复：给路径加引号
-    cm = `cd "${pluginPath}" && ${cm}`;
+    cm = `cd "${pluginPath}" && ${cm}`
   }
 
-  let logAll;
+  let logAll
   try {
-    logAll = await execSync(cm, { encoding: "utf-8" });
+    logAll = await execSync(cm, { encoding: "utf-8" })
   } catch (error) {
-    logger.error(`[荨鹿更新] 获取更新日志失败：${error.toString()}`);
-    await ctx.reply(error.toString());
-    return "";
+    logger.error(`[荨鹿更新] 获取更新日志失败：${error.toString()}`)
+    await ctx.reply(error.toString())
+    return ""
   }
 
-  if (!logAll) return "";
+  if (!logAll) return ""
 
   // 过滤空行，避免分割后出现异常数据
-  logAll = logAll.split("\n").filter((line) => line.trim());
-  console.log(logAll);
+  logAll = logAll.split("\n").filter(line => line.trim())
+  console.log(logAll)
 
   // 优先使用传入的oldCommitId，没有则重新获取（兼容旧调用）
-  let commitId = oldCommitId || (await getCommitId(plugin));
-  console.log("commitId:", commitId);
+  let commitId = oldCommitId || (await getCommitId(plugin))
+  console.log("commitId:", commitId)
 
   // 兼容CommitId获取失败的情况
   if (!commitId) {
-    await ctx.reply("⚠️ 无法获取当前版本CommitId，将展示最新20条日志");
+    await ctx.reply("⚠️ 无法获取当前版本CommitId，将展示最新20条日志")
   }
 
-  let log = [];
+  let log = []
   for (let str of logAll) {
-    str = str.split("||");
-    console.log(str);
+    str = str.split("||")
+    console.log(str)
 
     // 跳过分割异常的数据
-    if (!str[0] || !str[1]) continue;
+    if (!str[0] || !str[1]) continue
 
     // 只有commitId有效时才终止遍历
-    if (commitId && str[0] == commitId) break;
+    if (commitId && str[0] == commitId) break
 
     // 放宽过滤条件，只过滤纯合并分支的提交
-    if (str[1]?.trim() === "Merge branch") continue;
+    if (str[1]?.trim() === "Merge branch") continue
 
-    log.push(str[1]);
+    log.push(str[1])
   }
 
-  if (log.length <= 0) return "";
+  if (log.length <= 0) return ""
 
-  let line = log.length;
-  log = log.join("\n\n");
-  console.log("log日常：", log);
+  let line = log.length
+  log = log.join("\n\n")
+  console.log("log日常：", log)
 
-  let end = `更多详细信息，请前往GitHub查看\n${PLUGIN_CONFIG.repoUrl}`;
+  let end = `更多详细信息，请前往GitHub查看\n${PLUGIN_CONFIG.repoUrl}`
   let forwardMsg = await ctx.makeForwardMsg(
     ctx,
     [log, end],
     `${plugin || "Qianyu-Bot"}更新日志，共${line}条`,
-  );
-  console.log("更新的forward", forwardMsg);
+  )
+  console.log("更新的forward", forwardMsg)
 
-  return forwardMsg;
+  return forwardMsg
 }
 
 /**
  * 检查pnpm/npm
  */
 async function checkPnpm() {
-  let npm = "npm";
-  let ret = await execSyncCmd("pnpm -v");
-  if (ret.stdout) npm = "pnpm";
-  return npm;
+  let npm = "npm"
+  let ret = await execSyncCmd("pnpm -v")
+  if (ret.stdout) npm = "pnpm"
+  return npm
 }
 
 /**
@@ -246,51 +241,51 @@ async function checkPnpm() {
  * @param {Object} ctx 命令上下文
  */
 async function restartApp(ctx) {
-  await ctx.reply("开始执行重启，请稍等...");
-  logger.mark(`${ctx.logFnc} 开始执行重启，请稍等...`);
+  await ctx.reply("开始执行重启，请稍等...")
+  logger.mark(`${ctx.logFnc} 开始执行重启，请稍等...`)
 
   let data = JSON.stringify({
     isGroup: !!ctx.isGroup,
     id: ctx.isGroup ? ctx.group_id : ctx.user_id,
     time: new Date().getTime(),
-  });
+  })
 
-  let npm = await checkPnpm();
+  let npm = await checkPnpm()
 
   try {
-    await redis.set(PLUGIN_CONFIG.key, data, { EX: 120 });
-    let cm = `${npm} start`;
+    await redis.set(PLUGIN_CONFIG.key, data, { EX: 120 })
+    let cm = `${npm} start`
 
     if (process.argv[1].includes("pm2")) {
-      cm = `${npm} run restart`;
+      cm = `${npm} run restart`
     } else {
-      await ctx.reply("当前为前台运行，重启将转为后台...");
+      await ctx.reply("当前为前台运行，重启将转为后台...")
     }
-    console.log(cm);
+    console.log(cm)
 
     exec(cm, { windowsHide: true }, (error, stdout, stderr) => {
-      console.log(stdout);
-      console.log(error);
-      console.log(stderr);
+      console.log(stdout)
+      console.log(error)
+      console.log(stderr)
 
       if (error) {
-        redis.del(PLUGIN_CONFIG.key);
-        ctx.reply(`操作失败！\n${error.stack}`);
-        logger.error(`[荨鹿更新] 重启失败\n${error.stack}`);
+        redis.del(PLUGIN_CONFIG.key)
+        ctx.reply(`操作失败！\n${error.stack}`)
+        logger.error(`[荨鹿更新] 重启失败\n${error.stack}`)
       } else if (stdout) {
-        logger.mark("重启成功，运行已由前台转为后台");
-        logger.mark(`查看日志请用命令：${npm} run log`);
-        logger.mark(`停止后台运行命令：${npm} stop`);
-        process.exit();
+        logger.mark("重启成功，运行已由前台转为后台")
+        logger.mark(`查看日志请用命令：${npm} run log`)
+        logger.mark(`停止后台运行命令：${npm} stop`)
+        process.exit()
       }
-    });
+    })
   } catch (error) {
-    await redis.del(PLUGIN_CONFIG.key);
-    let e = error.stack ?? error;
-    await ctx.reply(`操作失败！\n${e}`);
+    await redis.del(PLUGIN_CONFIG.key)
+    let e = error.stack ?? error
+    await ctx.reply(`操作失败！\n${e}`)
   }
 
-  return true;
+  return true
 }
 
 /**
@@ -300,66 +295,62 @@ async function restartApp(ctx) {
  */
 async function runUpdate(ctx, isForce = false) {
   // 权限校验：仅主人可执行
-  if (!ctx.isMaster) return false;
+  if (!ctx.isMaster) return false
   // 防重复更新
   if (uping) {
-    await ctx.reply("已有命令更新中..请勿重复操作");
-    return false;
+    await ctx.reply("已有命令更新中..请勿重复操作")
+    return false
   }
 
   // 检查Git
-  if (!(await checkGit(ctx))) return false;
+  if (!(await checkGit(ctx))) return false
 
   // 构建更新命令
-  let type = isForce ? "强制更新" : "更新";
+  let type = isForce ? "强制更新" : "更新"
   let cm = isForce
     ? `git reset --hard && git pull --rebase --allow-unrelated-histories`
-    : "git pull --no-rebase";
+    : "git pull --no-rebase"
   // 给路径加引号
-  cm = `cd "${pluginPath}" && ${cm}`;
+  cm = `cd "${pluginPath}" && ${cm}`
 
   // 记录旧CommitId（现在真正用上了）
-  const oldCommitId = await getCommitId(PLUGIN_CONFIG.pluginDir);
+  const oldCommitId = await getCommitId(PLUGIN_CONFIG.pluginDir)
   // 优化：日志里加入oldCommitId，方便溯源
   logger.mark(
     `${ctx.logFnc} 开始${type}：${PLUGIN_CONFIG.typeName} | 更新前CommitId：${oldCommitId || "未知"}`,
-  );
+  )
 
-  await ctx.reply(`开始#${type}${PLUGIN_CONFIG.typeName}`);
-  uping = true;
-  let ret = await execSyncCmd(cm);
-  uping = false;
+  await ctx.reply(`开始#${type}${PLUGIN_CONFIG.typeName}`)
+  uping = true
+  let ret = await execSyncCmd(cm)
+  uping = false
 
   // 处理更新错误
   if (ret.error) {
     logger.mark(
       `${ctx.logFnc} 更新失败：${PLUGIN_CONFIG.typeName} | 更新前CommitId：${oldCommitId || "未知"}`,
-    );
-    await handleGitError(ctx, ret.error, ret.stdout);
-    return false;
+    )
+    await handleGitError(ctx, ret.error, ret.stdout)
+    return false
   }
 
   // 获取更新时间
-  let updateTime = await getUpdateTime(PLUGIN_CONFIG.pluginDir);
+  let updateTime = await getUpdateTime(PLUGIN_CONFIG.pluginDir)
 
   // 处理更新结果
   if (/Already up|已经是最新/g.test(ret.stdout)) {
-    await ctx.reply(
-      `${PLUGIN_CONFIG.typeName}已经是最新\n最后更新时间：${updateTime}`,
-    );
-    return true;
+    await ctx.reply(`${PLUGIN_CONFIG.typeName}已经是最新\n最后更新时间：${updateTime}`)
+    return true
   } else {
-    await ctx.reply(
-      `${PLUGIN_CONFIG.typeName}更新成功\n更新时间：${updateTime}`,
-    );
+    await ctx.reply(`${PLUGIN_CONFIG.typeName}更新成功\n更新时间：${updateTime}`)
     // 优化：把oldCommitId传给getUpdateLog，避免重复获取
-    let log = await getUpdateLog(ctx, PLUGIN_CONFIG.pluginDir, oldCommitId);
-    console.log(log);
+    let log = await getUpdateLog(ctx, PLUGIN_CONFIG.pluginDir, oldCommitId)
+    console.log(log)
 
-    if (log) await ctx.reply(log);
+    if (log) await ctx.reply(log)
     // 执行重启
-    setTimeout(async () => await restartApp(ctx), 2000);
-    return true;
+    setTimeout(async () => await restartApp(ctx), 2000)
+    return true
   }
 }
 
@@ -368,32 +359,30 @@ async function runUpdate(ctx, isForce = false) {
  * @param {Object} bot 机器人实例
  */
 export function register(bot) {
-  if (!bot || !bot.registerCommand) return;
+  if (!bot || !bot.registerCommand) return
 
   // 初始化重启状态检查
   bot.onMount(() =>
-    initRestartStatus().catch((err) =>
-      logger.error(`[荨鹿更新] 初始化失败：${err.stack}`),
-    ),
-  );
+    initRestartStatus().catch(err => logger.error(`[荨鹿更新] 初始化失败：${err.stack}`)),
+  )
 
   // 注册「荨鹿更新」命令
-  bot.registerCommand(["^荨鹿更新$"], async (ctx) => {
-    await runUpdate(ctx, false);
-  });
+  bot.registerCommand(["^荨鹿更新$"], async ctx => {
+    await runUpdate(ctx, false)
+  })
 
   // 注册「荨鹿强制更新」命令
-  bot.registerCommand(["^荨鹿强制更新$"], async (ctx) => {
-    await runUpdate(ctx, true);
-  });
+  bot.registerCommand(["^荨鹿强制更新$"], async ctx => {
+    await runUpdate(ctx, true)
+  })
 
   // 注册「荨鹿更新日志」命令
-  bot.registerCommand(["^荨鹿更新日志$"], async (ctx) => {
-    let log = await getUpdateLog(ctx, "", "");
-    await ctx.reply(log || "暂无更新日志");
-  });
+  bot.registerCommand(["^荨鹿更新日志$"], async ctx => {
+    let log = await getUpdateLog(ctx, "", "")
+    await ctx.reply(log || "暂无更新日志")
+  })
 
-  logger.mark("[荨鹿更新] 命令注册完成：荨鹿更新、荨鹿强制更新、荨鹿更新日志");
+  logger.mark("[荨鹿更新] 命令注册完成：荨鹿更新、荨鹿强制更新、荨鹿更新日志")
 }
 
 /**
@@ -404,8 +393,8 @@ export function onBotEvent(event) {
   // 可根据需要处理机器人事件（如启动、消息等）
   // 示例：监听机器人启动事件
   if (event.type === "bot_ready") {
-    logger.mark("[荨鹿更新] 机器人已就绪，更新功能可用");
+    logger.mark("[荨鹿更新] 机器人已就绪，更新功能可用")
   }
-  console.log("[qianyu-update] received bot event:", event);
+  console.log("[qianyu-update] received bot event:", event)
 }
-console.log(process.argv[1]);
+console.log(process.argv[1])
