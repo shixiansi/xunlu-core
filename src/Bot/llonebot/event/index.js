@@ -109,6 +109,7 @@ export default class LLoneBotEventListener {
         pickUser: this.#milkyAdapter.pickUser.bind(this.#milkyAdapter),
         pickGroup: this.#milkyAdapter.pickGroup.bind(this.#milkyAdapter),
         ...this.#llbot.bindEvent,
+        makeForwardMsg: this.#milkyAdapter.makeForwardMsg.bind(this.#milkyAdapter), // 绑定适配器的转发消息方法
       }
       console.log("[GlobalBot] 全局Bot对象初始化完成：", Object.keys(global.Bot))
     } else {
@@ -261,8 +262,10 @@ export default class LLoneBotEventListener {
     target.acceptGroupRequest = adapter.acceptGroupRequest.bind(adapter)
     target.rejectGroupRequest = adapter.rejectGroupRequest.bind(adapter)
     target.renderImg = LLoneBot.prototype.renderImg // 绑定LLoneBot的渲染图片方法
-    target.makeForwardMsg = adapter.makeForwardMsg.bind(adapter) // 绑定适配器的转发消息方法
+    target.makeForwardMsg = LLoneBot.prototype.makeForwardMsg.bind(adapter) // 绑定适配器的转发消息方法
     target.getGroupMemberInfo = async (group_id, user_id) => {
+      console.log(group_id, user_id)
+
       try {
         let { member } = await adapter.getGroupMemberInfo({
           group_id,
@@ -270,7 +273,7 @@ export default class LLoneBotEventListener {
         })
         return member
       } catch (error) {
-        console.error(`[MilkyAdapter] 获取群成员信息 ${id} 失败：`, error)
+        console.error(`[MilkyAdapter] 获取群成员信息 ${user_id} 失败：`, error)
         return null
       }
     }

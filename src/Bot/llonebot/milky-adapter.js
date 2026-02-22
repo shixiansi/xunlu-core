@@ -503,6 +503,9 @@ class MilkyAdapter {
   }
 
   async makeForwardMsg(forwardMsg) {
+    console.log("makeForwardMsg input:", forwardMsg)
+    console.log("makedata", forwardMsg.data)
+
     return [
       {
         type: "forward",

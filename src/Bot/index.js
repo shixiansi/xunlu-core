@@ -665,7 +665,9 @@ export default class BaseBot {
     })
   }
   //制作消息转发
-  async makeForwardMsg(e, msg = [], dec = "", msgsscr = false) {
+  async makeForwardMsg(e, msg = [], dec = "", msgsscr = true) {
+    console.log("make里的e", e)
+
     if (!Array.isArray(msg)) {
       msg = [msg]
     }
