@@ -110,6 +110,7 @@ export default class OneBotV11EventListener {
           this.#normalizeEventData(data)
           // 分发事件到OneBot核心处理
           await OneBotV11EventListener.dealMessage(data)
+          data.adapterType = "OneBotV11"
           this.#oneBot.deal(data)
 
           console.debug(`[OneBotV11Adapter] 处理完成事件：${eventType}`)

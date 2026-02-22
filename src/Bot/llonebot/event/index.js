@@ -298,7 +298,7 @@ export default class LLoneBotEventListener {
       e.seq = e.message_seq
       delete e.message_seq
     }
-
+    e.adapterType = "Milky"
     return e
   }
 

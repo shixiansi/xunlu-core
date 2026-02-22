@@ -22,6 +22,11 @@ export function register(bot) {
     cfg.setConfigValue("bot", "suffix_text", suffix)
     return ctx.reply(`尾缀已设置为: ${suffix}`)
   })
+
+  bot.registerCommand(["^(|#)我是什么bot"], async ctx => {
+    const name = cfg.packageInfo.name
+    ctx.reply(`我是运行在${name}的${ctx.adapterType}_Bot`)
+  })
 }
 
 export function onBotEvent(event) {
