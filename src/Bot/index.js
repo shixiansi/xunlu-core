@@ -16,18 +16,16 @@ export default class BaseBot {
 
   async loadBotPlugins() {
     try {
-      console.log(env.RootPath)
-
       const plugins = await loadPlugins(path.join(env.RootPath, "./src/plugins"))
 
       for (const plugin of plugins) {
-        console.log("加载插件:", plugin)
+        logger.info("加载插件:", plugin)
         await this.registerPlugin(plugin)
       }
 
-      console.log("插件加载完成，注册命令:", Object.keys(this.plugins))
+      logger.info("插件加载完成，注册命令:", Object.keys(this.plugins))
     } catch (error) {
-      console.error("加载插件时出错:", error)
+      logger.error("加载插件时出错:", error)
     }
   }
 
@@ -71,7 +69,7 @@ export default class BaseBot {
 
   async runMount() {
     for (let fnc of this.onMount) {
-      console.log("执行初始化任务" + fnc.toString())
+      logger.info("执行初始化任务" + fnc.toString())
 
       try {
         await fnc()
@@ -108,7 +106,6 @@ export default class BaseBot {
   createCommandRegistrar(pname, idx) {
     return (command, handler) => {
       if (!command || !handler) return
-      // console.log(command, handler)
       const commands = Array.isArray(command) ? command : [command]
       this.plugins[`${pname}-${commands[0] == "" ? idx : commands[0]}`] = {
         id: `${pname}-${idx}`,
@@ -127,15 +124,12 @@ export default class BaseBot {
 
   createContextReplyHandler() {
     return async (ctx, callback, endMsg) => {
-      //  console.log("上下文回复的ctx", ctx)
-
       const isPrivate = ctx.isPrivate
       const contextKey = isPrivate ? ctx.user_id : ctx.group_id
       const userId = ctx.sender_id || ctx.user_id
-      // console.log(contextKey)
 
       if (!contextKey || !userId) {
-        console.warn("缺少上下文Key或用户ID")
+        logger.warn("缺少上下文Key或用户ID")
         return
       }
 
@@ -201,7 +195,7 @@ export default class BaseBot {
     return setTimeout(() => {
       this.clearContext(isPrivate, contextKey, userId)
       if (ctx) {
-        ctx.reply("时间超时，已取消。", true).catch(console.error)
+        ctx.reply("时间超时，已取消。", true).catch(logger.error)
       }
     }, 30000)
   }
@@ -237,12 +231,8 @@ export default class BaseBot {
   }
 
   async deal(e) {
-    console.log("原始的e", e)
-
     await this.dealMsg(e)
     await this.reply(e)
-    console.log("处理的e", e)
-
     if (e.user_id == e.self_id && e.post_type == "message") return
     //处理上下文
     const isPrivate = e.isPrivate
@@ -274,19 +264,15 @@ export default class BaseBot {
     let regs = lodash.orderBy(Object.values(this.plugins), ["priority"], ["asc"])
 
     for (let r of regs) {
-      //  console.log(r.event, e)
-
       if (r.event && !this.filtEvent(e, r)) continue
-
       if (new RegExp(r.reg).test(e?.msg?.trim())) {
         try {
-          console.log("触发命令:", r)
+          logger.debug("触发命令:", r)
           let res = await r.fnc(e)
           if (!res) continue
           return res
         } catch (err) {
-          console.error("处理命令时出错:", err)
-          // await e.reply("命令执行出错，请稍后重试").catch(console.error);
+          logger.error("处理命令时出错:", err)
         }
       }
     }
@@ -339,8 +325,8 @@ export default class BaseBot {
       }
       return res
     } catch (error) {
-      console.error("执行上下文回调出错:", error)
-      await e.reply("处理出错，请重新操作").catch(console.error)
+      logger.error("执行上下文回调出错:", error)
+      await e.reply("处理出错，请重新操作").catch(logger.error)
     }
   }
 
@@ -413,9 +399,7 @@ export default class BaseBot {
 
   reply(e) {
     if (e.reply) {
-      console.log("e.reply存在", e)
       e.replyNew = e.reply
-
       /**
        * @param msg 发送的消息
        * @param quote 是否引用回复
@@ -428,9 +412,6 @@ export default class BaseBot {
           imgdisplay = await getImageDisplay()
         }
         if (Array.isArray(msg)) {
-          console.log(msg)
-
-          msg = msg.filter(m => m && m.type)
           msg = msg.map(m => {
             switch (m?.type) {
               case "image":
@@ -463,13 +444,7 @@ export default class BaseBot {
         }
       }
     } else {
-      console.log("e.reply不存在")
-      // console.log(e)
-
       e.reply = async (msg = "", quote = false, data = {}) => {
-        // console.log("reply对象的e:", e)
-        console.log(msg)
-
         let msgRes
         let { recallMsg = 0, at = "" } = data
         if (!msg) return false
@@ -490,18 +465,14 @@ export default class BaseBot {
 
         if (e.group_id) {
           msgRes = await e.sendMessage(e, msg).catch(err => {
-            console.log(err)
+            logger.error(err)
           })
         } else {
-          // console.log(e)
-
           let friend = e.friend
           msgRes = await e.sendMessage(`${e.user_id}`, msg).catch(err => {
             logger.warn(err)
           })
         }
-        console.log("这是发送后的msgTes", msgRes)
-
         if (!e.isGuild && recallMsg > 0 && msgRes?.message_seq) {
           setTimeout(async () => {
             if (!msgRes?.message_seq) return
@@ -522,8 +493,6 @@ export default class BaseBot {
     if (e.msg) return
     if (e.message) {
       for (let val of e.message) {
-        // console.log(val.data)
-
         switch (val.type) {
           case "text":
             /** 中文#转为英文 */
@@ -641,19 +610,15 @@ export default class BaseBot {
     if (!Array.isArray(msg)) {
       msg = [msg]
     }
-    console.log(msg)
-
     let name = msgsscr ? e.sender.card || e.user_id : Bot.nickname
     let id = msgsscr ? e.user_id : Bot.uin
 
     if (e.isGroup) {
       try {
         let info = await e.getGroupMemberInfo(e.group_id, id)
-        console.log("用户信息", info)
-
         name = info.card || info.nickname
       } catch (err) {
-        console.log(err)
+        logger.error(err)
       }
     }
 
@@ -698,7 +663,7 @@ export default class BaseBot {
         }
       }
     } catch (err) {
-      console.log(err)
+      logger.error(err)
     }
 
     return forwardMsg

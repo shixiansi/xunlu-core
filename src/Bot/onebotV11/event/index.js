@@ -258,7 +258,10 @@ export default class OneBotV11EventListener {
     if (!Array.isArray(e.message)) e.message = [e.message]
     let imgdisplay = (await getImageDisplay()) || ""
     // 简化数组处理，移除冗余的展开/包裹
+    console.log("处理消息dealmesg", e.message)
+
     e.message = e.message.map(item => {
+      if (typeof item === "string") return { type: "text", data: { text: item } }
       const result = { type: item.type, ...item.data }
       // 图片类型特殊处理
       if (item.type === "image") {
@@ -269,6 +272,7 @@ export default class OneBotV11EventListener {
       }
       return result
     })
+    console.log("处理完毕", e.message)
 
     return e
   }
