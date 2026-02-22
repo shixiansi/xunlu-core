@@ -276,7 +276,7 @@ export default class OneBotV11EventListener {
         }
       } else if (item.type === "face") {
         result.data = {
-          id: item.id,
+          id: item?.id || item?.data?.id,
         }
       }
       return result
