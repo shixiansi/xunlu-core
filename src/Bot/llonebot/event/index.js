@@ -261,7 +261,7 @@ export default class LLoneBotEventListener {
     target.acceptGroupRequest = adapter.acceptGroupRequest.bind(adapter)
     target.rejectGroupRequest = adapter.rejectGroupRequest.bind(adapter)
     target.renderImg = LLoneBot.prototype.renderImg // 绑定LLoneBot的渲染图片方法
-    target.makeForwardMsg = LLoneBot.prototype.makeForwardMsg
+    target.makeForwardMsg = adapter.makeForwardMsg.bind(adapter) // 绑定适配器的转发消息方法
     target.getGroupMemberInfo = async (group_id, user_id) => {
       try {
         let { member } = await adapter.getGroupMemberInfo({
@@ -329,27 +329,5 @@ export default class LLoneBotEventListener {
       }
       return result
     })
-  }
-
-  /**
-   * 构造LLOneBot转发消息格式
-   * @param {Array} msg 原始消息列表
-   * @returns {Array} 转发消息格式
-   */
-  makeLLOneBotForwardMsg(msg) {
-    if (!Array.isArray(msg)) return []
-
-    return [
-      {
-        type: "forward",
-        data: {
-          messages: msg.map(item => ({
-            user_id: item.user_id,
-            sender_name: item.nickname,
-            segments: [this.#milkyAdapter.dealMilkyMsg(item.message)],
-          })),
-        },
-      },
-    ]
   }
 }

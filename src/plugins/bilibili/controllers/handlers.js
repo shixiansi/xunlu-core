@@ -55,7 +55,7 @@ export function register(bot) {
   })
 
   //直播推送   群名称 属性名是uid
-  bot.setTask("0 * * * * *", async () => {
+  bot.setTask("0 * * * * *", async ctx => {
     let glist = filemage.GetfileList("src/plugins/bilibili/data")
     if (glist.length == 0) return
     for (let g of glist.map(i => i.replace(".json", ""))) {

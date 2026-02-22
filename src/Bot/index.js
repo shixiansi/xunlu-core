@@ -98,7 +98,9 @@ export default class BaseBot {
   collectTimerTasks() {
     return (interval, task) => {
       const job = schedule.scheduleJob(interval, () => {
-        task()
+        task({
+          ...this.bindEvent,
+        })
       })
       return job
     }

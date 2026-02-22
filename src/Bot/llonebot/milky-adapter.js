@@ -502,6 +502,21 @@ class MilkyAdapter {
     }
   }
 
+  async makeForwardMsg(forwardMsg) {
+    return [
+      {
+        type: "forward",
+        data: {
+          messages: forwardMsg.map(item => ({
+            user_id: item.user_id,
+            sender_name: item.nickname,
+            segments: [this.dealMilkyMsg(item.message)],
+          })),
+        },
+      },
+    ]
+  }
+
   /**
    * 资源清理
    */
