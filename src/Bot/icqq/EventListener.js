@@ -81,7 +81,14 @@ class ListenerLoader {
     await pluginLoader.initBot()
     await pluginLoader.runMount()
     Bot.sendMessage = sendMessage
-    Bot.makeForwardMsg = pluginLoader.makeForwardMsg
+    Bot.makeForwardMsg = async msg => {
+      if (botenv == "OneBotv11") {
+        let { default: oneBotV11Adapter } = await import("../onebotV11/onebot.js")
+        return await oneBotV11Adapter.makeForwardMsg(msg)
+      } else {
+        return msg
+      }
+    }
     Bot.renderImg = pluginLoader.renderImg
     const files = filemag.GetfileList().filter(file => file.endsWith(".js"))
     for (let File of files) {
