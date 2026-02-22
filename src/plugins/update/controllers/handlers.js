@@ -397,6 +397,7 @@ export function register(bot) {
 
   bot.registerCommand(["^荨鹿全部更新日志$"], async (ctx) => {
     await ctx.reply("全部更新日志");
+    console.log("测试更新");
   });
 
   logger.mark("[荨鹿更新] 命令注册完成：荨鹿更新、荨鹿强制更新、荨鹿更新日志");
