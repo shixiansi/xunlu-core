@@ -1,5 +1,7 @@
 export default function getErrorMessage(code) {
-  switch (Number(code)) {
+  console.log(-Number(code))
+
+  switch (-Number(code)) {
     case -1:
       return "应用程序不存在或已被封禁"
     case -2:

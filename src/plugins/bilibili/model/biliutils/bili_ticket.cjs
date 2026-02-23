@@ -30,7 +30,8 @@ async function getBiliTicket(csrf) {
   const response = await fetch(`${url}?${params.toString()}`, {
     method: "POST",
     headers: {
-      "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0",
     },
   })
   if (!response.ok) {

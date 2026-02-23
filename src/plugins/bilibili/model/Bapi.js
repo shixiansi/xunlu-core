@@ -1,7 +1,7 @@
 import fetch from "node-fetch"
 function getURLMap(name, params) {
   const ApiMap = {
-    search: `https://api.bilibili.com/x/web-interface/wbi/search/all/v2?keyword=${params?.str}`,
+    search: `https://api.bilibili.com/x/web-interface/wbi/search/type?__refresh__=true&_extra=&order=${params?.order}&context=&page=1&page_size=42&from_source=&from_spmid=333.337&platform=pc&highlight=1&single_column=0&keyword=${params?.keyword}&qv_id=ZINfg344aj8e6MOSKXaaIcBPyKJsU07m&ad_resource=5654&source_tag=3&gaia_vtoken=&category_id=&search_type=${params?.search_type}&dynamic_offset=36&w_rid=57354046d4011cae09e94c624e9dc9ba&wts=1678541433`,
     searchType: `https://api.bilibili.com/x/web-interface/wbi/search/type`,
     buvid3: `https://api.bilibili.com/x/frontend/finger/spi`,
     videoLow: `https://api.bilibili.com/x/player/playurl?bvid=${params?.bv}&cid=${params?.cid}&qn=112&fnval=4048&fnver=0`,
@@ -9,7 +9,7 @@ function getURLMap(name, params) {
     suggest: `https://s.search.bilibili.com/main/suggest?term=${params?.str}`,
     tags: `https://api.bilibili.com/x/web-interface/view/detail/tag?aid=${params?.aid}&cid=${params?.cid}`,
     userInfo: `https://api.bilibili.com/x/web-interface/nav`,
-    userCard: `https://api.bilibili.com/x/web-interface/card?mid=${params?.mid}&photo=true`,
+    userCard: `https://api.bilibili.com/x/web-interface/card?mid=${params?.mid}&photo=false`,
     userVideo: `https://app.biliapi.com/x/v2/space/archive/cursor?vmid=${params?.mid}`,
     spaceVideo: `https://api.bilibili.com/x/space/wbi/arc/search`,
     userCards: `https://api.bilibili.com/x/polymer/pc-electron/v1/user/cards?${params?.mids}`,

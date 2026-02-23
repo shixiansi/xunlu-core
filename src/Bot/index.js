@@ -273,6 +273,7 @@ export default class BaseBot {
       if (new RegExp(r.reg).test(e?.msg?.trim())) {
         try {
           logger.debug("触发命令:", r)
+          e.reg = r.reg
           let res = await r.fnc(e)
           if (!res) continue
           return res

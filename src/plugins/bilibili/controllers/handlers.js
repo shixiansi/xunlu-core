@@ -7,19 +7,155 @@ import moment from "moment"
 const filemage = new Filemage()
 filemage.CreatDir("src/plugins/bilibili/data")
 
-function writeLiveData(groupId, uid, data) {
-  let gdata = filemage.getFileDataToJson(`src/plugins/bilibili/data/${groupId}.json`) || {}
-  gdata[uid].live = data
+const dynamicType = {
+  live: "直播",
+  text: "文字",
+  draw: "图文",
+  av: "视频",
+  forward: "转发",
+  article: "专栏",
+  raffle: "抽奖",
+}
+
+function writeBiliData(groupId, uid, data) {
+  let gdata = getBiliData(groupId) || {}
+  gdata[uid] = data
+  if (data == null) {
+    delete gdata[uid]
+  }
   filemage.writeFileJsonData(`src/plugins/bilibili/data/${groupId}.json`, gdata)
   logger.debug(
     `[Bilibili] 更新直播状态，群ID：${groupId}，用户ID：${uid}，状态：${data?.live_status === 1 ? "直播中" : "下播"}`,
   )
 }
 
+function getUpList(groupId) {
+  let gdata = getBiliData(groupId)
+  return Object.keys(gdata) || []
+}
+
+function getBiliData(groupId, uid) {
+  let gdata = {}
+  try {
+    gdata = filemage.getFileDataToJson(`src/plugins/bilibili/data/${groupId}.json`) || {}
+  } catch (e) {
+    filemage.writeFileJsonData(`src/plugins/bilibili/data/${groupId}.json`, gdata)
+  }
+  return uid ? gdata[uid] : gdata
+}
+
+function writeLiveData(groupId, uid, data) {
+  let gdata = getBiliData(groupId) || {}
+  gdata[uid].live = data
+  writeBiliData(groupId, uid, gdata[uid])
+}
+
 export function register(bot) {
   if (!bot || !bot.registerCommand) return
 
-  bot.registerCommand("b站扫码", async ctx => {
+  bot.registerCommand(
+    "^#订阅(UP|up|)(直播|文字|图文|视频|转发|抽奖|专栏|)(动态|)(uid:|UID:|)",
+    async ctx => {
+      let dtype = ctx.msg.match(/直播|文字|图文|视频|转发|抽奖|专栏/g)?.[0] || "全部"
+      let mid = ctx.msg.replace(new RegExp(ctx.reg), "").trim() //纯数字
+      if (!mid) {
+        return ctx.reply("订阅不能为空，请输入用户id或者用户昵称！")
+      }
+      if (isNaN(mid)) {
+        let data = await Bili.getSearchUser(mid)
+        if (!data) {
+          return ctx.reply("没有找到该用户呢！")
+        }
+        mid = data.mid
+      }
+      let reslut = await Bili.getUpdateDynamic(mid)
+      let updata = getBiliData(ctx.group_id, mid) || {}
+      if (reslut?.code && reslut.code != 0) {
+        if (reslut.code == -352) {
+          return ctx.reply("请先设置b站ck进行订阅！使用“b站扫码”命令进行登录！")
+        }
+        return ctx.reply(reslut.message || reslut.msg)
+      }
+      let data, type
+      type = Object.entries(dynamicType).find(item => item[1] == dtype)?.[0]
+
+      data = {
+        nickname: reslut?.author?.nickname,
+        upuid: reslut?.id || 0,
+        uid: mid,
+        img: reslut?.author?.img,
+        pendantImg: reslut?.author?.pendantImg,
+        dynamicType: updata?.dynamicType ? [...updata?.dynamicType, type] : [type],
+      }
+
+      if (reslut?.code == 0) {
+        let authorInfo = await Bili.getUserBaseInfo(mid)
+        data = {
+          ...data,
+          nickname: authorInfo?.name,
+          img: authorInfo?.face,
+          pendantImg: authorInfo?.pendant?.image,
+          dynamicType: updata?.dynamicType ? [...updata?.dynamicType, type] : [type],
+        }
+      }
+
+      if (!type) {
+        delete data.dynamicType
+        type = "all"
+      }
+      updata = data
+      writeBiliData(ctx.group_id, mid, updata)
+      return ctx.reply([
+        segment.image(data.img),
+        `昵称：${data.nickname}\n`,
+        type == "all"
+          ? `订阅Up主${data.nickname}成功！`
+          : `已订阅Up主${data.nickname}的${dynamicType[type]}推送！`,
+      ])
+    },
+  )
+
+  bot.registerCommand(
+    "^#取消订阅(UP|up|)(直播|文字|图文|视频|转发|抽奖|专栏|)(动态|)(uid:|UID:|)",
+    async ctx => {
+      let dtype = ctx.msg.match(/直播|文字|图文|视频|转发|抽奖|专栏/g)?.[0]
+      let mid = ctx.msg.replace(new RegExp(ctx.reg), "")
+      if (!mid) {
+        return ctx.reply("请输入B站用户id或者用户昵称！")
+      }
+      if (isNaN(mid)) {
+        let data = await Bili.getSearchUser(mid)
+        if (!data) {
+          return ctx.reply("没有找到该用户呢！")
+        }
+        mid = `${data.mid}`
+      }
+      let updata = getBiliData(ctx.group_id, mid)
+      let result = { ...updata }
+
+      let type = Object.entries(dynamicType).find(item => item[1] == dtype)?.[0] || "all"
+      if (!getUpList(ctx.group_id).includes(mid)) {
+        return ctx.reply("暂未订阅该up主！")
+      } else if (type == "all") {
+        updata = null
+      } else {
+        updata = {
+          ...updata,
+          unpush: updata?.unpush ? [...updata?.unpush, type] : [type],
+        }
+      }
+      console.log(type, updata)
+
+      writeBiliData(ctx.group_id, mid, updata)
+      return ctx.reply(
+        type == "all"
+          ? `取消订阅Up主${result?.nickname}成功！`
+          : `已取消Up主${result?.nickname}的${dynamicType[type]}推送！`,
+      )
+    },
+  )
+
+  bot.registerCommand("^(|#)b站扫码$", async ctx => {
     if (!ctx.isMaster) return false
     await Blogin.login()
     await ctx.reply(segment.image(Blogin.qrImagePath), false, { recallMsg: 120 })
@@ -43,7 +179,6 @@ export function register(bot) {
     if (!ctx.isGroup) return false
     let mid = ctx.msg.replace("#查询up最新动态", "")
     let result = await Bili.getFirstDynamic(mid)
-    console.log(result)
 
     if (result && !result?.code) {
       let bglist = filemage.GetfileList("src/plugins/bilibili/resources/html/bilibili/bg")

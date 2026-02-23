@@ -35,34 +35,34 @@ class Bilibili {
   async fetchWithHeaders(url, headers = {}) {
     try {
       const cookie = await this.getCookie()
+      console.log(cookie)
+
       const response = await fetch(url, {
         headers: {
           ...headers,
           Cookie: cookie,
-          "user-agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36 Edg/138.0.0.0",
-        },
-        timeout: 10000,
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0",
+        }
       })
+      console.log(response)
 
       if (!response.ok) {
-        throw new Error(`请求失败: ${response.status} ${response.statusText}`)
+        throw new Error(`请求失败: [errcode:${response.status}] ${response.statusText}`)
       }
 
       const data = await response.json()
-
       if (data.code) {
-        const errorMessage = getErrorMessage(data.code)
-        throw new Error(`API 错误: ${data.code} ${errorMessage}`)
+        throw new Error(`API 错误: [errcode:${data.code}]`)
       }
 
       return data
     } catch (error) {
       console.error("[ERROR] 网络请求失败:", error.message)
-      const errorCode = error.message.includes("API 错误:")
-        ? error.message.split("API 错误: ")[1].split(" ")[0]
-        : "500"
-      return { code: errorCode, message: error.message }
+      const facePattern = /\[errcode:(\d+)\]/g
+      const errorCode = facePattern.exec(error.message)[1] || "500"
+      const errorMessage = getErrorMessage(errorCode)
+      return { code: errorCode, message: errorMessage }
     }
   }
 
@@ -614,15 +614,38 @@ class Bilibili {
     }
   }
 
+  async getSearchUser(name, num = 1, order = "fans") {
+    let data = await this.getsearch(name, "bili_user", order)
+    console.log(data)
+
+    if (data) {
+      return num == 1 ? data[0] : data.slice(0, num)
+    }
+  }
+
+  async getsearch(keyword, search_type, order) {
+    try {
+      const url = Bapi("search", { order, keyword, search_type })
+      const { data } = await this.fetchWithHeaders(url)
+      console.log(data)
+
+      return data.result
+    } catch (error) {
+      console.error("[ERROR] 搜索失败:", error.message)
+      const errorCode = error.message.includes("API 错误:")
+        ? error.message.split("API 错误: ")[1].split(" ")[0]
+        : "500"
+      return { code: errorCode, message: error.message }
+    }
+  }
+
   // 获取用户基本信息
   async getUserBaseInfo(mid) {
     try {
       if (!mid) return
       const url = Bapi("userCard", { mid })
       console.log(url)
-      const { data } = await this.fetchWithHeaders(url, {
-        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
-      })
+      const { data } = await this.fetchWithHeaders(url)
       console.log(data)
       const { name, face, fans, friend, sign, level_info } = data.card
       const { like_num, archive_count, space } = data
@@ -808,8 +831,16 @@ class Bilibili {
   async getdynamiclist(mid) {
     try {
       const url = Bapi("dynamiclist", { mid })
-      const res = await this.fetchWithHeaders(url)
+      const res = await this.fetchWithHeaders(url, {
+        Referer: `https://space.bilibili.com/${mid}/`, // 对应UP主空间地址
+        Accept: "application/json, text/plain, */*",
+        "Accept-Language": "zh-CN,zh;q=0.9",
+        Origin: "https://space.bilibili.com",
+      })
+      console.log(res)
+
       const { data } = res
+      console.log("动态数据", data)
 
       if (res.code === 0) {
         return data.items
@@ -849,7 +880,7 @@ class Bilibili {
 // 示例调用
 // ;(async () => {
 //   const bilibiliInstance = new Bilibili()
-//   console.log(await bilibiliInstance.getFirstDynamic("19914630"))
+//   console.log(await bilibiliInstance.getUserBaseInfo("19914630"))
 // })()
 
 export default new Bilibili()
