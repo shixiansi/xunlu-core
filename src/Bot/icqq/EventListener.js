@@ -80,6 +80,11 @@ class ListenerLoader {
 
     await pluginLoader.initBot()
     await pluginLoader.runMount()
+    const bindEvent = {
+      reply: pluginLoader.reply,
+    }
+    this.bindEvent(bindEvent, botenv)
+    pluginLoader.bindEvent = bindEvent
     Bot.sendMessage = sendMessage
     Bot.makeForwardMsg = async msg => {
       if (botenv == "OneBotv11") {
