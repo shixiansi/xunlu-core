@@ -196,6 +196,18 @@ class ListenerLoader {
       e.recallMessage = recallMessage
 
       e.getMsg = async msg_id => {
+        const genGroupMessageId = (gid, uin, seq, rand, time, pktnum = 1) => {
+          const buf = Buffer.allocUnsafe(21)
+          buf.writeUInt32BE(gid)
+          buf.writeUInt32BE(uin, 4)
+          buf.writeInt32BE(seq & 0xffffffff, 8)
+          buf.writeInt32BE(rand & 0xffffffff, 12)
+          buf.writeUInt32BE(time, 16)
+          buf.writeUInt8(pktnum > 1 ? pktnum : 1, 20)
+          return buf.toString("base64")
+        }
+        let { seq, time, rand } = e.source
+        msg_id = genGroupMessageId(e.group_id, e.user_id, seq, rand, time)
         return await Bot.getMsg(msg_id)
       }
       e.getReplyMsg = async seq => {

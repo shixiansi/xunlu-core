@@ -9,11 +9,9 @@ let file = new Filemage("./src/plugins/ai/resources/CharacterDesign/")
 export function register(bot) {
   if (!bot || !bot.registerCommand) return
   bot.registerCommand(["", 5000], async ctx => {
-    console.log(ctx.message)
-
     if (ctx?.message?.[0]?.type == "reply" || ctx?.source) {
       console.log(ctx.message)
-
+      console.log(ctx.source)
       const replyMsg_seq = ctx?.source?.seq || ctx.message[0]?.message_seq || ctx.message[0]?.id
       console.log(replyMsg_seq)
 
@@ -22,7 +20,7 @@ export function register(bot) {
       let msglist = msgInfo?.message
       let raw_message = msglist?.raw_message || msglist[0]?.text
       console.log(raw_message)
-      if (!raw_message) return false
+      if (!raw_message || !msgInfo) return false
       if (raw_message?.includes("id") || raw_message.includes("画师")) {
         return ctx.recallMessage.call(ctx, {
           peer_id: msgInfo?.message?.peer_id || msgInfo[0].group_id,

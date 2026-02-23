@@ -63,6 +63,7 @@ export function register(bot) {
       for (let u in flist) {
         if (!flist[u]) continue
         let result = await Bili.getRoomInfobyMid(u)
+        if (!result) continue
         let { room_id } = result
         if (room_id == 0) continue
         let roomInfo = await Bili.getRoomInfo(room_id)

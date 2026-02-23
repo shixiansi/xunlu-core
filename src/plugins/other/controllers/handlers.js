@@ -30,7 +30,7 @@ export function register(bot) {
     }
   })
 
-  bot.registerCommand(["测试转发", 1000], async ctx => {
+  bot.registerCommand(["^测试转发$", 1000], async ctx => {
     return ctx.reply(await ctx.makeForwardMsg(ctx, ["测试转发"]))
   })
 
@@ -43,7 +43,7 @@ export function register(bot) {
     }
   })
 
-  bot.registerCommand(["调用", 1000], async ctx => {
+  bot.registerCommand(["^调用$", 1000], async ctx => {
     if (ctx.isMaster) {
       ctx.reply("我将会调用语音合成发送：可莉说你是个几把")
       bot.callFnc("tts-plugin-1", { ...ctx, msg: "可莉说你是个几把" })
