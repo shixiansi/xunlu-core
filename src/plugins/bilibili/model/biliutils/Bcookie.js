@@ -8,8 +8,8 @@ async function getCookie() {
   let b_nut = await getB_nt()
   const jsonData = await redis.get("bilibili_cookie")
 
-  const { SESSDATA } = jsonData ? JSON.parse(jsonData) : {}
-  return [Buvid, bili_ticket, b_nut, `SESSDATA=${SESSDATA}`].join(";")
+  const { SESSDATA, DedeUserID } = jsonData ? JSON.parse(jsonData) : {}
+  return [Buvid, bili_ticket, b_nut, `SESSDATA=${SESSDATA}`, `DedeUserID=${DedeUserID}`].join(";")
 }
 
 async function getProvisionalCookie() {

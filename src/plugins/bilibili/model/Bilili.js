@@ -35,18 +35,14 @@ class Bilibili {
   async fetchWithHeaders(url, headers = {}) {
     try {
       const cookie = await this.getCookie()
-      console.log(cookie)
-
       const response = await fetch(url, {
         headers: {
           ...headers,
           Cookie: cookie,
           "User-Agent":
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0",
-        }
+        },
       })
-      console.log(response)
-
       if (!response.ok) {
         throw new Error(`请求失败: [errcode:${response.status}] ${response.statusText}`)
       }
