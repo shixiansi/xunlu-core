@@ -32,9 +32,6 @@ class OneBotV11Adapter {
 
     // 标识适配器类型
     this.adapterType = "onebot-v11"
-
-    // 初始化反向WS服务端
-    this.startServer()
   }
 
   /**
@@ -671,7 +668,7 @@ class OneBotV11Adapter {
    * @param {Array} msg 原始消息列表
    * @returns {Array} 标准化转发消息格式
    */
-  static makeForwardMsg(msg) {
+  makeForwardMsg(msg) {
     if (!Array.isArray(msg) || msg.length === 0) {
       console.warn("[OneBotV11Adapter] 构造转发消息失败：消息列表为空")
       return []

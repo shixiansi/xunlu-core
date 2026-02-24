@@ -28,6 +28,7 @@ export default class OneBotV11EventListener {
     wsPath: this.#oneBotConfig.wsPath || "/OneBotV11",
   }
   #oneBotAdapter = new OneBotV11Adapter(this.#adapterConfig) // 适配器实例
+
   #oneBot = new OneBot() // OneBot核心实例
 
   /**
@@ -54,6 +55,7 @@ export default class OneBotV11EventListener {
    * 初始化适配器并校验登录状态
    */
   async #initAdapter() {
+    this.#oneBotAdapter.startServer()
     console.log("[OneBotV11Adapter] 适配器配置：", this.#adapterConfig)
     const loginInfo = await this.#oneBotAdapter.getLoginInfo()
     console.log("[OneBotV11Adapter] 登录信息：", loginInfo)
@@ -80,7 +82,7 @@ export default class OneBotV11EventListener {
         ...this.#oneBotAdapter,
         ...{ reply: this.#oneBot.reply },
         ...this.#oneBot.bindEvent,
-        makeForwardMsg: OneBotV11Adapter.makeForwardMsg.bind(this.#oneBotAdapter),
+        makeForwardMsg: this.#oneBotAdapter.makeForwardMsg.bind(this.#oneBotAdapter),
       }
       console.log("[GlobalBot] 全局Bot对象初始化完成：", Object.keys(global.Bot))
     } else {
