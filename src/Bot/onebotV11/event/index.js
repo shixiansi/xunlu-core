@@ -80,7 +80,7 @@ export default class OneBotV11EventListener {
         ...this.#oneBotAdapter,
         ...{ reply: this.#oneBot.reply },
         ...this.#oneBot.bindEvent,
-        makeForwardMsg: this.#oneBotAdapter.makeForwardMsg.bind(this.#oneBotAdapter),
+        makeForwardMsg: OneBotV11Adapter.makeForwardMsg.bind(this.#oneBotAdapter),
       }
       console.log("[GlobalBot] 全局Bot对象初始化完成：", Object.keys(global.Bot))
     } else {
