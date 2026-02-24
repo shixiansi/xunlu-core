@@ -89,7 +89,7 @@ class ListenerLoader {
     Bot.makeForwardMsg = async msg => {
       if (botenv == "OneBotv11") {
         let { default: oneBotV11Adapter } = await import("../onebotV11/onebot.js")
-        return await oneBotV11Adapter.makeForwardMsg(msg)
+        return await new oneBotV11Adapter().makeForwardMsg(msg)
       } else {
         return msg
       }
