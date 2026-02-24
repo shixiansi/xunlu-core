@@ -823,6 +823,11 @@ class Bilibili {
     }
   }
 
+  async getCompleteUrl(url) {
+    const rep = await fetch(url)
+    return rep.url
+  }
+
   // 获取用户的动态列表
   async getdynamiclist(mid) {
     try {

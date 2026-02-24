@@ -36,15 +36,22 @@ export default class OneBotV11EventListener {
    * 替代原模块末尾的setTimeout，建议调用方自行控制延迟加载
    */
   async load() {
+    this.#oneBotAdapter.startServer()
     try {
-      // 1. 初始化适配器并校验登录状态
-      await this.#initAdapter()
-      // 2. 初始化全局Bot对象
-      await this.#initGlobalBot()
-      // 3. 绑定所有事件监听
-      this.#bindAllEvents()
+      setTimeout(async () => {
+        try {
+          await this.#initAdapter()
+          // 2. 初始化全局Bot对象
+          await this.#initGlobalBot()
+          // 3. 绑定所有事件监听
+          this.#bindAllEvents()
 
-      console.log("[OneBotV11EventListener] 初始化完成，已绑定所有事件监听")
+          console.log("[OneBotV11EventListener] 初始化完成，已绑定所有事件监听")
+        } catch (error) {
+          console.error("[OneBotV11EventListener] 延迟加载失败：", error)
+        }
+      }, 5000)
+      // 1. 初始化适配器并校验登录状态
     } catch (error) {
       console.error("[OneBotV11EventListener] 初始化失败：", error)
       throw error // 抛出错误，让上层感知
@@ -55,7 +62,6 @@ export default class OneBotV11EventListener {
    * 初始化适配器并校验登录状态
    */
   async #initAdapter() {
-    this.#oneBotAdapter.startServer()
     console.log("[OneBotV11Adapter] 适配器配置：", this.#adapterConfig)
     const loginInfo = await this.#oneBotAdapter.getLoginInfo()
     console.log("[OneBotV11Adapter] 登录信息：", loginInfo)
@@ -268,7 +274,7 @@ export default class OneBotV11EventListener {
 
     // 简化数组处理，移除冗余的展开/包裹
     console.log("处理消息dealmesg", e.message)
-
+    let msg = ""
     e.message = e.message.map(item => {
       if (typeof item === "string") return { type: "text", data: { text: item } }
       const result = { type: item.type, data: item.data, ...item.data }
@@ -289,11 +295,24 @@ export default class OneBotV11EventListener {
           result.data = {
             text: item?.data?.text || item?.text,
           }
+          msg += result.data.text
+          break
+        case "json":
+          console.log(item)
+
+          result.data = {
+            json: item?.data?.data || item?.json,
+          }
+          e.json = JSON.parse(result.data.json)
           break
       }
       return result
     })
     console.log("处理完毕", e.message)
+
+    const regurl = /(https?|http|ftp|file):\/\/[-A-Za-z0-9+&@#/%?=~_|!:,.;]+[-A-Za-z0-9+&@#/%=~_|]/g
+    let url = msg?.match(regurl)
+    e.url = url?.[0] || ""
 
     return e
   }
@@ -301,10 +320,4 @@ export default class OneBotV11EventListener {
 
 // 【可选】如需延迟加载，建议调用方自行控制，此处仅保留示例（注释）
 const listener = new OneBotV11EventListener()
-setTimeout(async () => {
-  try {
-    await listener.load()
-  } catch (error) {
-    console.error("[OneBotV11EventListener] 延迟加载失败：", error)
-  }
-}, 5000)
+listener.load()

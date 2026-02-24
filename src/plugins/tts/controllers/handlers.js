@@ -44,11 +44,8 @@ const dealCategoryName = name => {
   return name
 }
 function findHighestMatch(inputStr, strArray) {
-  console.log(inputStr, strArray)
-
   // 第一步：优先查找完全匹配的项（最高优先级）
   const exactMatch = strArray.find(item => item === inputStr)
-  console.log(exactMatch)
 
   if (exactMatch) {
     return exactMatch
@@ -56,7 +53,6 @@ function findHighestMatch(inputStr, strArray) {
 
   // 第二步：查找前缀匹配的项（次优先级）
   const prefixMatches = strArray.filter(item => item.includes(inputStr))
-  console.log(prefixMatches)
 
   if (prefixMatches.length > 0) {
     // 前缀匹配中选最短的（比如输入"香"，"香火"和"香水"中选更短的，若长度相同则选第一个）
@@ -89,7 +85,7 @@ export function register(bot) {
     model = characterList.find(
       i => i.name === model && (i.originalName.includes("ZH") || i.originalName.includes("中文")),
     )?.originalName
-    console.log(model)
+
     if (!model) {
       return false
       await ctx.reply("未找到对应的语音模型")
@@ -111,7 +107,6 @@ export function register(bot) {
   bot.registerCommand(["^#语音模型列表$"], async ctx => {
     let characterAudioList = file.getFileDataToJson("hobbyist.json")
     let catelist = await hobbyist.getCategories()
-    console.log(catelist)
 
     ctx.reply(
       "请选择需要查看的模型列表：\n" +

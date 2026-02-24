@@ -18,9 +18,9 @@ const dynamicType = {
   raffle: "抽奖",
 }
 
-async function findFans(pstr) {}
-
 function writeBiliData(groupId, uid, data) {
+  console.log(groupId, uid, data)
+
   let gdata = getBiliData(groupId) || {}
   gdata[uid] = data
   if (data == null) {
@@ -106,6 +106,8 @@ export function register(bot) {
         delete data.dynamicType
         type = "all"
       }
+      console.log("订阅的:ctx", ctx)
+
       updata = data
       writeBiliData(ctx.group_id, mid, updata)
       return ctx.reply([
@@ -158,6 +160,33 @@ export function register(bot) {
     },
   )
 
+  bot.registerCommand(["", 100], async ctx => {
+    console.log("b站解析", ctx)
+    if (!ctx.json && !ctx.url) return false
+    let url = ctx.url
+    let urllist = ["b23.tv", "m.bilibili.com", "www.bilibili.com"]
+    let reg2 = new RegExp(`${urllist[0]}|${urllist[1]}|${urllist[2]}`)
+    if (ctx.json) {
+      let json = ctx.json
+      url = json.meta.detail_1?.qqdocurl || json.meta.news?.jumpUrl
+    }
+    if (!url || !url.match(reg2)) return false
+    let bilireg = /(BV.*?).{10}/
+    let bv = url.match(bilireg)
+    if (bv) {
+      //存在bv长链接
+      bv = bv[0]
+    } else {
+      //不存在长链接
+      let curl = await Bili.getCompleteUrl(url)
+      console.log(curl)
+
+      bv = curl.match(bilireg)[0]
+    }
+
+    return await ctx.reply(`正在查询${bv}相关信息，请稍后...`)
+  })
+
   bot.registerCommand("^(|#)b站扫码$", async ctx => {
     if (!ctx.isMaster) return false
     await Blogin.login()
@@ -178,7 +207,7 @@ export function register(bot) {
     }, 3000)
   })
 
-  bot.registerCommand("#查询灯牌", async ctx => {
+  bot.registerCommand("^#查询灯牌", async ctx => {
     let card = ctx.msg.replace(new RegExp(ctx.reg), "")
     if (!card) {
       return await ctx.reply("请输入要查询的直播的灯牌！")
@@ -246,6 +275,8 @@ export function register(bot) {
             `标题：${title}\n分区：${area_name}\n开播时间：${live_time}\n直播间地址：https://live.bilibili.com/${room_id}`,
           ]
           try {
+            console.log(g)
+
             let res = await Bot.sendMessage({ group_id: g }, content)
             if (!res) throw new Error("直播推送消息失败")
             logger.info(`[Bilibili] 直播推送成功，房间ID：${room_id}，群ID：${g}`)

@@ -293,6 +293,11 @@ export default class LLoneBotEventListener {
       delete e.segments
     }
 
+    let msg = e.msg || ""
+    const regurl = /(https?|http|ftp|file):\/\/[-A-Za-z0-9+&@#/%?=~_|!:,.;]+[-A-Za-z0-9+&@#/%=~_|]/g
+    let url = msg?.match(regurl)
+    e.url = url?.[0] || ""
+    e.msg = ""
     // 兼容message_seq字段
     if (e.message_seq) {
       e.seq = e.message_seq
@@ -313,22 +318,32 @@ export default class LLoneBotEventListener {
     if (e.user_id === e.self_id) {
       imgdisplay = await getImageDisplay()
     }
-
+    e.msg = ""
     return message.map(item => {
       const result = { type: item.type, ...item.data }
       // 图片类型特殊处理
-      if (item.type === "image") {
-        result.data = {
-          fid: item.data.resource_id,
-          url: item.data.temp_url,
-          width: item.data.width,
-          height: item.data.height,
-          summary: imgdisplay || item.data.summary,
-        }
-      } else if (item.type === "face") {
-        console.log(item)
-
-        result.id = item.face_id || item.data.face_id
+      switch (item.type) {
+        case "text":
+          e.msg += item?.data?.text || item?.text
+          break
+        case "image":
+          result.data = {
+            fid: item.data.resource_id,
+            url: item.data.temp_url,
+            width: item.data.width,
+            height: item.data.height,
+            summary: imgdisplay || item.data.summary,
+          }
+          break
+        case "face":
+          result.id = item.face_id || item.data.face_id
+          break
+        case "light_app":
+          result.data = {
+            json: JSON.parse(item?.data?.json_payload),
+          }
+          e.json = result.data.json
+          break
       }
       return result
     })
