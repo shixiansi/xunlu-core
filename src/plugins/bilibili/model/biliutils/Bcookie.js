@@ -9,7 +9,13 @@ async function getCookie() {
   const jsonData = await redis.get("bilibili_cookie")
 
   const { SESSDATA, DedeUserID } = jsonData ? JSON.parse(jsonData) : {}
-  return [Buvid, bili_ticket, b_nut, `SESSDATA=${SESSDATA}`, `DedeUserID=${DedeUserID}`].join(";")
+  return [
+    Buvid,
+    bili_ticket,
+    b_nut === null ? "" : b_nut,
+    `SESSDATA=${SESSDATA}`,
+    `DedeUserID=${DedeUserID}`,
+  ].join(";")
 }
 
 async function getProvisionalCookie() {
@@ -29,7 +35,9 @@ async function getB_nt() {
   })
 
   let cookie = rep.headers.get("set-cookie")
-
+  if (cookie === null) {
+    return null
+  }
   let b_nut = cookie
     .split(";")
     .find(i => i.includes("b_nut"))

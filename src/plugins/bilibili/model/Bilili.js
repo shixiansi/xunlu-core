@@ -6,7 +6,7 @@ import BLogin from "./Blogin.js"
 import moment from "moment"
 import lodash from "lodash"
 import getErrorMessage from "./BErrorCode.js"
-
+import * as cheerio from "cheerio"
 class Bilibili {
   get dynamicType() {
     return {
@@ -149,10 +149,10 @@ class Bilibili {
       return dynamic
     } catch (error) {
       console.error("[ERROR] 获取动态失败:", error.message)
-      const errorCode = error.message.includes("API 错误:")
-        ? error.message.split("API 错误: ")[1].split(" ")[0]
-        : "500"
-      return { code: errorCode, message: error.message }
+      const facePattern = /\[errcode:(\d+)\]/g
+      const errorCode = facePattern.exec(error.message)[1] || "500"
+      const errorMessage = getErrorMessage(errorCode)
+      return { code: errorCode, message: errorMessage }
     }
   }
 
@@ -169,10 +169,10 @@ class Bilibili {
       return dynamic
     } catch (error) {
       console.error("[ERROR] 获取置顶动态失败:", error.message)
-      const errorCode = error.message.includes("API 错误:")
-        ? error.message.split("API 错误: ")[1].split(" ")[0]
-        : "500"
-      return { code: errorCode, message: error.message }
+      const facePattern = /\[errcode:(\d+)\]/g
+      const errorCode = facePattern.exec(error.message)[1] || "500"
+      const errorMessage = getErrorMessage(errorCode)
+      return { code: errorCode, message: errorMessage }
     }
   }
 
@@ -189,10 +189,10 @@ class Bilibili {
       return dynamic
     } catch (error) {
       console.error("[ERROR] 获取最新动态失败:", error.message)
-      const errorCode = error.message.includes("API 错误:")
-        ? error.message.split("API 错误: ")[1].split(" ")[0]
-        : "500"
-      return { code: errorCode, message: error.message }
+      const facePattern = /\[errcode:(\d+)\]/g
+      const errorCode = facePattern.exec(error.message)[1] || "500"
+      const errorMessage = getErrorMessage(errorCode)
+      return { code: errorCode, message: errorMessage }
     }
   }
 
@@ -206,10 +206,10 @@ class Bilibili {
       return dynamic
     } catch (error) {
       console.error("[ERROR] 获取第一条动态失败:", error.message)
-      const errorCode = error.message.includes("API 错误:")
-        ? error.message.split("API 错误: ")[1].split(" ")[0]
-        : "500"
-      return { code: errorCode, message: error.message }
+      const facePattern = /\[errcode:(\d+)\]/g
+      const errorCode = facePattern.exec(error.message)[1] || "500"
+      const errorMessage = getErrorMessage(errorCode)
+      return { code: errorCode, message: errorMessage }
     }
   }
 
@@ -246,10 +246,10 @@ class Bilibili {
       return sortedDynamicList[0]
     } catch (error) {
       console.error("[ERROR] 获取指定类型动态失败:", error.message)
-      const errorCode = error.message.includes("API 错误:")
-        ? error.message.split("API 错误: ")[1].split(" ")[0]
-        : "500"
-      return { code: errorCode, message: error.message }
+      const facePattern = /\[errcode:(\d+)\]/g
+      const errorCode = facePattern.exec(error.message)[1] || "500"
+      const errorMessage = getErrorMessage(errorCode)
+      return { code: errorCode, message: errorMessage }
     }
   }
 
@@ -532,10 +532,10 @@ class Bilibili {
       return { numResults: data.numResults, result }
     } catch (error) {
       console.error("[ERROR] 搜索视频失败:", error.message)
-      const errorCode = error.message.includes("API 错误:")
-        ? error.message.split("API 错误: ")[1].split(" ")[0]
-        : "500"
-      return { code: errorCode, message: error.message }
+      const facePattern = /\[errcode:(\d+)\]/g
+      const errorCode = facePattern.exec(error.message)[1] || "500"
+      const errorMessage = getErrorMessage(errorCode)
+      return { code: errorCode, message: errorMessage }
     }
   }
 
@@ -547,10 +547,10 @@ class Bilibili {
       return this.parseVideoInfoData(data)
     } catch (error) {
       console.error("[ERROR] 获取视频信息失败:", error.message)
-      const errorCode = error.message.includes("API 错误:")
-        ? error.message.split("API 错误: ")[1].split(" ")[0]
-        : "500"
-      return { code: errorCode, message: error.message }
+      const facePattern = /\[errcode:(\d+)\]/g
+      const errorCode = facePattern.exec(error.message)[1] || "500"
+      const errorMessage = getErrorMessage(errorCode)
+      return { code: errorCode, message: errorMessage }
     }
   }
 
@@ -573,10 +573,10 @@ class Bilibili {
       return { ...videoInfo, videos: data?.dash?.video, audios: data?.dash?.audio, tags }
     } catch (error) {
       console.error("[ERROR] 获取视频低质量播放地址失败:", error.message)
-      const errorCode = error.message.includes("API 错误:")
-        ? error.message.split("API 错误: ")[1].split(" ")[0]
-        : "500"
-      return { code: errorCode, message: error.message }
+      const facePattern = /\[errcode:(\d+)\]/g
+      const errorCode = facePattern.exec(error.message)[1] || "500"
+      const errorMessage = getErrorMessage(errorCode)
+      return { code: errorCode, message: errorMessage }
     }
   }
 
@@ -588,10 +588,10 @@ class Bilibili {
       return data.map(item => item.tag_name)
     } catch (error) {
       console.error("[ERROR] 获取视频标签失败:", error.message)
-      const errorCode = error.message.includes("API 错误:")
-        ? error.message.split("API 错误: ")[1].split(" ")[0]
-        : "500"
-      return { code: errorCode, message: error.message }
+      const facePattern = /\[errcode:(\d+)\]/g
+      const errorCode = facePattern.exec(error.message)[1] || "500"
+      const errorMessage = getErrorMessage(errorCode)
+      return { code: errorCode, message: errorMessage }
     }
   }
 
@@ -603,10 +603,10 @@ class Bilibili {
       return result.tag
     } catch (error) {
       console.error("[ERROR] 获取搜索建议失败:", error.message)
-      const errorCode = error.message.includes("API 错误:")
-        ? error.message.split("API 错误: ")[1].split(" ")[0]
-        : "500"
-      return { code: errorCode, message: error.message }
+      const facePattern = /\[errcode:(\d+)\]/g
+      const errorCode = facePattern.exec(error.message)[1] || "500"
+      const errorMessage = getErrorMessage(errorCode)
+      return { code: errorCode, message: errorMessage }
     }
   }
 
@@ -628,10 +628,10 @@ class Bilibili {
       return data.result
     } catch (error) {
       console.error("[ERROR] 搜索失败:", error.message)
-      const errorCode = error.message.includes("API 错误:")
-        ? error.message.split("API 错误: ")[1].split(" ")[0]
-        : "500"
-      return { code: errorCode, message: error.message }
+      const facePattern = /\[errcode:(\d+)\]/g
+      const errorCode = facePattern.exec(error.message)[1] || "500"
+      const errorMessage = getErrorMessage(errorCode)
+      return { code: errorCode, message: errorMessage }
     }
   }
 
@@ -659,10 +659,10 @@ class Bilibili {
       }
     } catch (error) {
       console.error("[ERROR] 获取用户基本信息失败:", error.message)
-      const errorCode = error.message.includes("API 错误:")
-        ? error.message.split("API 错误: ")[1].split(" ")[0]
-        : "500"
-      return { code: errorCode, message: error.message }
+      const facePattern = /\[errcode:(\d+)\]/g
+      const errorCode = facePattern.exec(error.message)[1] || "500"
+      const errorMessage = getErrorMessage(errorCode)
+      return { code: errorCode, message: errorMessage }
     }
   }
 
@@ -672,10 +672,10 @@ class Bilibili {
       return await BLogin.generateQRImage(true)
     } catch (error) {
       console.error("[ERROR] 生成登录二维码失败:", error.message)
-      const errorCode = error.message.includes("API 错误:")
-        ? error.message.split("API 错误: ")[1].split(" ")[0]
-        : "500"
-      return { code: errorCode, message: error.message }
+      const facePattern = /\[errcode:(\d+)\]/g
+      const errorCode = facePattern.exec(error.message)[1] || "500"
+      const errorMessage = getErrorMessage(errorCode)
+      return { code: errorCode, message: errorMessage }
     }
   }
 
@@ -685,10 +685,10 @@ class Bilibili {
       return await BLogin.pollLoginStatus(this.getUserInfo.bind(this))
     } catch (error) {
       console.error("[ERROR] 检查登录状态失败:", error.message)
-      const errorCode = error.message.includes("API 错误:")
-        ? error.message.split("API 错误: ")[1].split(" ")[0]
-        : "500"
-      return { code: errorCode, message: error.message }
+      const facePattern = /\[errcode:(\d+)\]/g
+      const errorCode = facePattern.exec(error.message)[1] || "500"
+      const errorMessage = getErrorMessage(errorCode)
+      return { code: errorCode, message: errorMessage }
     }
   }
 
@@ -706,10 +706,10 @@ class Bilibili {
       return { face, uname, mid }
     } catch (error) {
       console.error("[ERROR] 获取用户信息失败:", error.message)
-      const errorCode = error.message.includes("API 错误:")
-        ? error.message.split("API 错误: ")[1].split(" ")[0]
-        : "500"
-      return { code: errorCode, message: error.message }
+      const facePattern = /\[errcode:(\d+)\]/g
+      const errorCode = facePattern.exec(error.message)[1] || "500"
+      const errorMessage = getErrorMessage(errorCode)
+      return { code: errorCode, message: errorMessage }
     }
   }
 
@@ -723,10 +723,10 @@ class Bilibili {
       return response.data
     } catch (error) {
       console.error("[ERROR] 获取用户空间视频失败:", error.message)
-      const errorCode = error.message.includes("API 错误:")
-        ? error.message.split("API 错误: ")[1].split(" ")[0]
-        : "500"
-      return { code: errorCode, message: error.message }
+      const facePattern = /\[errcode:(\d+)\]/g
+      const errorCode = facePattern.exec(error.message)[1] || "500"
+      const errorMessage = getErrorMessage(errorCode)
+      return { code: errorCode, message: errorMessage }
     }
   }
 
@@ -759,10 +759,10 @@ class Bilibili {
       return { count: data.count, item: videoList, has_next: data.has_next }
     } catch (error) {
       console.error("[ERROR] 获取用户视频列表失败:", error.message)
-      const errorCode = error.message.includes("API 错误:")
-        ? error.message.split("API 错误: ")[1].split(" ")[0]
-        : "500"
-      return { code: errorCode, message: error.message }
+      const facePattern = /\[errcode:(\d+)\]/g
+      const errorCode = facePattern.exec(error.message)[1] || "500"
+      const errorMessage = getErrorMessage(errorCode)
+      return { code: errorCode, message: errorMessage }
     }
   }
 
@@ -774,10 +774,10 @@ class Bilibili {
       return data
     } catch (error) {
       console.error("[ERROR] 根据mid获取直播间信息失败:", error.message)
-      const errorCode = error.message.includes("API 错误:")
-        ? error.message.split("API 错误: ")[1].split(" ")[0]
-        : "500"
-      return { code: errorCode, message: error.message }
+      const facePattern = /\[errcode:(\d+)\]/g
+      const errorCode = facePattern.exec(error.message)[1] || "500"
+      const errorMessage = getErrorMessage(errorCode)
+      return { code: errorCode, message: errorMessage }
     }
   }
 
@@ -789,10 +789,10 @@ class Bilibili {
       return this.parseRoomInfoData(data)
     } catch (error) {
       console.error("[ERROR] 根据room_id获取直播间信息失败:", error.message)
-      const errorCode = error.message.includes("API 错误:")
-        ? error.message.split("API 错误: ")[1].split(" ")[0]
-        : "500"
-      return { code: errorCode, message: error.message }
+      const facePattern = /\[errcode:(\d+)\]/g
+      const errorCode = facePattern.exec(error.message)[1] || "500"
+      const errorMessage = getErrorMessage(errorCode)
+      return { code: errorCode, message: errorMessage }
     }
   }
 
@@ -845,11 +845,55 @@ class Bilibili {
       }
     } catch (error) {
       console.error("[ERROR] 获取动态列表失败:", error.message)
-      const errorCode = error.message.includes("API 错误:")
-        ? error.message.split("API 错误: ")[1].split(" ")[0]
-        : "500"
-      return { code: errorCode, message: error.message }
+      const facePattern = /\[errcode:(\d+)\]/g
+      const errorCode = facePattern.exec(error.message)[1] || "500"
+      const errorMessage = getErrorMessage(errorCode)
+      return { code: errorCode, message: errorMessage }
     }
+  }
+
+  async getSearchFans(str) {
+    const url = Bapi("medalfans", { str })
+
+    let rep = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0.0.0 Safari/537.36",
+      },
+    })
+    const $ = cheerio.load(await rep.text())
+    const medalList = []
+    const tableRows = $("table.am-table > tbody > tr")
+
+    for (let i = 1; i < tableRows.length; i++) {
+      const row = tableRows.eq(i)
+      const columns = row.find("td")
+
+      const roomId = columns.eq(0).find("a").text().trim() || ""
+
+      const medalName = columns.eq(1).text().trim() || ""
+
+      const medalId = columns.eq(2).find("span").text().trim() || ""
+
+      const anchorCol = columns.eq(3)
+      const anchorHref = anchorCol.find("a").attr("href") || ""
+      const anchorUid = anchorHref.split("/").pop() || ""
+      let anchorName =
+        anchorCol.find("a").clone().find("div").remove().end().text().trim() || "账号已注销"
+      let certType = 0
+      if (anchorCol.find("a .vo0").length > 0) {
+        certType = 1
+      } else if (anchorCol.find("a .vo1").length > 0) {
+        certType = 2
+      }
+      medalList.push({
+        medal_id: parseInt(medalId),
+        medal_name: medalName,
+        anchor_uid: anchorUid,
+        anchor_name: anchorName,
+        room_id: roomId,
+      })
+    }
+    return medalList
   }
 
   // 获取文章信息
@@ -865,10 +909,10 @@ class Bilibili {
       }
     } catch (error) {
       console.error("[ERROR] 获取文章信息失败:", error.message)
-      const errorCode = error.message.includes("API 错误:")
-        ? error.message.split("API 错误: ")[1].split(" ")[0]
-        : "500"
-      return { code: errorCode, message: error.message }
+      const facePattern = /\[errcode:(\d+)\]/g
+      const errorCode = facePattern.exec(error.message)[1] || "500"
+      const errorMessage = getErrorMessage(errorCode)
+      return { code: errorCode, message: errorMessage }
     }
   }
 }

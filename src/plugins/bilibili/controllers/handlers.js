@@ -6,7 +6,8 @@ import Filemage from "../../../utils/Filemage.js"
 import moment from "moment"
 const filemage = new Filemage()
 filemage.CreatDir("src/plugins/bilibili/data")
-
+filemage.CreatDir("src/plugins/bilibili/data/medallist/")
+filemage.CreatDir("src/plugins/bilibili/data/group")
 const dynamicType = {
   live: "直播",
   text: "文字",
@@ -17,13 +18,15 @@ const dynamicType = {
   raffle: "抽奖",
 }
 
+async function findFans(pstr) {}
+
 function writeBiliData(groupId, uid, data) {
   let gdata = getBiliData(groupId) || {}
   gdata[uid] = data
   if (data == null) {
     delete gdata[uid]
   }
-  filemage.writeFileJsonData(`src/plugins/bilibili/data/${groupId}.json`, gdata)
+  filemage.writeFileJsonData(`src/plugins/bilibili/data/group/${groupId}.json`, gdata)
   logger.debug(
     `[Bilibili] 更新直播状态，群ID：${groupId}，用户ID：${uid}，状态：${data?.live_status === 1 ? "直播中" : "下播"}`,
   )
@@ -37,9 +40,9 @@ function getUpList(groupId) {
 function getBiliData(groupId, uid) {
   let gdata = {}
   try {
-    gdata = filemage.getFileDataToJson(`src/plugins/bilibili/data/${groupId}.json`) || {}
+    gdata = filemage.getFileDataToJson(`src/plugins/bilibili/data/group/${groupId}.json`) || {}
   } catch (e) {
-    filemage.writeFileJsonData(`src/plugins/bilibili/data/${groupId}.json`, gdata)
+    filemage.writeFileJsonData(`src/plugins/bilibili/data/group/${groupId}.json`, gdata)
   }
   return uid ? gdata[uid] : gdata
 }
@@ -175,6 +178,39 @@ export function register(bot) {
     }, 3000)
   })
 
+  bot.registerCommand("#查询灯牌", async ctx => {
+    let card = ctx.msg.replace(new RegExp(ctx.reg), "")
+    if (!card) {
+      return await ctx.reply("请输入要查询的直播的灯牌！")
+    }
+    let result
+    await ctx.reply("正在查询中，请稍后...")
+    try {
+      let list = await Bili.getSearchFans(card)
+      if (list.length > 0) {
+        result = list[0]
+      } else {
+        throw new Error("没有找到该直播的灯牌！")
+      }
+    } catch (error) {
+      console.log(error)
+      return await ctx.reply("查询失败！")
+    }
+    if (result) {
+      let authorInfo = await Bili.getUserBaseInfo(result.anchor_uid)
+      result = {
+        ...result,
+        img: authorInfo?.face,
+      }
+      return await ctx.reply([
+        segment.image(result.img),
+        `查询的灯牌结果如下：\n昵称：${result.anchor_name}\nuid：${result.anchor_uid}\n直播间：https://live.bilibili.com/${result.room_id}`,
+      ])
+    } else {
+      return await ctx.reply("没有找到该直播的灯牌！")
+    }
+  })
+
   bot.registerCommand("#查询up最新动态", async ctx => {
     if (!ctx.isGroup) return false
     let mid = ctx.msg.replace("#查询up最新动态", "")
@@ -191,10 +227,10 @@ export function register(bot) {
 
   //直播推送   群名称 属性名是uid
   bot.setTask("0 * * * * *", async ctx => {
-    let glist = filemage.GetfileList("src/plugins/bilibili/data")
+    let glist = filemage.GetfileList("src/plugins/bilibili/data/group")
     if (glist.length == 0) return
     for (let g of glist.map(i => i.replace(".json", ""))) {
-      let flist = filemage.getFileDataToJson(`src/plugins/bilibili/data/${g}.json`)
+      let flist = filemage.getFileDataToJson(`src/plugins/bilibili/data/group/${g}.json`)
       for (let u in flist) {
         if (!flist[u]) continue
         let result = await Bili.getRoomInfobyMid(u)

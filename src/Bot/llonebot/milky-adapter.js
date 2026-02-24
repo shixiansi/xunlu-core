@@ -447,10 +447,12 @@ class MilkyAdapter {
         }
         break
       case "image":
+        console.log(msg)
+
         msg = {
           type: "image",
           data: {
-            uri: msg.file || msg.data.uri || "",
+            uri: msg.file || msg?.data?.uri || "",
             sub_type: "normal",
             summary: msg.summary,
           },
