@@ -920,6 +920,44 @@ class Bilibili {
       return { code: errorCode, message: errorMessage }
     }
   }
+
+  async getQnVideo(qn, bv) {
+    let videoInfo = await this.getVideoInfo(bv)
+    try {
+      const url = Bapi("videoData", { bv, cid: videoInfo.cid })
+      const { data } = await this.fetchWithHeaders(url)
+      let videoList = []
+      let { dash } = data
+      let real_quality = []
+      dash.video.filter((item, index) => {
+        if (index === 0 || item.id !== videoList[videoList.length - 1].qn) {
+          real_quality.push(item.id)
+          videoList.push({ qn: item.id, url: item.baseUrl })
+        }
+      })
+      let accept_quality = real_quality,
+        audio = dash.audio[0].baseUrl
+      let videoUrl = ""
+
+      if (accept_quality[0] == qn || qn > accept_quality[0]) {
+        qn = accept_quality[0]
+      } else if (!accept_quality.includes(qn) && accept_quality[0] > 80 && qn == 116) {
+        qn = 112
+      } else if (!accept_quality.includes(qn) && accept_quality[0] > 80 && qn == 112) {
+        qn = 80
+      }
+      console.log(qn, videoList)
+
+      videoUrl = videoList.find(item => item.qn == qn)?.url
+      return { videoUrl, audio }
+    } catch (error) {
+      console.error("[ERROR] 获取视频数据失败:", error.message)
+      const facePattern = /\[errcode:(\d+)\]/g
+      const errorCode = facePattern.exec(error.message)[1] || "500"
+      const errorMessage = getErrorMessage(errorCode)
+      return { code: errorCode, message: errorMessage }
+    }
+  }
 }
 
 // 示例调用

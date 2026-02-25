@@ -4,10 +4,14 @@ import Bili from "../model/Bilili.js"
 import lodash from "lodash"
 import Filemage from "../../../utils/Filemage.js"
 import moment from "moment"
+import Download from "../../../utils/download.js"
+import ffmpeg from "../../../component/ffmpeg/ffmpeg.js"
 const filemage = new Filemage()
+const download = new Download()
 filemage.CreatDir("src/plugins/bilibili/data")
 filemage.CreatDir("src/plugins/bilibili/data/medallist/")
 filemage.CreatDir("src/plugins/bilibili/data/group")
+filemage.CreatDir("src/plugins/bilibili/resources/video/")
 const dynamicType = {
   live: "直播",
   text: "文字",
@@ -19,8 +23,6 @@ const dynamicType = {
 }
 
 function writeBiliData(groupId, uid, data) {
-  console.log(groupId, uid, data)
-
   let gdata = getBiliData(groupId) || {}
   gdata[uid] = data
   if (data == null) {
@@ -160,6 +162,7 @@ export function register(bot) {
     },
   )
 
+  //视频解析
   bot.registerCommand(["", 100], async ctx => {
     console.log("b站解析", ctx)
     if (!ctx.json && !ctx.url) return false
@@ -184,7 +187,104 @@ export function register(bot) {
       bv = curl.match(bilireg)[0]
     }
 
-    return await ctx.reply(`正在查询${bv}相关信息，请稍后...`)
+    let videoInfo = await Bili.getVideoInfo(bv)
+    if (videoInfo?.code && videoInfo?.code != 0) {
+      return await ctx.reply(`查询失败！${videoInfo.message}`)
+    }
+    if (videoInfo.duration >= 1800) {
+      return ctx.reply("视频太长了，还是去b站去看吧!")
+    }
+
+    const autoQuality = async (duration, ctx) => {
+      let qn = 80
+      if (duration < 120) {
+        qn = 120
+      } else if (duration >= 120 && duration < 180) {
+        qn = 112
+      } else if (duration >= 180 && duration < 300) {
+        qn = 80
+      } else if (duration >= 300 && duration < 480) {
+        await ctx.reply("视频时长超过5分钟，已将视频画质降低至720p")
+        qn = 64
+      } else if (duration >= 480 && duration < 720) {
+        await ctx.reply("视频时长超过8分钟，已将视频画质降低至480p")
+        qn = 32
+      } else if (duration >= 720) {
+        await ctx.reply("视频时长超过12分钟，已将视频画质降低至360p")
+        qn = 16
+      }
+      return qn
+    }
+
+    let qn = await autoQuality(videoInfo.duration, ctx)
+
+    const addnull = (str, target, centerIndex = 14) => {
+      let idx = str.indexOf(target)
+      let strlist = str.split(`${target}`)
+      let replaceStr = "  "
+      if (idx == centerIndex) {
+        return str
+      } else if (idx < 7) {
+        replaceStr = "ㅤ"
+      }
+      let arr = Array.from(str)
+      let index = centerIndex - strlist[0].length
+      for (let i = 0; i < index; i++) {
+        if (/^[a-zA-Z]*$/.test(strlist[0].trim())) {
+          arr.splice(idx, 0, " ")
+        }
+        arr.splice(idx, 0, replaceStr)
+      }
+      return arr.join("")
+    }
+
+    const computew = num => {
+      return num >= 10000 ? (num / 10000).toFixed(1) + "w" : num
+    }
+
+    await ctx.reply([
+      segment.image(videoInfo.pic),
+      `标题: ${videoInfo.title}\n`,
+      `作者: ${videoInfo.owner.name}\n`,
+      `${addnull(`播放量: ${computew(videoInfo.stat.view)} 弹幕: ${computew(videoInfo.stat.danmaku)}`, "弹")}\n`,
+      `${addnull(`点赞: ${computew(videoInfo.stat.like)}投币: ${computew(videoInfo.stat.coin)}`, "投")}`,
+      `\n${addnull(`收藏: ${computew(videoInfo.stat.favorite)}转发: ${computew(videoInfo.stat.share)}`, "转")}`,
+    ])
+
+    const changeVideo = async (qn, bv, e) => {
+      let qnlist = [120, 116, 112, 80, 64, 32, 16]
+      const BasePath = filemage.RootPath + "src/plugins/bilibili/resources/video/"
+      let videoPath = BasePath + `source_${bv}.mp4`
+      let resultPath = BasePath + `${bv}.mp4`
+      let { videoUrl, audio } = await Bili.getQnVideo(qn, bv)
+
+      let audioPath = BasePath + `source_${bv}.mp3`
+      let bilibi = await download.downloadFile(
+        videoUrl,
+        `src/plugins/bilibili/resources/video/source_${bv}.mp4`,
+        {
+          headers: {
+            referer: "https://www.bilibili.com",
+          },
+        },
+      )
+      let ado = await download.downloadFile(
+        audio,
+        `src/plugins/bilibili/resources/video/source_${bv}.mp3`,
+        {
+          headers: {
+            referer: "https://www.bilibili.com",
+          },
+        },
+      )
+      if (bilibi && ado) {
+        return await ffmpeg.VideoComposite(videoPath, audioPath, resultPath, async () => {
+          return await ctx.reply(segment.video(resultPath))
+        })
+      }
+    }
+
+    changeVideo(qn, bv, ctx)
   })
 
   bot.registerCommand("^(|#)b站扫码$", async ctx => {

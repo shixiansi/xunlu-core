@@ -474,6 +474,14 @@ class MilkyAdapter {
           },
         }
         break
+      case "video":
+        msg = {
+          type: "video",
+          data: {
+            uri: "file://" + msg.file,
+          },
+        }
+        break
       default:
         break
     }

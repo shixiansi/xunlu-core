@@ -18,6 +18,7 @@ function getURLMap(name, params) {
     dynamiclist: `https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/space?offset=&host_mid=${params?.mid}&timezone_offset=-480&features=itemOpusStyle`,
     article: `https://api.bilibili.com/x/article/view?id=${params?.id}&gaia_source=main_web&web_location=333.976&w_rid=a55bc106ab28ca2cf261ea0493d16a68&wts=1704863751`,
     medalfans: `https://fsxzk.jjnnnh.website/?querypx=&querylx=&query=${params?.str}&pageNum=1`,
+    videoData: `https://api.bilibili.com/x/player/wbi/playurl?bvid=${params?.bv}&cid=${params?.cid}&fnval=80`,
   }
 
   return ApiMap[name]
