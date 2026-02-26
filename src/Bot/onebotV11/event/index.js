@@ -63,10 +63,10 @@ export default class OneBotV11EventListener {
    */
   async #initAdapter() {
     console.log("[OneBotV11Adapter] 适配器配置：", this.#adapterConfig)
-    const loginInfo = await this.#oneBotAdapter.getLoginInfo()
-    console.log("[OneBotV11Adapter] 登录信息：", loginInfo)
+    this.loginInfo = await this.#oneBotAdapter.getLoginInfo()
+    console.log("[OneBotV11Adapter] 登录信息：", this.loginInfo)
 
-    if (!loginInfo) {
+    if (!this.loginInfo) {
       throw new Error("OneBotV11Adapter登录失败，未获取到登录信息")
     }
 
@@ -85,11 +85,15 @@ export default class OneBotV11EventListener {
   async #initGlobalBot() {
     if (!global.Bot) {
       global.Bot = {
+        uin: this.loginInfo.user_id,
+        nickname: this.loginInfo.nickname,
         ...this.#oneBotAdapter,
         ...{ reply: this.#oneBot.reply },
         ...this.#oneBot.bindEvent,
-        makeForwardMsg: this.#oneBotAdapter.makeForwardMsg.bind(this.#oneBotAdapter),
+        makeGroupForwardMsg: this.#oneBotAdapter.makeForwardMsg.bind(this.#oneBotAdapter),
       }
+      console.log(Bot)
+
       console.log("[GlobalBot] 全局Bot对象初始化完成：", Object.keys(global.Bot))
     } else {
       console.warn("[GlobalBot] 全局Bot对象已存在，跳过初始化")
@@ -243,7 +247,7 @@ export default class OneBotV11EventListener {
     target.acceptGroupRequest = adapter.acceptGroupRequest.bind(adapter)
     target.rejectGroupRequest = adapter.rejectGroupRequest.bind(adapter)
     target.renderImg = oneBot.renderImg
-    target.makeForwardMsg = oneBot.makeForwardMsg
+    target.makeGroupForwardMsg = oneBot.makeForwardMsg
 
     // 获取群成员信息（优化日志，增加错误处理）
     const getGroupMemberInfo = adapter.getGroupMemberInfo.bind(adapter)

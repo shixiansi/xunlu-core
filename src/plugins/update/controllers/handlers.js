@@ -216,7 +216,7 @@ async function getUpdateLog(ctx, plugin = "", oldCommitId = "") {
   console.log("log日常：", log)
 
   let end = `更多详细信息，请前往GitHub查看\n${PLUGIN_CONFIG.repoUrl}`
-  let forwardMsg = await ctx.makeForwardMsg(
+  let forwardMsg = await ctx.makeGroupForwardMsg(
     ctx,
     [log, end],
     `${plugin || "Qianyu-Bot"}更新日志，共${line}条`,

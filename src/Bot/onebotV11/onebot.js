@@ -612,8 +612,8 @@ class OneBotV11Adapter {
             return {
               type: "image",
               data: {
-                file: item.data.file || item.data.uri || "",
-                summary: item.data.summary || "",
+                file: item?.data?.file || item?.data?.uri || item?.file || "",
+                summary: item?.data?.summary || item?.summary || "",
               },
             }
           case "record":

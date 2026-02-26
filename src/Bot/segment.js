@@ -27,6 +27,7 @@ const segment = new (class segment {
   }
   image(file, name) {
     const img = toSegment("image", { file, name })
+    if (!img.name) delete img.name
     return img
   }
   at(qq, name) {

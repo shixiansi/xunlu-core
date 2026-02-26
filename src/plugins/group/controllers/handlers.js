@@ -92,7 +92,7 @@ export function register(bot) {
     let file = filemage.writeFileJsonData(`resources/${ctx.group_id}.json`, msglist)
 
     await ctx.reply(segment.file(filemage.RootPath + `resources/${ctx.group_id}.json`))
-    return await ctx.reply(await ctx.makeForwardMsg(ctx, msglist))
+    return await ctx.reply(await ctx.makeGroupForwardMsg(ctx, msglist))
   })
 
   // bot.callFnc("test", { group_id: 434343, user_id: 232332 });

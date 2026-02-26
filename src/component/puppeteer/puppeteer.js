@@ -179,7 +179,6 @@ class Puppeteer extends Renderer {
 
     // 处理模板路径（核心：修复undefined问题）
     let savePath = this.dealTpl(name, data)
-    console.log(savePath)
 
     if (!savePath) return false
 

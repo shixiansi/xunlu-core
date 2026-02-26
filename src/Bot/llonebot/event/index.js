@@ -82,10 +82,10 @@ export default class LLoneBotEventListener {
    * 初始化适配器并校验登录状态
    */
   async #initAdapter() {
-    const loginInfo = await this.#milkyAdapter.getLoginInfo()
-    console.log("[MilkyAdapter] 登录信息：", loginInfo)
+    this.loginInfo = await this.#milkyAdapter.getLoginInfo()
+    console.log("[MilkyAdapter] 登录信息：", this.loginInfo)
 
-    if (!loginInfo) {
+    if (!this.loginInfo) {
       throw new Error("MilkyAdapter登录失败，未获取到登录信息")
     }
 
@@ -102,15 +102,20 @@ export default class LLoneBotEventListener {
    * 初始化全局Bot对象（避免覆盖已有值）
    */
   async #initGlobalBot() {
+    console.log(this.#milkyAdapter)
+
     if (!global.Bot) {
       global.Bot = {
+        uin: this.loginInfo.uin,
+        nickname: this.loginInfo.nickname,
         ...this.#milkyAdapter,
         ...{ reply: this.#llbot.reply },
         pickUser: this.#milkyAdapter.pickUser.bind(this.#milkyAdapter),
         pickGroup: this.#milkyAdapter.pickGroup.bind(this.#milkyAdapter),
         ...this.#llbot.bindEvent,
-        makeForwardMsg: this.#milkyAdapter.makeForwardMsg.bind(this.#milkyAdapter), // 绑定适配器的转发消息方法
+        makeGroupForwardMsg: this.#milkyAdapter.makeForwardMsg.bind(this.#milkyAdapter), // 绑定适配器的转发消息方法
       }
+      console.log(Bot)
       console.log("[GlobalBot] 全局Bot对象初始化完成：", Object.keys(global.Bot))
     } else {
       console.warn("[GlobalBot] 全局Bot对象已存在，跳过初始化")
@@ -262,7 +267,7 @@ export default class LLoneBotEventListener {
     target.acceptGroupRequest = adapter.acceptGroupRequest.bind(adapter)
     target.rejectGroupRequest = adapter.rejectGroupRequest.bind(adapter)
     target.renderImg = LLoneBot.prototype.renderImg // 绑定LLoneBot的渲染图片方法
-    target.makeForwardMsg = LLoneBot.prototype.makeForwardMsg.bind(adapter) // 绑定适配器的转发消息方法
+    target.makeGroupForwardMsg = LLoneBot.prototype.makeForwardMsg.bind(adapter) // 绑定适配器的转发消息方法
     target.getGroupMemberInfo = async (group_id, user_id) => {
       console.log(group_id, user_id)
 

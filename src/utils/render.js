@@ -43,7 +43,6 @@ class Render {
       `${
         process.env.xunLuEnv.includes("YunZai") ? "plugins/xunlu-core/src/" : "src/"
       }plugins/${plugin}/resources/`
-    console.log(process.env.xunLuEnv)
 
     // 渲染数据（修复tplFile路径）
     data = {
@@ -63,7 +62,6 @@ class Render {
         waitUntil: "networkidle2",
       },
     }
-    console.log("[Render] 渲染参数：", data)
 
     // 前置处理
     if (cfg.beforeRender) {

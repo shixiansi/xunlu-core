@@ -2,13 +2,14 @@ import Filemage from "../../utils/Filemage.js"
 import lodash from "lodash"
 import pluginLoader from "./pluginLoader.js"
 import getImageDisplay from "../../utils/imgdisplay.js"
-
+let BotEnv
 const dealMsg = async (e, msg) => {
-  console.log(msg)
   let imgdisplay
   if (e.user_id === e.self_id) {
     imgdisplay = await getImageDisplay()
   }
+
+  if (BotEnv === "icqq") return msg
 
   switch (msg.type) {
     case "text":
@@ -34,14 +35,20 @@ const sendMessage = async (ctx, message) => {
     if (typeof ctx === "string") {
       // 私聊消息 - 将字符串ID转换为数字
       return await Bot.pickFriend(ctx).sendMsg(
-        Array.isArray(message) ? message : [{ type: "text", data: { text: message } }],
+        Array.isArray(message)
+          ? message
+          : BotEnv === "OneBotv11"
+            ? [{ type: "text", data: { text: message } }]
+            : [{ type: "text", text: message }],
       )
     } else if (ctx.group_id) {
       // 群聊消息 - 确保group_id是数字
       let msg = Array.isArray(message)
         ? await dealMsg(ctx, message)
         : typeof message === "string"
-          ? [{ type: "text", data: { text: message } }]
+          ? BotEnv === "OneBotv11"
+            ? [{ type: "text", data: { text: message } }]
+            : [{ type: "text", text: message }]
           : [await dealMsg(ctx, message)]
       return await Bot.pickGroup(ctx.group_id).sendMsg(msg)
     }
@@ -72,12 +79,11 @@ class ListenerLoader {
    * @param client Bot示例
    */
   async load(client) {
-    console.log("原始bot", Bot)
     this.client = client
     pluginLoader.Bot = client
     let filemag = new Filemage(process.cwd() + "/plugins/xunlu-core/src/Bot/icqq/Event")
     let botenv = this.checkEnv()
-
+    BotEnv = botenv
     await pluginLoader.initBot()
     await pluginLoader.runMount()
     const bindEvent = {
@@ -86,15 +92,17 @@ class ListenerLoader {
     this.bindEvent(bindEvent, botenv)
     pluginLoader.bindEvent = bindEvent
     Bot.sendMessage = sendMessage
-    Bot.makeForwardMsg = async msg => {
+    Bot.makeGroupForwardMsg = async (msg, group_id) => {
       if (botenv == "OneBotv11") {
         let { default: oneBotV11Adapter } = await import("../onebotV11/onebot.js")
         return new oneBotV11Adapter().makeForwardMsg(msg)
       } else {
-        return msg
+        return await Bot.pickGroup(group_id).makeForwardMsg(msg)
       }
     }
+
     Bot.renderImg = pluginLoader.renderImg
+
     const files = filemag.GetfileList().filter(file => file.endsWith(".js"))
     for (let File of files) {
       try {
@@ -219,7 +227,7 @@ class ListenerLoader {
       e.getGroupMemberInfo = Bot.getGroupMemberInfo.bind(Bot)
     }
     e.sendMessage = sendMessage
-    e.makeForwardMsg = pluginLoader.makeForwardMsg
+    e.makeGroupForwardMsg = pluginLoader.makeForwardMsg
     e.renderImg = pluginLoader.renderImg
     delete e.client
   }

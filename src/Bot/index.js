@@ -415,8 +415,6 @@ export default class BaseBot {
       e.reply = async (msg = "", quote = false, data = {}) => {
         let imgdisplay = ""
         if (typeof msg === "string") msg = this.dealSuffix(msg)
-        console.log(msg)
-
         if ((Array.isArray(msg) && msg?.find(i => i.type == "image")) || msg?.type == "image") {
           imgdisplay = await getImageDisplay()
         }
@@ -673,11 +671,11 @@ export default class BaseBot {
       msg = [msg]
     }
     let name = msgsscr ? e?.sender?.card || e?.user_id : Bot.nickname
-    let id = msgsscr ? e.user_id : Bot.uin
+    let id = e.user_id || Bot.uin
 
     if (e.isGroup) {
       try {
-        let info = await e.getGroupMemberInfo(e.group_id, id)
+        let info = await e.getGroupMemberInfo(e.group_id, id || Bot.uin)
         name = info.card || info.nickname
       } catch (err) {
         logger.error(err)
@@ -707,11 +705,12 @@ export default class BaseBot {
       } else if (e?.friend?.makeForwardMsg) {
         forwardMsg = await e.friend.makeForwardMsg(forwardMsg)
       } else {
-        forwardMsg = await Bot.makeForwardMsg(forwardMsg)
+        forwardMsg = await Bot.makeGroupForwardMsg(forwardMsg, e.group_id)
       }
 
       if (dec) {
         /** 处理描述 */
+
         if (typeof forwardMsg.data === "object") {
           let detail = forwardMsg.data?.meta?.detail
           if (detail) {

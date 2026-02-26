@@ -192,7 +192,7 @@ export function register(bot) {
       imglist.push(segment.image(imgUrl.replace("p0", `p${i}`)))
     }
     let res = await ctx.reply(
-      await ctx.makeForwardMsg(
+      await ctx.makeGroupForwardMsg(
         ctx,
         [
           `id：${pic.id} \n画师：${pic.user.name}（${pic.user.id}）\n是否ai：${pic.aiType ? "是" : "否"}\n标题：${pic.title}\n上传时间：${pic.updateTime}\n♥：${pic.bookmarkCount}\n👁：${pic.viewCount}\ntag：${pic.tags}\n原图链接：${imgUrl}`,
@@ -244,7 +244,7 @@ export function register(bot) {
     // imglist = imglist.map(item => segment.image(savePath + item.savePath))
     // 发送合并转发消息（带撤回机制）
     return await ctx.reply(
-      await ctx.makeForwardMsg(
+      await ctx.makeGroupForwardMsg(
         ctx,
         [
           `id：${pic.id} \n画师：${pic.user.name}（${pic.user.id}）\n是否ai：${pic.aiType ? "是" : "否"}\n标题：${pic.title}\n上传时间：${pic.updateTime}\n♥：${pic.bookmarkCount}\n👁：${pic.viewCount}\ntag：${pic.tags}\n原图链接：${imgUrl}`,

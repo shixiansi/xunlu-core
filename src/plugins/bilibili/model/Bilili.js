@@ -139,7 +139,6 @@ class Bilibili {
 
       if (cid) {
         dynamic.article = await this.getArticle(cid)
-        console.log(dynamic.article)
         dynamic.article.content = dynamic.article?.content.replace(
           /<img src="/g,
           '<img src="https:',
@@ -612,8 +611,6 @@ class Bilibili {
 
   async getSearchUser(name, num = 1, order = "fans") {
     let data = await this.getsearch(name, "bili_user", order)
-    console.log(data)
-
     if (data) {
       return num == 1 ? data[0] : data.slice(0, num)
     }
@@ -623,7 +620,6 @@ class Bilibili {
     try {
       const url = Bapi("search", { order, keyword, search_type })
       const { data } = await this.fetchWithHeaders(url)
-      console.log(data)
 
       return data.result
     } catch (error) {
@@ -640,9 +636,7 @@ class Bilibili {
     try {
       if (!mid) return
       const url = Bapi("userCard", { mid })
-      console.log(url)
       const { data } = await this.fetchWithHeaders(url)
-      console.log(data)
       const { name, face, fans, friend, sign, level_info } = data.card
       const { like_num, archive_count, space } = data
       return {
@@ -697,7 +691,6 @@ class Bilibili {
     try {
       const url = Bapi("userInfo")
       const { data } = await this.fetchWithHeaders(url)
-      console.log(data)
 
       if (!data || !data.isLogin) {
         return { code: 0, msg: "登录失败！" }
@@ -838,11 +831,8 @@ class Bilibili {
         "Accept-Language": "zh-CN,zh;q=0.9",
         Origin: "https://space.bilibili.com",
       })
-      console.log(res)
 
       const { data } = res
-      console.log("动态数据", data)
-
       if (res.code === 0) {
         return data.items
       } else {
@@ -946,7 +936,6 @@ class Bilibili {
       } else if (!accept_quality.includes(qn) && accept_quality[0] > 80 && qn == 112) {
         qn = 80
       }
-      console.log(qn, videoList)
 
       videoUrl = videoList.find(item => item.qn == qn)?.url
       return { videoUrl, audio }

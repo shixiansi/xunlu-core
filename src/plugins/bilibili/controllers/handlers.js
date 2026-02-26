@@ -45,6 +45,7 @@ function getBiliData(groupId, uid) {
     gdata = filemage.getFileDataToJson(`src/plugins/bilibili/data/group/${groupId}.json`) || {}
   } catch (e) {
     filemage.writeFileJsonData(`src/plugins/bilibili/data/group/${groupId}.json`, gdata)
+    return false
   }
   return uid ? gdata[uid] : gdata
 }
@@ -164,7 +165,6 @@ export function register(bot) {
 
   //视频解析
   bot.registerCommand(["", 100], async ctx => {
-    console.log("b站解析", ctx)
     if (!ctx.json && !ctx.url) return false
     let url = ctx.url
     let urllist = ["b23.tv", "m.bilibili.com", "www.bilibili.com"]
@@ -307,6 +307,30 @@ export function register(bot) {
     }, 3000)
   })
 
+  bot.registerCommand(["^#订阅列表$", 1000], async ctx => {
+    let updata = getBiliData(ctx.group_id) || {}
+    let msg = "订阅列表如下："
+    if (Object.keys(updata).length === 0) {
+      return this.reply("这个群还没订阅任何up主呢！")
+    }
+    Object.values(updata).forEach(item => {
+      msg += `\n昵称：${item.nickname} (${
+        (item?.dynamicType
+          ?.map(t => {
+            return t !== "all" ? dynamicType[t] + "√" : ""
+          })
+          .join("、") || "") +
+          (item?.unpush
+            ?.map(t => {
+              return dynamicType[t] + "X"
+            })
+            .join("、") || "") || "全部"
+      })`
+    })
+    msg += "\n√表示只推送的类型，X代表禁止推送的类型"
+    ctx.reply(msg)
+  })
+
   bot.registerCommand("^#查询灯牌", async ctx => {
     let card = ctx.msg.replace(new RegExp(ctx.reg), "")
     if (!card) {
@@ -399,6 +423,76 @@ export function register(bot) {
               logger.error(e)
             }
           }
+        }
+      }
+    }
+  })
+
+  //动态推送
+  bot.setTask("10 * * * * *", async ctx => {
+    let glist = filemage.GetfileList("src/plugins/bilibili/data/group")
+    if (glist.length == 0) return
+    for (let g of glist.map(i => i.replace(".json", ""))) {
+      let flist = filemage.getFileDataToJson(`src/plugins/bilibili/data/group/${g}.json`)
+      for (let u in flist) {
+        const item = flist[u]
+        if (!item) continue
+        let result = await Bili.getUpdateDynamic(u)
+        if (!result) continue
+        if (result.code) continue
+        if (
+          item.dynamicType &&
+          !item.dynamicType.includes(
+            Object.keys(dynamicType).find(i => dynamicType[i] === result.type),
+          )
+        )
+          continue
+
+        if (
+          item.unpush &&
+          item.unpush.includes(Object.keys(dynamicType).find(i => dynamicType[i] === result.type))
+        )
+          continue
+        if (result.id !== item.upuid) {
+          logger.mark(result.id, item.upuid)
+          let bglist = filemage.GetfileList("src/plugins/bilibili/resources/html/bilibili/bg")
+          let radom = bglist[lodash.random(0, bglist.length - 1)]
+          await Bot.sendMessage(
+            { group_id: g },
+            await Bot.renderImg("bilibili", { radom, ...result }),
+          )
+
+          let imglist = []
+          if (result.imglist) {
+            imglist = result.imglist.map(item => {
+              return segment.image(item)
+            })
+          }
+          if (result.orig?.imglist) {
+            result.orig?.imglist.forEach(item => {
+              imglist.push(segment.image(item))
+            })
+          }
+          if (imglist.length > 0 && result.type != "专栏") {
+            await Bot.sendMessage(
+              { group_id: g },
+              await ctx.makeGroupForwardMsg(
+                { isGroup: true, group_id: Number(g), ...ctx },
+                imglist,
+                "动态图片",
+              ),
+            )
+          }
+
+          result = {
+            ...item,
+            nickname: result.author.nickname,
+            upuid: result.id,
+            uid: item.uid,
+            img: result.author.img,
+            pendantImg: result.author.pendantImg,
+          }
+          writeBiliData(g, item.uid, result)
         }
       }
     }

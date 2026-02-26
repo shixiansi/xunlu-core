@@ -31,7 +31,18 @@ export function register(bot) {
   })
 
   bot.registerCommand(["^测试转发$", 1000], async ctx => {
-    return ctx.reply(await ctx.makeForwardMsg(ctx, ["测试转发"]))
+    return ctx.reply(
+      await ctx.makeGroupForwardMsg(
+        ctx,
+        [
+          "测试转发",
+          segment.image(
+            "https://i0.hdslb.com/bfs/new_dyn/27b0bc81232de8d308a73736b53c7ed319914630.jpg",
+          ),
+        ],
+        "测试转发",
+      ),
+    )
   })
 
   bot.registerCommand(["一会做什么", 1000], async ctx => {

@@ -36,8 +36,6 @@ export default class Renderer {
 
   /** 模板 */
   dealTpl(name, data) {
-    console.log(name, data)
-
     let { tplFile, saveId = name } = data
     let savePath = `./temp/html/${name}/${saveId}.html`
 
@@ -58,7 +56,6 @@ export default class Renderer {
     data.resPath = `./resources/`
 
     /** 替换模板 */
-    console.log(this.html[tplFile])
 
     let tmpHtml = template.render(this.html[tplFile], data)
 
