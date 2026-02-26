@@ -194,6 +194,7 @@ class ListenerLoader {
           user_id,
         })
       }
+      e.getGroupMemberList = async group_id => await Bot.pickGroup(group_id).getGroupMemberMap()
     } else if (env === "icqq") {
       const recallMessage = ({ peer_id, message_seq, isGroup }) => {
         try {
