@@ -441,7 +441,7 @@ export default class BaseBot {
           e.recallMessage({
             peer_id: e?.peer_id || e.group_id,
             message_seq: msgRes.seq,
-            message_id: msgRes?.message_id,
+            message_id: msgRes?.message_id || msgRes?.data?.message_id,
             isGroup: e.group_id || e.message_scene == "group",
           })
         }, recallMsg * 1000)

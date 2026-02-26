@@ -160,12 +160,14 @@ class ListenerLoader {
     const targetE = e
     if (env === "OneBotv11") {
       e.adapterType = "OneBotv11"
-      const recallMessage = ({ peer_id, message_seq, isGroup }) => {
+      const recallMessage = ({ peer_id, message_seq, message_id, isGroup }) => {
+        console.log(peer_id)
+
         try {
           if (isGroup) {
-            e.pickGroup(peer_id).recallMsg(e.message_id)
+            Bot.pickGroup(peer_id).recallMsg(message_id)
           } else {
-            e.pickFriend(peer_id).recallMsg(e.message_id)
+            Bot.pickFriend(peer_id).recallMsg(message_id)
           }
         } catch (error) {
           console.log(error)

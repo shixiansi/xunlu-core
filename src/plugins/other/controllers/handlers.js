@@ -61,6 +61,18 @@ export function register(bot) {
     }
   })
 
+  bot.registerCommand(["^测试撤回$", 1000], async ctx => {
+    if (ctx.isMaster) {
+      return await ctx.reply(
+        await ctx.makeGroupForwardMsg(ctx, ["测试撤回", "消息二"], "测试撤回"),
+        false,
+        {
+          recallMsg: 30,
+        },
+      )
+    }
+  })
+
   bot.registerCommand(["取直链", 1000], async ctx => {
     if (ctx.message[0]?.type != "reply" && !ctx?.source) return ctx.reply("请回复需要取直链的消息")
 
