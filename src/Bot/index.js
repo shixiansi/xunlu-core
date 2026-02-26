@@ -413,6 +413,8 @@ export default class BaseBot {
        * @param data.at 是否at用户
        */
       e.reply = async (msg = "", quote = false, data = {}) => {
+        console.log("发送前的msg", msg)
+
         let imgdisplay = ""
         if (typeof msg === "string") msg = this.dealSuffix(msg)
         if ((Array.isArray(msg) && msg?.find(i => i.type == "image")) || msg?.type == "image") {
@@ -701,22 +703,29 @@ export default class BaseBot {
     /** 制作转发内容 */
     try {
       if (e?.group?.makeForwardMsg) {
+        console.log("群的make", e.group.makeForwardMsg.toString())
+
         forwardMsg = await e.group.makeForwardMsg(forwardMsg)
       } else if (e?.friend?.makeForwardMsg) {
+        console.log("私聊的make")
         forwardMsg = await e.friend.makeForwardMsg(forwardMsg)
       } else {
+        console.log("bot的make")
+
         forwardMsg = await Bot.makeGroupForwardMsg(forwardMsg, e.group_id)
       }
 
       if (dec) {
         /** 处理描述 */
-
+        console.log("处理描述")
         if (typeof forwardMsg.data === "object") {
           let detail = forwardMsg.data?.meta?.detail
           if (detail) {
             detail.news = [{ text: dec }]
           }
         } else {
+          console.log("处理描述2")
+          if (!forwardMsg.data) return forwardMsg
           forwardMsg.data = forwardMsg.data
             ?.replace(/\n/g, "")
             ?.replace(/<title color="#777777" size="26">(.+?)<\/title>/g, "___")

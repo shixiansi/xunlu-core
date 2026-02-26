@@ -37,7 +37,7 @@ export function register(bot) {
         [
           "测试转发",
           segment.image(
-            "https://i0.hdslb.com/bfs/new_dyn/27b0bc81232de8d308a73736b53c7ed319914630.jpg",
+            "https://i0.hdslb.com/bfs/new_dyn/175aec36475e338175d4eada76cf264b456081437.jpg",
           ),
         ],
         "测试转发",

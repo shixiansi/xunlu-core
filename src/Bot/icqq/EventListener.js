@@ -50,6 +50,8 @@ const sendMessage = async (ctx, message) => {
             ? [{ type: "text", data: { text: message } }]
             : [{ type: "text", text: message }]
           : [await dealMsg(ctx, message)]
+      console.log("发送前的纤细", msg)
+
       return await Bot.pickGroup(ctx.group_id).sendMsg(msg)
     }
   }
@@ -92,10 +94,14 @@ class ListenerLoader {
     this.bindEvent(bindEvent, botenv)
     pluginLoader.bindEvent = bindEvent
     Bot.sendMessage = sendMessage
+    console.log("filepack:" + filemag.package.name)
+
     Bot.makeGroupForwardMsg = async (msg, group_id) => {
-      if (botenv == "OneBotv11") {
+      if (botenv == "OneBotv11" && filemag.package.name != "trss-yunzai") {
         let { default: oneBotV11Adapter } = await import("../onebotV11/onebot.js")
         return new oneBotV11Adapter().makeForwardMsg(msg)
+      } else if (filemag.package.name == "trss-yunzai") {
+        return { type: "node", data: msg }
       } else {
         return await Bot.pickGroup(group_id).makeForwardMsg(msg)
       }

@@ -5,6 +5,7 @@ import env from "../lib/env.js"
 export default class Filemage {
   constructor(RootPath) {
     this.RootPath = RootPath || env.RootPath
+    this.package = env.package
   }
 
   //获取文件内容
