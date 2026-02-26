@@ -199,16 +199,12 @@ export default class OneBotV11EventListener {
     if (!target || !adapter || !oneBot) return
 
     // 撤回消息方法（优化错误处理，语义化参数）
-    target.recallMessage = async ({ peer_id, message_seq, isGroup }) => {
+    target.recallMessage = async ({ message_id }) => {
       try {
-        if (isGroup) {
-          await adapter.recallGroupMessage({ group_id: peer_id, message_seq })
-        } else {
-          await adapter.recallPrivateMessage({ user_id: peer_id, message_seq })
-        }
-        console.debug(`[OneBotV11Adapter] 撤回消息 ${message_seq} 成功`)
+        await adapter.deleteMessage({ message_id })
+        logger.debug(`[OneBotV11Adapter] 撤回消息 ${message_id} 成功`)
       } catch (error) {
-        console.error(`[OneBotV11Adapter] 撤回消息 ${message_seq} 失败：`, error)
+        logger.error(`[OneBotV11Adapter] 撤回消息 ${message_id} 失败：`, error)
       }
     }
 

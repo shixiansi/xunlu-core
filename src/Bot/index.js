@@ -404,6 +404,52 @@ export default class BaseBot {
   }
 
   reply(e) {
+    const reply = async (msg = "", quote = false, data = {}) => {
+      let msgRes
+      if (typeof msg === "string") msg = this.dealSuffix(msg)
+      let { recallMsg = 0, at = "" } = data
+      if (!msg) return false
+      if (quote) {
+        let new_msg = [
+          {
+            type: "reply",
+            data: {
+              message_seq: e.message_seq,
+            },
+          },
+        ]
+        Array.isArray(msg)
+          ? new_msg.push(...msg)
+          : new_msg.push({ type: "text", data: { text: msg } })
+        msg = new_msg
+      }
+
+      if (e.group_id) {
+        msgRes = await e.sendMessage(e, msg).catch(err => {
+          logger.error(err)
+        })
+      } else {
+        let friend = e.friend
+        msgRes = await e.sendMessage(`${e.user_id}`, msg).catch(err => {
+          logger.warn(err)
+        })
+      }
+      console.log("msg的msgRes", msgRes)
+
+      if (!e.isGuild && recallMsg > 0 && (msgRes?.seq || msgRes?.message_id)) {
+        setTimeout(async () => {
+          e.recallMessage({
+            peer_id: e?.peer_id || e.group_id,
+            message_seq: msgRes.seq,
+            message_id: msgRes?.message_id,
+            isGroup: e.group_id || e.message_scene == "group",
+          })
+        }, recallMsg * 1000)
+      }
+
+      return msgRes
+    }
+
     if (e.reply) {
       e.replyNew = e.reply
       /**
@@ -433,67 +479,10 @@ export default class BaseBot {
           }
         }
 
-        //this.count(e, msg)
-        if (e.group_id) {
-          return await Bot?.pickGroup(e.group_id)
-            .sendMsg(msg)
-            .catch(err => {
-              logger.warn(err)
-            })
-        } else {
-          let friend = e.bot.fl.get(e.user_id)
-          if (!friend) return
-          return await Bot.pickUser(e.user_id)
-            .sendMsg(msg)
-            .catch(err => {
-              logger.warn(err)
-            })
-        }
+        return await reply(msg, quote, data)
       }
     } else {
-      e.reply = async (msg = "", quote = false, data = {}) => {
-        let msgRes
-        if (typeof msg === "string") msg = this.dealSuffix(msg)
-        let { recallMsg = 0, at = "" } = data
-        if (!msg) return false
-        if (quote) {
-          let new_msg = [
-            {
-              type: "reply",
-              data: {
-                message_seq: e.message_seq,
-              },
-            },
-          ]
-          Array.isArray(msg)
-            ? new_msg.push(...msg)
-            : new_msg.push({ type: "text", data: { text: msg } })
-          msg = new_msg
-        }
-
-        if (e.group_id) {
-          msgRes = await e.sendMessage(e, msg).catch(err => {
-            logger.error(err)
-          })
-        } else {
-          let friend = e.friend
-          msgRes = await e.sendMessage(`${e.user_id}`, msg).catch(err => {
-            logger.warn(err)
-          })
-        }
-        if (!e.isGuild && recallMsg > 0 && msgRes?.message_seq) {
-          setTimeout(async () => {
-            if (!msgRes?.message_seq) return
-            e.recallMessage({
-              peer_id: e.peer_id,
-              message_seq: msgRes.message_seq,
-              isGroup: e.message_scene == "group",
-            })
-          }, recallMsg * 1000)
-        }
-
-        return msgRes
-      }
+      e.reply = reply
     }
   }
 

@@ -420,7 +420,7 @@ class MilkyAdapter {
       })
     } else if (target.group_id) {
       // 群聊消息 - 确保group_id是数字
-      return await this.sendGroupMessage({
+      let { message_seq, time } = await this.sendGroupMessage({
         group_id: Number(target.group_id),
         message: Array.isArray(message)
           ? message.map(i => this.dealMilkyMsg(i))
@@ -428,6 +428,7 @@ class MilkyAdapter {
             ? [{ type: "text", data: { text: message } }]
             : [this.dealMilkyMsg(message)],
       })
+      return { seq: message_seq, time }
     }
   }
 
