@@ -109,7 +109,10 @@ class ListenerLoader {
 
     Bot.renderImg = pluginLoader.renderImg
     if (!Bot.getGroupMemberList) {
-      Bot.getGroupMemberList = async group_id => await Bot.pickGroup(group_id).getMemberMap()
+      Bot.getGroupMemberList = async group_id => {
+        console.log(group_id)
+        return await Bot.pickGroup(Number(group_id)).getMemberMap()
+      }
     }
     const files = filemag.GetfileList().filter(file => file.endsWith(".js"))
     for (let File of files) {
@@ -196,12 +199,12 @@ class ListenerLoader {
           user_id,
         })
       }
-      e.getGroupMemberList = async ctx => {
+      e.getGroupMemberList = async group_id => {
         let memberList
         if (filemag.package.name === "trss-yunzai") {
-          memberList = await Bot.pickGroup(ctx.group_id).getMemberMap()
+          memberList = await Bot.pickGroup(group_id).getMemberMap()
         } else {
-          memberList = await Bot.getGroupMemberList(ctx.group_id)
+          memberList = await Bot.getGroupMemberList(group_id)
         }
 
         console.log("memberList:", memberList)
