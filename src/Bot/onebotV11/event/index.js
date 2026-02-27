@@ -244,8 +244,11 @@ export default class OneBotV11EventListener {
     target.rejectGroupRequest = adapter.rejectGroupRequest.bind(adapter)
     target.renderImg = oneBot.renderImg
     target.makeGroupForwardMsg = oneBot.makeForwardMsg
-    target.getGroupMemberList = async ctx =>
-      await adapter.getGroupMemberList.call(adapter, { groud_id: ctx.groud_id })
+    target.getGroupMemberList = async group_id => {
+      let members = await adapter.getGroupMemberList.call(adapter, { group_id })
+      return new Map(members.map(item => [item.user_id, item]))
+    }
+
     // 获取群成员信息（优化日志，增加错误处理）
     const getGroupMemberInfo = adapter.getGroupMemberInfo.bind(adapter)
     target.getGroupMemberInfo = async (group_id, user_id) => {

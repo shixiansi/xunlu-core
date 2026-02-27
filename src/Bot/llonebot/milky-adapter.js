@@ -420,13 +420,23 @@ class MilkyAdapter {
       })
     } else if (target.group_id) {
       // 群聊消息 - 确保group_id是数字
+      message = Array.isArray(message)
+        ? message.map(i => this.dealMilkyMsg(i))
+        : typeof message === "string"
+          ? [{ type: "text", data: { text: message } }]
+          : [this.dealMilkyMsg(message)]
+      let file = message.find(item => item.type == "file")
+      if (message.length == 1 && file) {
+        return await this.uploadGroupFile({
+          group_id: target.group_id,
+          file_uri: file.data.uri,
+          file_name: file.data.name,
+        })
+      }
+
       let { message_seq, time } = await this.sendGroupMessage({
         group_id: Number(target.group_id),
-        message: Array.isArray(message)
-          ? message.map(i => this.dealMilkyMsg(i))
-          : typeof message === "string"
-            ? [{ type: "text", data: { text: message } }]
-            : [this.dealMilkyMsg(message)],
+        message: message,
       })
       return { seq: message_seq, time }
     }
@@ -483,6 +493,14 @@ class MilkyAdapter {
           },
         }
         break
+      case "file":
+        msg = {
+          type: "file",
+          data: {
+            uri: msg.file,
+            name: msg.name,
+          },
+        }
       default:
         break
     }
@@ -524,7 +542,9 @@ class MilkyAdapter {
           messages: forwardMsg.map(item => ({
             user_id: item.user_id,
             sender_name: item.nickname,
-            segments: [this.dealMilkyMsg(item.message)],
+            segments: Array.isArray(item.message)
+              ? item.message.map(i => this.dealMilkyMsg(i))
+              : [this.dealMilkyMsg(item.message)],
           })),
         },
       },

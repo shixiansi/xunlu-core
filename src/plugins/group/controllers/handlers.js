@@ -91,7 +91,7 @@ export function register(bot) {
     }
     let file = filemage.writeFileJsonData(`data/${ctx.group_id}.json`, msglist)
 
-    await ctx.reply(segment.file(filemage.RootPath + `resources/${ctx.group_id}.json`))
+    await ctx.reply(segment.file(filemage.RootPath + `data/${ctx.group_id}.json`))
     return await ctx.reply(await ctx.makeGroupForwardMsg(ctx, msglist))
   })
 
