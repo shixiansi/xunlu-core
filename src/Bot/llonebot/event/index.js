@@ -268,6 +268,7 @@ export default class LLoneBotEventListener {
     target.rejectGroupRequest = adapter.rejectGroupRequest.bind(adapter)
     target.renderImg = LLoneBot.prototype.renderImg // 绑定LLoneBot的渲染图片方法
     target.makeGroupForwardMsg = LLoneBot.prototype.makeForwardMsg.bind(adapter) // 绑定适配器的转发消息方法
+    target.getGroupMemberList = adapter.getGroupMemberList.bind(adapter)
     target.getGroupMemberInfo = async (group_id, user_id) => {
       console.log(group_id, user_id)
 

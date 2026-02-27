@@ -108,7 +108,12 @@ class ListenerLoader {
     }
 
     Bot.renderImg = pluginLoader.renderImg
+    if (!Bot.getGroupMemberList) {
+      console.log(Bot)
+      console.log(Bot.getGroupMemberMap)
 
+      Bot.getGroupMemberList = async ctx => await Bot.pickGroup(ctx.group_id).getMemberMap()
+    }
     const files = filemag.GetfileList().filter(file => file.endsWith(".js"))
     for (let File of files) {
       try {
@@ -194,7 +199,14 @@ class ListenerLoader {
           user_id,
         })
       }
-      e.getGroupMemberList = async group_id => await Bot.pickGroup(group_id).getGroupMemberMap()
+      e.getGroupMemberList = async ctx => {
+        console.log(Object.keys(Bot))
+
+        const memberList = await Bot.pickGroup(ctx.group_id).getMemberMap()
+        console.log("memberList:", memberList)
+
+        return memberList
+      }
     } else if (env === "icqq") {
       const recallMessage = ({ peer_id, message_seq, isGroup }) => {
         try {

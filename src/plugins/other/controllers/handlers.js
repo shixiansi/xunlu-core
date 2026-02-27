@@ -73,6 +73,11 @@ export function register(bot) {
     }
   })
 
+  bot.registerCommand(["^测试群员$", 1000], async ctx => {
+    const member_list = await Bot.getGroupMemberList(ctx)
+    console.log("ce:", member_list)
+  })
+
   bot.registerCommand(["取直链", 1000], async ctx => {
     if (ctx.message[0]?.type != "reply" && !ctx?.source) return ctx.reply("请回复需要取直链的消息")
 
