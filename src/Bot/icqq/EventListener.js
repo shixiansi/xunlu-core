@@ -197,8 +197,6 @@ class ListenerLoader {
         })
       }
       e.getGroupMemberList = async ctx => {
-        console.log(Object.keys(Bot))
-
         const memberList =
           filemag.package.name == "trss-yunzai"
             ? await Bot.pickGroup(ctx.group_id).getMemberMap()
