@@ -109,9 +109,6 @@ class ListenerLoader {
 
     Bot.renderImg = pluginLoader.renderImg
     if (!Bot.getGroupMemberList) {
-      console.log(Bot)
-      console.log(Bot.getGroupMemberMap)
-
       Bot.getGroupMemberList = async ctx => await Bot.pickGroup(ctx.group_id).getMemberMap()
     }
     const files = filemag.GetfileList().filter(file => file.endsWith(".js"))
@@ -246,6 +243,7 @@ class ListenerLoader {
         return await Bot.pickFriend(e.user_id).getChatHistory(seq, 1)
       }
       e.getGroupMemberInfo = Bot.getGroupMemberInfo.bind(Bot)
+      e.getGroupMemberList = Bot.getGroupMemberList.bind(Bot)
     }
     e.sendMessage = sendMessage
     e.makeGroupForwardMsg = pluginLoader.makeForwardMsg

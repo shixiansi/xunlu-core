@@ -80,7 +80,7 @@ export function register(bot) {
     ctx.reply(`把${userInfo.nickname || "不知名的家伙"}丢出群了！`)
   })
   bot.registerCommand(["保存群员信息"], async ctx => {
-    const member_list = await Bot.getGroupMemberList(ctx)
+    const member_list = await ctx.getGroupMemberList(ctx.group_id)
     console.log(member_list)
     let msglist = []
     for (let [key, value] of member_list) {

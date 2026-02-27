@@ -74,8 +74,10 @@ export function register(bot) {
   })
 
   bot.registerCommand(["^测试群员$", 1000], async ctx => {
-    const member_list = await Bot.getGroupMemberList(ctx)
-    console.log("ce:", member_list)
+    const member_list = await Bot.getGroupMemberList(ctx.group_id)
+    const member_list2 = await ctx.getGroupMemberList(ctx.group_id)
+    console.log("ce1:", member_list)
+    console.log("ce2:", member_list2)
   })
 
   bot.registerCommand(["取直链", 1000], async ctx => {
