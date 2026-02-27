@@ -199,7 +199,10 @@ class ListenerLoader {
       e.getGroupMemberList = async ctx => {
         console.log(Object.keys(Bot))
 
-        const memberList = await Bot.pickGroup(ctx.group_id).getMemberMap()
+        const memberList =
+          filemag.package.name == "trss-yunzai"
+            ? await Bot.pickGroup(ctx.group_id).getMemberMap()
+            : await Bot.getGroupMemberList(ctx.group_id)
         console.log("memberList:", memberList)
 
         return memberList
