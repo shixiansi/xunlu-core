@@ -89,7 +89,7 @@ export function register(bot) {
         `昵称：${value.nickname}\n群名片：${value.card}\nQQ号：${value.user_id}\n等级：${value.level}\n加入时间:${moment(value.join_time * 1000).format("YYYY-MM-DD HH:mm:ss")}`,
       ])
     }
-    let file = filemage.writeFileJsonData(`resources/${ctx.group_id}.json`, msglist)
+    let file = filemage.writeFileJsonData(`data/${ctx.group_id}.json`, msglist)
 
     await ctx.reply(segment.file(filemage.RootPath + `resources/${ctx.group_id}.json`))
     return await ctx.reply(await ctx.makeGroupForwardMsg(ctx, msglist))
