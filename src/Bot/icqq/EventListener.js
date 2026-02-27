@@ -56,7 +56,7 @@ const sendMessage = async (ctx, message) => {
     }
   }
 }
-
+const filemag = new Filemage(process.cwd() + "/plugins/xunlu-core/src/Bot/icqq/Event")
 export default class EventListener {
   /**
    * 事件监听
@@ -83,7 +83,7 @@ class ListenerLoader {
   async load(client) {
     this.client = client
     pluginLoader.Bot = client
-    let filemag = new Filemage(process.cwd() + "/plugins/xunlu-core/src/Bot/icqq/Event")
+
     let botenv = this.checkEnv()
     BotEnv = botenv
     await pluginLoader.initBot()
