@@ -347,7 +347,7 @@ export default class LLoneBotEventListener {
           }
           break
         case "face":
-          result.id = item.face_id || item.data.face_id
+          result.id = item?.face_id || item?.data?.face_id || item?.id || item?.data?.id
           break
         case "light_app":
           result.data = {

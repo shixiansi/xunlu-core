@@ -463,7 +463,7 @@ class MilkyAdapter {
         msg = {
           type: "image",
           data: {
-            uri: msg.file || msg?.data?.uri || "",
+            uri: msg?.file || msg?.data?.uri || msg?.data?.temp_url || "",
             sub_type: "normal",
             summary: msg.summary,
           },
@@ -478,10 +478,12 @@ class MilkyAdapter {
         }
         break
       case "face":
+        console.log(msg)
+
         msg = {
           type: "face",
           data: {
-            face_id: `${msg.id}`,
+            face_id: `${msg?.id || msg?.data?.face_id}`,
           },
         }
         break

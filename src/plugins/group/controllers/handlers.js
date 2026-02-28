@@ -2,6 +2,7 @@ import _ from "lodash"
 import moment from "moment"
 import { segment } from "../../../Bot/segment.js"
 import Filemage from "../../../utils/Filemage.js"
+import rkeyManager from "../model/rkeyManager.js"
 const filemage = new Filemage()
 const groupPass = {}
 
@@ -95,15 +96,53 @@ export function register(bot) {
     return await ctx.reply(await ctx.makeGroupForwardMsg(ctx, msglist))
   })
 
-  bot.registerCommand(["今日发言记录$"], async ctx => {
+  bot.registerCommand(["^今日发言记录$"], async ctx => {
     let user_id = ctx.user_id
     console.log(ctx)
 
     if (ctx.at) {
       user_id = ctx.at
+      ctx.user_id = ctx.at
     }
     let msgChat = await Bot.getGroupChatHistory(ctx.group_id)
-    let msgList = msgChat.map(item => item.message)
+    let msgList = msgChat
+      .filter(item => item.user_id == user_id)
+      .map(item => ({ content: item.message, time: item.time }))
+    console.log(msgList)
+    if (msgList.length == 0) return ctx.reply(`今天${ctx.at ? "他" : "你"}还没有发言记录喽！`)
+
+    await ctx.reply(await ctx.makeGroupForwardMsg(ctx, msgList, "今日发言记录"))
+  })
+
+  bot.registerCommand(["^今日表情包$"], async ctx => {
+    let user_id = ctx.user_id
+    let msgChat = await Bot.getGroupChatHistory(ctx.group_id)
+    const rkey = (await rkeyManager.getRkey()).group_rkey
+    const dealQQImgUrl = url => {
+      if (!url) return ""
+      let newUrl
+      if (url?.startsWith("https://multimedia.nt.qq.com.cn")) {
+        newUrl = url.split("&reky")[0] + rkey
+      }
+      return newUrl
+    }
+    let msgList = msgChat
+      .filter(item =>
+        item.message.find(
+          m => (m.type == "image" && m?.data?.summary != "[图片]") || m?.summary == "[图片]",
+        ),
+      )
+      .map(item => ({
+        content: item.message.map(m => ({
+          ...m,
+          file: dealQQImgUrl(m?.file || m?.data?.uri || m?.data?.temp_url),
+        })),
+        time: item.time,
+      }))
+
+    console.log(msgList)
+    if (msgList.length == 0) return ctx.reply(`今天还没有人发过表情包哦！`)
+
     await ctx.reply(await ctx.makeGroupForwardMsg(ctx, msgList, "今日发言记录"))
   })
 

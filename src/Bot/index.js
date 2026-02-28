@@ -664,7 +664,7 @@ export default class BaseBot {
     return await MessageDB.getGroupMsgByDay(groupId, date)
   }
   //制作消息转发
-  async makeForwardMsg(e, msg = [], dec = "", msgsscr = true) {
+  async makeForwardMsg(e, msg = [], dec = "", msgsscr = false) {
     console.log("make里的e", e)
 
     if (!Array.isArray(msg)) {
@@ -688,14 +688,16 @@ export default class BaseBot {
     }
 
     let forwardMsg = []
-    for (const message of msg) {
+    for (let message of msg) {
       if (!message) {
         continue
       }
-      forwardMsg.push({
+      const m = {
         ...userInfo,
-        message: message,
-      })
+      }
+      message?.content ? (m.message = message.content) : (m.message = message)
+      message?.time ? (m.time = message.time) : ""
+      forwardMsg.push(m)
     }
 
     /** 制作转发内容 */
