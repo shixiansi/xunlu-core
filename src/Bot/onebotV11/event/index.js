@@ -91,6 +91,7 @@ export default class OneBotV11EventListener {
         ...{ reply: this.#oneBot.reply },
         ...this.#oneBot.bindEvent,
         makeGroupForwardMsg: this.#oneBotAdapter.makeForwardMsg.bind(this.#oneBotAdapter),
+        getGroupChatHistory: this.#oneBot.getGroupHistoryMsg,
       }
       console.log(Bot)
 

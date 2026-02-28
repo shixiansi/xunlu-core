@@ -24,6 +24,7 @@ export function register(bot) {
             reaction: i,
           })
         }
+        return false
       } catch (error) {
         return false
       }

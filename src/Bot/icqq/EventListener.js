@@ -5,7 +5,7 @@ import getImageDisplay from "../../utils/imgdisplay.js"
 let BotEnv
 const dealMsg = async (e, msg) => {
   let imgdisplay
-  if (e.user_id === e.self_id) {
+  if (e.user_id === e.self_id && msg.type == "image") {
     imgdisplay = await getImageDisplay()
   }
 
@@ -114,6 +114,9 @@ class ListenerLoader {
         return await Bot.pickGroup(Number(group_id)).getMemberMap()
       }
     }
+
+    Bot.getGroupChatHistory = pluginLoader.getGroupHistoryMsg
+
     const files = filemag.GetfileList().filter(file => file.endsWith(".js"))
     for (let File of files) {
       try {

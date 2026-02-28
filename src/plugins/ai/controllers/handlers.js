@@ -81,6 +81,7 @@ export function register(bot) {
     } else {
     }
     // ctx.reply("蔡喵AI正在思考...");
+    return false
   })
   console.log("[example-plugin] registered with bot shim")
 }

@@ -95,6 +95,18 @@ export function register(bot) {
     return await ctx.reply(await ctx.makeGroupForwardMsg(ctx, msglist))
   })
 
+  bot.registerCommand(["今日发言记录$"], async ctx => {
+    let user_id = ctx.user_id
+    console.log(ctx)
+
+    if (ctx.at) {
+      user_id = ctx.at
+    }
+    let msgChat = await Bot.getGroupChatHistory(ctx.group_id)
+    let msgList = msgChat.map(item => item.message)
+    await ctx.reply(await ctx.makeGroupForwardMsg(ctx, msgList, "今日发言记录"))
+  })
+
   // bot.callFnc("test", { group_id: 434343, user_id: 232332 });
 }
 

@@ -114,6 +114,7 @@ export default class LLoneBotEventListener {
         pickGroup: this.#milkyAdapter.pickGroup.bind(this.#milkyAdapter),
         ...this.#llbot.bindEvent,
         makeGroupForwardMsg: this.#milkyAdapter.makeForwardMsg.bind(this.#milkyAdapter), // 绑定适配器的转发消息方法
+        getGroupChatHistory: this.#llbot.getGroupHistoryMsg,
       }
       console.log(Bot)
       console.log("[GlobalBot] 全局Bot对象初始化完成：", Object.keys(global.Bot))
@@ -303,16 +304,16 @@ export default class LLoneBotEventListener {
       delete e.segments
     }
 
-    let msg = e.msg || ""
+    let msg = e.text || ""
     const regurl = /(https?|http|ftp|file):\/\/[-A-Za-z0-9+&@#/%?=~_|!:,.;]+[-A-Za-z0-9+&@#/%=~_|]/g
     let url = msg?.match(regurl)
     e.url = url?.[0] || ""
-    e.msg = ""
     // 兼容message_seq字段
     if (e.message_seq) {
       e.seq = e.message_seq
       delete e.message_seq
     }
+    delete e.text
     e.adapterType = "Milky"
     return e
   }
@@ -328,13 +329,13 @@ export default class LLoneBotEventListener {
     if (e.user_id === e.self_id) {
       imgdisplay = await getImageDisplay()
     }
-    e.msg = ""
+    e.text = ""
     return message.map(item => {
       const result = { type: item.type, ...item.data }
       // 图片类型特殊处理
       switch (item.type) {
         case "text":
-          e.msg += item?.data?.text || item?.text
+          e.text += item?.data?.text || item?.text
           break
         case "image":
           result.data = {

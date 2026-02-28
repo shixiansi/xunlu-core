@@ -6,6 +6,7 @@ import cfg from "../lib/config.js"
 import schedule from "node-schedule"
 import env from "../lib/env.js"
 import getImageDisplay from "../utils/imgdisplay.js"
+import MessageDB from "../db/MessageDB.js"
 export default class BaseBot {
   constructor(config) {
     this.adapter = config.adapter
@@ -234,10 +235,12 @@ export default class BaseBot {
   }
 
   async deal(e) {
-    //console.log(e)
+    console.log("原始 的e", e)
 
     await this.dealMsg(e)
     await this.reply(e)
+    console.log("处理完后的e", e)
+
     if (e.user_id == e.self_id && e.post_type == "message") return
     //处理上下文
     const isPrivate = e.isPrivate
@@ -267,10 +270,13 @@ export default class BaseBot {
   // 处理普通命令
   async processNormalCommands(e) {
     let regs = lodash.orderBy(Object.values(this.plugins), ["priority"], ["asc"])
+    console.log("reg里的e", e)
 
     for (let r of regs) {
       if (r.event && !this.filtEvent(e, r)) continue
       if (new RegExp(r.reg).test(e?.msg?.trim())) {
+        console.log(e.msg)
+
         try {
           logger.debug("触发命令:", r)
           e.reg = r.reg
@@ -653,13 +659,9 @@ export default class BaseBot {
     await this.loadBotPlugins()
   }
 
-  //获取群历史消息（统一通过数据库获取，如果数据库不存在记录，再通过方法获取）
-  static async getGroupHistoryMsg(groupId, count, before) {
-    return await milkyAdapter.getGroupHistoryMsg({
-      groupId,
-      count,
-      before,
-    })
+  //获取群历史消息
+  async getGroupHistoryMsg(groupId, date) {
+    return await MessageDB.getGroupMsgByDay(groupId, date)
   }
   //制作消息转发
   async makeForwardMsg(e, msg = [], dec = "", msgsscr = true) {

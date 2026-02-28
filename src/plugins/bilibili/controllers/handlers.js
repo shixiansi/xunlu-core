@@ -164,7 +164,7 @@ export function register(bot) {
   )
 
   //视频解析
-  bot.registerCommand(["", 100], async ctx => {
+  bot.registerCommand(["", 1200], async ctx => {
     if (!ctx.json && !ctx.url) return false
     let url = ctx.url
     let urllist = ["b23.tv", "m.bilibili.com", "www.bilibili.com"]
