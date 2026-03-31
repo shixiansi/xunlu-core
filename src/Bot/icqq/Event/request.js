@@ -8,6 +8,6 @@ export default class requestEvent extends EventListener {
   }
 
   async execute(e) {
-    this.plugins.deal(e)
+    await this.plugins.deal(e)
   }
 }

@@ -7,6 +7,319 @@ import schedule from "node-schedule"
 import env from "../lib/env.js"
 import getImageDisplay from "../utils/imgdisplay.js"
 import MessageDB from "../db/MessageDB.js"
+import CommandUsageDB from "../db/CommandUsageDB.js"
+import {
+  attachStandardMessageApis,
+  applyDerivedFieldsFromUniversalSegments,
+  coerceToUniversalMessage,
+  getMessageRefFromCtx,
+  parseTextWithFaces,
+} from "./message/context.js"
+import {
+  UniversalMessage,
+  UniversalMessageSegment,
+  UniversalSegmentType,
+} from "./message/universal-message.js"
+import { applyUniversalBotApi } from "./api/universal-bot-api.js"
+import { rememberRuntimeLastGroupMessage } from "./runtime-last-message.js"
+import {
+  invokeYunzaiCommandByReg as invokeYunzaiRecordedCommandByReg,
+  invokeYunzaiCommandByText,
+} from "./yunzai/command-bridge.js"
+import {
+  callRuntimeBotGroupMemberInfo,
+  callRuntimeBotGroupMemberList,
+  extractMemberRoleFlags,
+  findMemberInfoInGroupMemberList,
+  isPlaceholderMemberInfo,
+  pickGroupMemberRoleInfo,
+  selectPreferredRoleFlags,
+} from "./member-role-utils.js"
+
+function normalizeEventId(value) {
+  if (value === undefined || value === null) return undefined
+  if (typeof value === "number") return Number.isFinite(value) ? value : undefined
+  const text = String(value).trim()
+  if (!text) return undefined
+  const num = Number(text)
+  return Number.isFinite(num) ? num : text
+}
+
+function normalizeOptionalString(value) {
+  const text = String(value ?? "").trim()
+  return text || ""
+}
+
+function normalizeEventTargetFields(e) {
+  if (!e || typeof e !== "object") return
+
+  const targetIdRaw = e.target_id ?? e.targetId ?? e.receiver_id ?? e.receiverId
+  const targetId = normalizeEventId(targetIdRaw)
+
+  if (targetId !== undefined) {
+    e.target_id = targetId
+    e.targetId = targetId
+    e.receiver_id = targetId
+    e.receiverId = targetId
+  }
+
+  const senderIdRaw = e.sender_id ?? e.senderId ?? e.initiator_id ?? e.initiatorId
+  const senderId = normalizeEventId(senderIdRaw)
+  if (senderId !== undefined) {
+    e.sender_id = senderId
+    e.senderId = senderId
+  }
+
+  const operatorIdRaw = e.operator_id ?? e.operatorId ?? senderId
+  const operatorId = normalizeEventId(operatorIdRaw)
+  if (operatorId !== undefined) {
+    e.operator_id = operatorId
+    e.operatorId = operatorId
+  }
+
+  if (e.post_type === "notice" && e.sub_type === "poke") {
+    const inferredTarget = targetId ?? normalizeEventId(e.user_id)
+    if (inferredTarget !== undefined) {
+      e.target_id = inferredTarget
+      e.targetId = inferredTarget
+      e.receiver_id = inferredTarget
+      e.receiverId = inferredTarget
+    }
+    if (senderId !== undefined) e.user_id = senderId
+    return
+  }
+
+  if (senderId !== undefined) e.user_id = senderId
+}
+
+const GROUP_MEMBER_ROLE_CACHE_TTL_MS = 60 * 1000
+const GROUP_BOT_ROLE_CACHE_TTL_MS = 5 * 60 * 1000
+const groupMemberRoleCache = new Map()
+const groupBotRoleCache = new Map()
+
+function getRoleFlags(info) {
+  return extractMemberRoleFlags(info)
+}
+
+function applyRoleFlags(target, flags) {
+  const base = target && typeof target === "object" ? target : {}
+  const next = { ...base }
+  if (!flags) return next
+
+  if (flags.role && !next.role) next.role = flags.role
+  if (flags.isOwner !== null && flags.isOwner !== undefined) {
+    next.is_owner = Boolean(flags.isOwner)
+    next.isOwner = Boolean(flags.isOwner)
+  }
+  if (flags.isAdmin !== null && flags.isAdmin !== undefined) {
+    next.is_admin = Boolean(flags.isAdmin)
+    next.isAdmin = Boolean(flags.isAdmin)
+  }
+  if (!next._info || typeof next._info !== "object") next._info = {}
+  if (flags.role && !next._info.role) next._info.role = flags.role
+  return next
+}
+
+function getSelfIdFromCtx(e) {
+  return normalizeEventId(
+    e?.self_id ?? e?.bot?.uin ?? e?.bot?.self_id ?? globalThis.Bot?.uin ?? globalThis.Bot?.self_id,
+  )
+}
+
+function pickMemberInfoSafe(group, userId, { ignorePlaceholder = false } = {}) {
+  return pickGroupMemberRoleInfo(group, userId, { ignorePlaceholder })
+}
+
+function getCachedRoleFlags(cache, key, ttlMs, now = Date.now()) {
+  const cached = cache.get(key)
+  if (!cached) return null
+  if (now - Number(cached.ts || 0) >= ttlMs) {
+    cache.delete(key)
+    return null
+  }
+  return cached.flags || null
+}
+
+function setCachedRoleFlags(cache, key, flags, now = Date.now()) {
+  if (!flags) return
+  cache.set(key, { ts: now, flags })
+  while (cache.size > 2000) {
+    const firstKey = cache.keys().next()
+    if (firstKey.done) break
+    cache.delete(firstKey.value)
+  }
+}
+
+async function enrichGroupRoleFlags(e) {
+  if (!e || typeof e !== "object" || !e.group_id) return
+
+  const groupId = normalizeEventId(e.group_id)
+  const userId = normalizeEventId(e.user_id ?? e.sender_id)
+  const selfId = getSelfIdFromCtx(e)
+  const now = Date.now()
+
+  const senderFlags =
+    getRoleFlags(e.member) ??
+    getRoleFlags(e.group_member) ??
+    getRoleFlags(e.sender) ??
+    getRoleFlags(pickMemberInfoSafe(e.group, userId, { ignorePlaceholder: true }))
+
+  let resolvedSenderFlags = senderFlags
+  const senderCacheKey = groupId !== undefined && userId !== undefined ? `${groupId}:${userId}` : ""
+  if (!resolvedSenderFlags && senderCacheKey) {
+    resolvedSenderFlags = getCachedRoleFlags(
+      groupMemberRoleCache,
+      senderCacheKey,
+      GROUP_MEMBER_ROLE_CACHE_TTL_MS,
+      now,
+    )
+  }
+  if (
+    !resolvedSenderFlags &&
+    groupId !== undefined &&
+    userId !== undefined &&
+    typeof e.getGroupMemberInfo === "function"
+  ) {
+    try {
+      let info = null
+      try {
+        info = await e.getGroupMemberInfo(groupId, userId)
+      } catch {
+        info = await e.getGroupMemberInfo({ group_id: groupId, user_id: userId }).catch(() => null)
+      }
+      resolvedSenderFlags = getRoleFlags(info)
+      if (resolvedSenderFlags && senderCacheKey) {
+        setCachedRoleFlags(groupMemberRoleCache, senderCacheKey, resolvedSenderFlags, now)
+      }
+    } catch {}
+  }
+
+  if (userId !== undefined) {
+    e.member = applyRoleFlags(
+      e.member || {
+        user_id: userId,
+        nickname: e.sender?.nickname,
+        card: e.sender?.card,
+      },
+      resolvedSenderFlags,
+    )
+  }
+  if (resolvedSenderFlags) {
+    e.sender = applyRoleFlags(e.sender, resolvedSenderFlags)
+    e.isOwner = Boolean(resolvedSenderFlags.isOwner)
+    e.isAdmin = Boolean(resolvedSenderFlags.isAdmin)
+  } else {
+    e.isOwner = Boolean(e.member?.is_owner ?? e.member?.isOwner ?? false)
+    e.isAdmin = Boolean(e.member?.is_admin ?? e.member?.isAdmin ?? e.isOwner)
+  }
+
+  if (groupId === undefined || selfId === undefined) return
+
+  const cacheKey = `${groupId}:${selfId}`
+  const cached = getCachedRoleFlags(groupBotRoleCache, cacheKey, GROUP_BOT_ROLE_CACHE_TTL_MS, now)
+
+  const localBotInfo = pickMemberInfoSafe(e.group, selfId)
+  let selection = selectPreferredRoleFlags({
+    directInfo: e.botMember,
+    localInfo: localBotInfo,
+    cachedFlags: cached,
+    expectedUserId: selfId,
+  })
+  let botFlags = selection.flags
+  let botFlagsSource = selection.source
+  console.log("Bot角色权限缓存", {
+    groupId,
+    selfId,
+    cached: cached ? { role: cached.role, isOwner: cached.isOwner, isAdmin: cached.isAdmin } : null,
+    localPlaceholder: isPlaceholderMemberInfo(localBotInfo, { expectedUserId: selfId }),
+    hasGetGroupMemberInfo: typeof e.getGroupMemberInfo === "function",
+    hasGetGroupMemberList: typeof e.getGroupMemberList === "function",
+    source: botFlagsSource,
+    botFlags,
+  })
+
+  if (!botFlags && typeof e.getGroupMemberInfo === "function") {
+    try {
+      let info = null
+      try {
+        info = await e.getGroupMemberInfo(groupId, selfId)
+      } catch {
+        info = await e.getGroupMemberInfo({ group_id: groupId, user_id: selfId }).catch(() => null)
+      }
+      selection = selectPreferredRoleFlags({
+        directInfo: e.botMember,
+        localInfo: localBotInfo,
+        cachedFlags: cached,
+        upstreamInfo: info,
+        expectedUserId: selfId,
+      })
+      botFlags = selection.flags
+      botFlagsSource = selection.source
+      if (botFlags && botFlagsSource === "upstream") {
+        setCachedRoleFlags(groupBotRoleCache, cacheKey, botFlags, now)
+      }
+    } catch {}
+  }
+  if (!botFlags && typeof e.getGroupMemberList === "function") {
+    try {
+      let list = null
+      try {
+        list = await e.getGroupMemberList(groupId)
+      } catch {
+        list = await e.getGroupMemberList({ group_id: groupId }).catch(() => null)
+      }
+      const listInfo = findMemberInfoInGroupMemberList(list, selfId)
+      const listFlags = getRoleFlags(listInfo)
+      if (listFlags) {
+        botFlags = listFlags
+        botFlagsSource = "list"
+        setCachedRoleFlags(groupBotRoleCache, cacheKey, botFlags, now)
+      }
+    } catch {}
+  }
+  if (!botFlags) {
+    try {
+      const runtimeInfo = await callRuntimeBotGroupMemberInfo(groupId, selfId)
+      const runtimeFlags = getRoleFlags(runtimeInfo)
+      if (runtimeFlags) {
+        botFlags = runtimeFlags
+        botFlagsSource = "runtime-upstream"
+        setCachedRoleFlags(groupBotRoleCache, cacheKey, botFlags, now)
+      }
+    } catch {}
+  }
+  if (!botFlags) {
+    try {
+      const runtimeListInfo = await callRuntimeBotGroupMemberList(groupId, selfId)
+      const runtimeListFlags = getRoleFlags(runtimeListInfo)
+      if (runtimeListFlags) {
+        botFlags = runtimeListFlags
+        botFlagsSource = "runtime-list"
+        setCachedRoleFlags(groupBotRoleCache, cacheKey, botFlags, now)
+      }
+    } catch {}
+  }
+  console.log("botFlags:", {
+    groupId,
+    selfId,
+    source: botFlagsSource,
+    placeholderDetected: selection.placeholderDetected,
+    flags: botFlags,
+  })
+
+  if (botFlags) {
+    e.botMember = applyRoleFlags(
+      e.botMember || {
+        user_id: selfId,
+      },
+      botFlags,
+    )
+    e.botRole = botFlags.role
+    e.botIsOwner = Boolean(botFlags.isOwner)
+    e.botIsAdmin = Boolean(botFlags.isAdmin)
+  }
+}
+
 export default class BaseBot {
   constructor(config) {
     this.adapter = config.adapter
@@ -16,9 +329,9 @@ export default class BaseBot {
     this.onMount = []
   }
 
-  async loadBotPlugins() {
+  async loadBotPlugins(options = {}) {
     try {
-      const plugins = await loadPlugins(path.join(env.RootPath, "./src/plugins"))
+      const plugins = await loadPlugins(path.join(env.RootPath, "./src/plugins"), options)
 
       for (const plugin of plugins) {
         logger.info("加载插件:", plugin)
@@ -31,10 +344,23 @@ export default class BaseBot {
     }
   }
 
-  async renderImg(name, data) {
+  async reloadBotPlugins(options = {}) {
+    const cacheBust = options.cacheBust !== false
+
+    this.plugins = {}
+    this.onMount = []
+
+    await this.loadBotPlugins({ cacheBust })
+    await this.runMount()
+
+    return Object.keys(this.plugins)
+  }
+
+  async renderImg(name, data, options = {}) {
+    const tpl = options?.tpl || options?.template || name
     return await Render.render(
       name,
-      `/html/${name}/${name}.html`,
+      `/html/${name}/${tpl}.html`,
       {
         ...data,
       },
@@ -48,7 +374,7 @@ export default class BaseBot {
             _res_path: resPath,
             RootPath: env.RootPath,
             version: "0.0.1",
-            botname: process.env.xunLuEnv,
+            botname: String(process.env.xunLuEnv || ""),
             imgType: "png",
           }
         },
@@ -65,7 +391,15 @@ export default class BaseBot {
       setTask: this.collectTimerTasks(),
       callFnc: this.callPluginFnc(),
       onMount: fnc => this.onMount.push(fnc),
+      recordCommandUsage: this.recordCommandUsage.bind(this),
+      buildSyntheticCommandEvent: this.buildSyntheticCommandEvent.bind(this),
+      invokeCommandByReg: this.invokeCommandByReg.bind(this),
+      invokeCommandByText: this.invokeCommandByText.bind(this),
+      findCommandByReg: this.findCommandByReg.bind(this),
     }
+
+    // 补齐：通用 QQBot API（注册期可用）
+    applyUniversalBotApi(pluginAPI, { bot: this, adapterHint: this.adapter })
     plugin.implementation.register(pluginAPI)
   }
 
@@ -83,14 +417,15 @@ export default class BaseBot {
 
   callPluginFnc() {
     return async (name, ctx) => {
-      if (!ctx?.sendMsg) {
-        ctx = {
-          ...ctx,
-          ...this.bindEvent,
-        }
-        delete ctx.reply
-        this.bindEvent.reply(ctx)
+      const bindEvent = this.bindEvent && typeof this.bindEvent === "object" ? this.bindEvent : {}
+      ctx = {
+        ...bindEvent,
+        ...(ctx || {}),
       }
+
+      // 确保 ctx.reply 存在且行为一致（依赖 ctx.sendMessage/recallMessage 等）
+      delete ctx.reply
+      this.reply(ctx)
       let p = Object.values(this.plugins).find(i => i.id == name)
       await p.fnc.call(ctx, ctx)
     }
@@ -107,19 +442,335 @@ export default class BaseBot {
     }
   }
 
+  getOrderedCommands() {
+    return lodash.orderBy(Object.values(this.plugins), ["priority"], ["asc"])
+  }
+
+  shouldTrackCommandUsage(commandMeta, e = null) {
+    if (!commandMeta || commandMeta.trackUsage === false) return false
+    if (commandMeta.trackUsage === true) return true
+
+    const regText = String(commandMeta?.reg || "").trim()
+    if (!regText) return false
+
+    const eventText = String(commandMeta?.event || e?.post_type || "message")
+      .trim()
+      .toLowerCase()
+
+    return eventText.startsWith("message")
+  }
+
+  findCommandByReg(reg, options = {}) {
+    const regText = String(reg || "").trim()
+    if (!regText) return null
+    const event = String(options.event || "message")
+    const plugin = String(options.plugin || "").trim()
+
+    const list = this.getOrderedCommands().filter(item => {
+      if (String(item?.reg || "").trim() !== regText) return false
+      if (plugin && String(item?.plugin || "") !== plugin) return false
+      if (!event) return true
+      return String(item?.event || "message") === event
+    })
+
+    return list[0] || null
+  }
+
+  findCommandByText(text, e, options = {}) {
+    const commandText = String(text || "").trim()
+    if (!commandText) return null
+
+    const plugin = String(options?.plugin || "").trim()
+    for (const item of this.getOrderedCommands()) {
+      if (plugin && String(item?.plugin || "") !== plugin) continue
+      if (item?.event && !this.filtEvent(e, item)) continue
+
+      try {
+        if (new RegExp(String(item?.reg || "")).test(commandText)) {
+          return item
+        }
+      } catch (err) {
+        logger.warn("[findCommandByText] invalid reg:", item?.reg, err?.message || err)
+      }
+    }
+
+    return null
+  }
+
+  getCommandUsageSource(e) {
+    if (e?.__commandUsageSource) return String(e.__commandUsageSource)
+    if (e?.__proactiveCommand) return "proactive-command"
+
+    const runtimeTakeoverProtocol = String(globalThis.Bot?.__xunlu_takeover_state?.protocol || "")
+      .trim()
+      .toLowerCase()
+    const eventProtocol = String(e?.protocol || "").trim().toLowerCase()
+    if (e?.__xunluTakeover || e?.__isTakeover || e?.__takeover) return "yunzai-takeover"
+    if (runtimeTakeoverProtocol && eventProtocol && runtimeTakeoverProtocol === eventProtocol) {
+      return "yunzai-takeover"
+    }
+
+    return "xunlu"
+  }
+
+  async recordCommandUsage(e, commandMeta) {
+    if (!e || !commandMeta || e.__skipCommandUsageLog) return null
+    if (!this.shouldTrackCommandUsage(commandMeta, e)) return null
+    if (!e.group_id || !e.user_id) return null
+
+    const rawCommand = String(e.raw_message || e.msg || "").trim()
+    if (!rawCommand) return null
+
+    const triggeredAt =
+      Number(e.__commandTriggeredAt || 0) ||
+      (Number(e.time) > 0 ? Number(e.time) * 1000 : Date.now())
+
+    return await CommandUsageDB.recordUsage({
+      groupId: e.group_id,
+      userId: e.user_id,
+      plugin: commandMeta.plugin,
+      reg: commandMeta.reg,
+      rawCommand,
+      protocol: e.protocol || this.adapter || "",
+      event: commandMeta.event || e.post_type || "message",
+      priority: commandMeta.priority,
+      source: this.getCommandUsageSource(e),
+      triggeredAt,
+      isSynthetic: Boolean(e.__synthetic),
+    }).catch(err => {
+      logger.warn("[recordCommandUsage] failed:", err?.message || err)
+      return null
+    })
+  }
+
+  async buildSyntheticCommandEvent({
+    baseMessageRecord = {},
+    rawCommand = "",
+    reg = "",
+    userId,
+    groupId,
+    peerId,
+    scene,
+    protocol = "",
+    flags = {},
+  } = {}) {
+    const text = String(rawCommand || "").trim()
+    const desiredScene = String(
+      scene ??
+        flags?.scene ??
+        baseMessageRecord?.message_scene ??
+        baseMessageRecord?.message_type ??
+        (groupId ?? baseMessageRecord?.group_id ? "group" : "private"),
+    )
+      .trim()
+      .toLowerCase()
+    const isGroup = desiredScene !== "private"
+    const gid = isGroup ? groupId ?? baseMessageRecord?.group_id ?? baseMessageRecord?.peer_id : undefined
+    const uid = userId ?? baseMessageRecord?.user_id ?? baseMessageRecord?.sender_id
+    const pid = peerId ?? baseMessageRecord?.peer_id ?? (isGroup ? gid : baseMessageRecord?.user_id ?? baseMessageRecord?.sender_id ?? uid)
+    if (!uid || !text || (isGroup ? !gid : !pid)) {
+      throw new Error("[buildSyntheticCommandEvent] requires userId/rawCommand and a valid target")
+    }
+
+    const sender = baseMessageRecord?.sender && typeof baseMessageRecord.sender === "object"
+      ? { ...baseMessageRecord.sender }
+      : {}
+    const runtimeBot = globalThis.Bot || null
+    const selfId =
+      baseMessageRecord?.self_id ??
+      baseMessageRecord?.bot?.self_id ??
+      baseMessageRecord?.bot?.uin ??
+      this?.bindEvent?.self_id ??
+      runtimeBot?.self_id ??
+      runtimeBot?.uin ??
+      runtimeBot?.user_id
+
+    const event = {
+      ...(this.bindEvent && typeof this.bindEvent === "object" ? this.bindEvent : {}),
+      adapterType: this.adapter,
+      protocol: String(protocol || baseMessageRecord?.protocol || this.adapter || "").toLowerCase(),
+      post_type: "message",
+      message_type: isGroup ? "group" : "private",
+      sub_type: "normal",
+      group_id: isGroup ? gid : undefined,
+      peer_id: isGroup ? gid : pid,
+      user_id: uid,
+      sender_id: uid,
+      target_id: isGroup ? gid : pid,
+      receiver_id: isGroup ? gid : pid,
+      self_id: selfId,
+      message_id: baseMessageRecord?.message_id,
+      seq: baseMessageRecord?.seq ?? baseMessageRecord?.message_seq,
+      message_seq: baseMessageRecord?.message_seq ?? baseMessageRecord?.seq,
+      time: Math.floor(Date.now() / 1000),
+      raw_message: text,
+      message_scene: isGroup ? "group" : "private",
+      group_name: isGroup ? String(baseMessageRecord?.group_name || gid) : "",
+      sender: {
+        ...sender,
+        user_id: uid,
+        nickname: String(sender?.nickname || sender?.name || uid),
+        card: String(sender?.card || sender?.nickname || sender?.name || uid),
+      },
+      message: [UniversalMessageSegment.text(text)],
+      rawSegments: [UniversalMessageSegment.text(text)],
+      reg: String(reg || ""),
+      __synthetic:
+        baseMessageRecord?.__synthetic !== undefined ? Boolean(baseMessageRecord.__synthetic) : true,
+      __skipLearning:
+        baseMessageRecord?.__skipLearning !== undefined ? Boolean(baseMessageRecord.__skipLearning) : true,
+      __proactiveCommand: Boolean(flags?.__proactiveCommand ?? baseMessageRecord?.__proactiveCommand),
+      __commandUsageSource:
+        normalizeOptionalString(flags?.__commandUsageSource ?? baseMessageRecord?.__commandUsageSource) ||
+        (flags?.__proactiveCommand ?? baseMessageRecord?.__proactiveCommand ? "proactive-command" : ""),
+      ...flags,
+    }
+
+    try {
+      if (isGroup && runtimeBot?.pickGroup) event.group = runtimeBot.pickGroup(Number(gid) || gid)
+    } catch {}
+    try {
+      if (!isGroup && runtimeBot?.pickUser) event.friend = runtimeBot.pickUser(Number(pid) || pid)
+    } catch {}
+
+    await this.dealMsg(event)
+    delete event.reply
+    this.reply(event)
+    return event
+  }
+
+  async invokeMatchedCommand(command, ctx) {
+    if (!command) return false
+
+    if (ctx && typeof ctx === "object") {
+      ctx.reg = command.reg
+      ctx.__commandTriggeredAt = Number(ctx.__commandTriggeredAt || 0) || Date.now()
+      if (ctx.__skipLearning === undefined) ctx.__skipLearning = true
+    }
+
+    await this.recordCommandUsage(ctx, command)
+    return await command.fnc(ctx)
+  }
+
+  async invokeCommandByText(rawCommand, ctx = {}, options = {}) {
+    const text = String(rawCommand || ctx?.raw_message || ctx?.msg || "").trim()
+    if (!text) return false
+
+    let event = ctx
+    const alreadyPrepared =
+      event &&
+      typeof event === "object" &&
+      String(event?.post_type || "").toLowerCase() === "message" &&
+      typeof event?.reply === "function"
+
+    if (!alreadyPrepared) {
+      event = await this.buildSyntheticCommandEvent({
+        baseMessageRecord: ctx,
+        rawCommand: text,
+        userId: options?.userId ?? ctx?.user_id ?? ctx?.sender_id,
+        groupId: options?.groupId ?? ctx?.group_id,
+        peerId: options?.peerId ?? ctx?.peer_id,
+        scene: options?.scene,
+        protocol: options?.protocol ?? ctx?.protocol,
+        flags: options?.flags ?? {},
+      })
+    } else {
+      event.raw_message = text
+      event.msg = text
+      await this.dealMsg(event)
+      delete event.reply
+      this.reply(event)
+    }
+
+    const result = await this.processNormalCommands(event, {
+      rawCommand: text,
+      plugin: options?.plugin,
+    })
+    if (result !== false && result !== undefined && result !== null) {
+      return result
+    }
+
+    const yunzaiResult = await invokeYunzaiCommandByText(text, event, options).catch(err => {
+      logger.warn("[invokeCommandByText] yunzai fallback failed:", err?.message || err)
+      return false
+    })
+    if (yunzaiResult !== false && yunzaiResult !== undefined && yunzaiResult !== null) {
+      return yunzaiResult
+    }
+
+    return false
+  }
+
+  async invokeCommandByReg(reg, ctx, options = {}) {
+    const command = this.findCommandByReg(reg, options)
+    if (!command) {
+      const yunzaiResult = await invokeYunzaiRecordedCommandByReg(reg, ctx, options).catch(err => {
+        logger.warn("[invokeCommandByReg] yunzai fallback failed:", err?.message || err)
+        return false
+      })
+      if (yunzaiResult !== false && yunzaiResult !== undefined && yunzaiResult !== null) {
+        return yunzaiResult
+      }
+      throw new Error(`[invokeCommandByReg] command not found: ${reg}`)
+    }
+
+    return await this.invokeMatchedCommand(command, ctx)
+  }
+
   createCommandRegistrar(pname, idx) {
     return (command, handler) => {
       if (!command || !handler) return
-      const commands = Array.isArray(command) ? command : [command]
-      this.plugins[`${pname}-${commands[0] == "" ? idx : commands[0]}`] = {
+
+      // 支持：registerCommand(["^xx$", "message", 5000, { example, desc }], handler)
+      // 也兼容：registerCommand({ reg/pattern, event, priority, help/example/desc }, handler)
+      let reg = ""
+      let event = "message"
+      let priority = 5000
+      let help = null
+      let trackUsage
+
+      if (command && typeof command === "object" && !Array.isArray(command)) {
+        reg = String(command.reg ?? command.pattern ?? command.command ?? "")
+        if (lodash.isString(command.event)) event = command.event
+        if (lodash.isNumber(command.priority)) priority = command.priority
+        if (typeof command.trackUsage === "boolean") trackUsage = command.trackUsage
+
+        const meta = command.help && typeof command.help === "object" ? command.help : command
+        const example = meta.example ?? meta.examples
+        const desc = meta.desc ?? meta.description
+        if (example !== undefined || desc !== undefined) {
+          help = { example, desc }
+        }
+      } else {
+        const commands = Array.isArray(command) ? command : [command]
+        reg = String(commands[0] ?? "")
+
+        if (lodash.isString(commands[1])) event = commands[1]
+        if (lodash.isNumber(commands[1])) priority = commands[1]
+        if (lodash.isNumber(commands[2])) priority = commands[2]
+
+        const last = commands[commands.length - 1]
+        if (last && typeof last === "object" && !Array.isArray(last)) {
+          if (typeof last.trackUsage === "boolean") trackUsage = last.trackUsage
+          const example = last.example ?? last.examples
+          const desc = last.desc ?? last.description
+          if (example !== undefined || desc !== undefined) {
+            help = { example, desc }
+          }
+        }
+      }
+
+      this.plugins[`${pname}-${reg == "" ? idx : reg}`] = {
         id: `${pname}-${idx}`,
-        reg: commands[0],
-        event: lodash.isString(commands[1]) ? commands[1] : "message",
-        priority: lodash.isNumber(commands[1])
-          ? commands[1]
-          : lodash.isNumber(commands[2])
-            ? commands[2]
-            : 5000,
+        plugin: pname,
+        reg,
+        event,
+        priority,
+        trackUsage:
+          typeof trackUsage === "boolean"
+            ? trackUsage
+            : Boolean(String(reg || "").trim()) && String(event || "message").startsWith("message"),
+        help,
         fnc: handler,
       }
       idx++
@@ -235,13 +886,14 @@ export default class BaseBot {
   }
 
   async deal(e) {
-    console.log("原始 的e", e)
-
+    console.log(e)
     await this.dealMsg(e)
     await this.reply(e)
-    console.log("处理完后的e", e)
 
-    if (e.user_id == e.self_id && e.post_type == "message") return
+    if (e.user_id == e.self_id && e.post_type == "message") {
+      rememberRuntimeLastGroupMessage(e)
+      return
+    }
     //处理上下文
     const isPrivate = e.isPrivate
     const contextKey = isPrivate ? e.user_id : e.group_id
@@ -253,7 +905,9 @@ export default class BaseBot {
 
     if (!hasContext) {
       // 没有上下文时处理普通命令
-      return await this.processNormalCommands(e)
+      const result = await this.processNormalCommands(e)
+      rememberRuntimeLastGroupMessage(e)
+      return result
     }
 
     // 处理上下文
@@ -265,22 +919,24 @@ export default class BaseBot {
 
     // 根据处理结果清理上下文
     this.cleanupContexts(isPrivate, contextKey, userId, userContexts, result)
+    rememberRuntimeLastGroupMessage(e)
   }
 
   // 处理普通命令
-  async processNormalCommands(e) {
-    let regs = lodash.orderBy(Object.values(this.plugins), ["priority"], ["asc"])
-    console.log("reg里的e", e)
+  async processNormalCommands(e, options = {}) {
+    const commandText = String(options?.rawCommand ?? e?.msg ?? e?.raw_message ?? "").trim()
+    const plugin = String(options?.plugin || "").trim()
+    let regs = this.getOrderedCommands()
 
     for (let r of regs) {
+      if (plugin && String(r?.plugin || "") !== plugin) continue
       if (r.event && !this.filtEvent(e, r)) continue
-      if (new RegExp(r.reg).test(e?.msg?.trim())) {
-        console.log(e.msg)
-
+      if (new RegExp(r.reg).test(commandText)) {
         try {
           logger.debug("触发命令:", r)
-          e.reg = r.reg
-          let res = await r.fnc(e)
+          e.raw_message = commandText
+          e.msg = commandText
+          let res = await this.invokeMatchedCommand(r, e)
           if (!res) continue
           return res
         } catch (err) {
@@ -412,22 +1068,45 @@ export default class BaseBot {
   reply(e) {
     const reply = async (msg = "", quote = false, data = {}) => {
       let msgRes
-      if (typeof msg === "string") msg = this.dealSuffix(msg)
       let { recallMsg = 0, at = "" } = data
       if (!msg) return false
-      if (quote) {
-        let new_msg = [
-          {
-            type: "reply",
-            data: {
-              message_seq: e.message_seq,
-            },
-          },
-        ]
-        Array.isArray(msg)
-          ? new_msg.push(...msg)
-          : new_msg.push({ type: "text", data: { text: msg } })
-        msg = new_msg
+
+      // forward/raw 消息直接透传，避免被误转换（例如 onebot 的 node 转发）
+      const rawList = Array.isArray(msg) ? msg : msg ? [msg] : []
+      const hasRawNode = rawList.some(i => i?.type === "node")
+
+      if (!hasRawNode) {
+        if (typeof msg === "string") {
+          msg = this.dealSuffix(msg)
+        } else if (msg instanceof UniversalMessage) {
+          msg = msg.segments
+        } else {
+          msg = coerceToUniversalMessage(msg).segments
+        }
+
+        if (at) {
+          msg = [UniversalMessageSegment.mention(at), ...msg]
+        }
+
+        if (quote) {
+          const ref = e.messageRef || getMessageRefFromCtx(e)
+          try {
+            msg = [UniversalMessageSegment.reply({ msgId: ref.msgId, seq: ref.seq }), ...msg]
+          } catch {}
+        }
+
+        if (
+          Array.isArray(msg) &&
+          msg.some(seg => seg?.type === UniversalSegmentType.IMAGE && !seg?.data?.summary)
+        ) {
+          const imgdisplay = await getImageDisplay().catch(() => "")
+          msg = msg.map(seg => {
+            if (seg?.type === UniversalSegmentType.IMAGE && seg?.data && !seg.data.summary) {
+              seg.data.summary = imgdisplay || ""
+            }
+            return seg
+          })
+        }
       }
 
       if (e.group_id) {
@@ -435,216 +1114,233 @@ export default class BaseBot {
           logger.error(err)
         })
       } else {
-        let friend = e.friend
-        msgRes = await e.sendMessage(`${e.user_id}`, msg).catch(err => {
+        const privateTarget = e?.peer_id ?? e?.user_id
+        msgRes = await e.sendMessage(`${privateTarget}`, msg).catch(err => {
           logger.warn(err)
         })
       }
-      console.log("msg的msgRes", msgRes)
+
+      if (e.group_id && Array.isArray(msg) && msgRes) {
+        rememberRuntimeLastGroupMessage({
+          group_id: e.group_id,
+          user_id: e.self_id,
+          sender_id: e.self_id,
+          self_id: e.self_id,
+          message: msg,
+          isMaster: false,
+        })
+      }
 
       if (!e.isGuild && recallMsg > 0 && (msgRes?.seq || msgRes?.message_id)) {
-        setTimeout(async () => {
-          e.recallMessage({
-            peer_id: e?.peer_id || e.group_id,
-            message_seq: msgRes.seq,
-            message_id: msgRes?.message_id || msgRes?.data?.message_id,
-            isGroup: e.group_id || e.message_scene == "group",
-          })
+        setTimeout(() => {
+          void Promise.resolve()
+            .then(() =>
+              e.recallMessage?.({
+                peer_id: e?.peer_id || e.group_id,
+                message_seq: msgRes.seq,
+                message_id: msgRes?.message_id || msgRes?.data?.message_id,
+                isGroup: e.group_id || e.message_scene == "group",
+              }),
+            )
+            .catch(err => logger.warn(err))
         }, recallMsg * 1000)
       }
 
       return msgRes
     }
 
-    if (e.reply) {
-      e.replyNew = e.reply
-      /**
-       * @param msg 发送的消息
-       * @param quote 是否引用回复
-       * @param data.recallMsg 群聊是否撤回消息，0-120秒，0不撤回
-       * @param data.at 是否at用户
-       */
-      e.reply = async (msg = "", quote = false, data = {}) => {
-        let imgdisplay = ""
-        if (typeof msg === "string") msg = this.dealSuffix(msg)
-        if ((Array.isArray(msg) && msg?.find(i => i.type == "image")) || msg?.type == "image") {
-          imgdisplay = await getImageDisplay()
-        }
-        if (Array.isArray(msg)) {
-          msg = msg.map(m => {
-            switch (m?.type) {
-              case "image":
-                m.summary = imgdisplay || ""
-            }
-            return m
-          })
-        } else {
-          switch (msg.type) {
-            case "image":
-              msg.summary = imgdisplay || ""
-          }
-        }
-
-        return await reply(msg, quote, data)
-      }
-    } else {
-      e.reply = reply
-    }
+    if (e.reply) e.replyNew = e.reply
+    e.reply = reply
   }
 
   dealSuffix(msg) {
     if (typeof msg !== "string") return msg
-    let suffix_text = cfg.getConfig("bot").suffix_text
-    const parseFaceText = str => {
-      // 定义匹配[face:数字]的正则（全局+带捕获组）
-      const facePattern = /\[face:(\d+)\]/g
-      // 存储最终结构化结果
-      const result = []
-      // 记录上一次匹配结束的位置，初始为0
-      let lastIndex = 0
-
-      // 遍历所有匹配项
-      let match
-      while ((match = facePattern.exec(str)) !== null) {
-        const [fullMatch, faceId] = match // fullMatch是[face:xxx]，faceId是数字字符串
-        const matchStart = match.index // 匹配项在字符串中的起始位置
-
-        // 1. 处理匹配项之前的文本（如果有内容）
-        if (matchStart > lastIndex) {
-          const textContent = str.slice(lastIndex, matchStart)
-          result.push({
-            type: "text",
-            text: textContent,
-          })
-        }
-
-        // 2. 处理表情项（转换faceId为数字类型）
-        result.push({
-          type: "face",
-          id: Number(faceId),
-        })
-
-        // 3. 更新上一次结束位置为当前匹配项的结束位置
-        lastIndex = facePattern.lastIndex
-      }
-
-      // 4. 处理最后一个匹配项之后的剩余文本（如果有内容）
-      if (lastIndex < str.length) {
-        const textContent = str.slice(lastIndex)
-        result.push({
-          type: "text",
-          text: textContent,
-        })
-      }
-
-      return result
-    }
-    return parseFaceText(msg + suffix_text)
+    const suffixText = cfg.getConfig("bot")?.suffix_text || ""
+    return parseTextWithFaces(msg + suffixText)
   }
 
   async dealMsg(e) {
-    if (e.msg) return
-    if (e.message) {
-      for (let val of e.message) {
-        switch (val.type) {
-          case "text":
-            /** 中文#转为英文 */
-            val.text = val.text?.replace(/＃|井/g, "#").trim()
-            if (e.msg) {
-              e.msg += val.text
-            } else {
-              e.msg = val.text?.trim()
-            }
-            break
-          case "image":
-            if (!e.img) {
-              e.img = []
-            }
-            e.img.push(val.temp_url)
-            break
-          case "mention":
-            if (val.user_id == e.self_id) {
-              e.atBot = true
-            } else {
-              /** 多个at 以最后的为准 */
-              e.at = val.user_id
-            }
-            break
-          case "file":
-            e.file = { name: val.file_name, fid: val.file_id }
-            break
-        }
+    if (!e || typeof e !== "object") return
+
+    // 统一 self_id 格式，便于 atBot 判断
+    e.self_id = Array.isArray(e.self_id) ? e.self_id[0] : e?.self_id
+
+    // 统一 rawSegments：保留转换前段数组（优先 segments，其次 message）
+    if (!Array.isArray(e.rawSegments)) {
+      if (Array.isArray(e.segments)) e.rawSegments = e.segments
+      else if (Array.isArray(e.message)) e.rawSegments = e.message
+    }
+
+    // 兜底推断协议类型（多数情况下由各适配器事件层注入 e.protocol）
+    if (!e.protocol) {
+      const adapterHint = String(e.adapterType || this.adapter || "").toLowerCase()
+      if (adapterHint.includes("milky")) e.protocol = "milky"
+      else if (adapterHint.includes("onebot")) e.protocol = "onebotv11"
+      else if (adapterHint.includes("icqq")) e.protocol = "icqq"
+    }
+
+    // 解析分享卡片 JSON（onebot/icqq: json 段；milky: light_app 段）
+    const tryParseJsonPayload = payload => {
+      if (!payload) return null
+      if (typeof payload === "object") return payload
+      if (typeof payload !== "string") return null
+      const text = payload.trim()
+      if (!text) return null
+      try {
+        return JSON.parse(text)
+      } catch {
+        return null
       }
+    }
+
+    const extractJsonFromSegments = segments => {
+      if (!Array.isArray(segments)) return null
+
+      const protocol = String(e.protocol || "").toLowerCase()
+
+      if (protocol === "milky") {
+        const lightApp = segments.find(seg => seg?.type === "light_app")
+        const payload = lightApp?.data?.json_payload ?? lightApp?.data?.jsonPayload
+        return tryParseJsonPayload(payload)
+      }
+
+      const jsonSeg = segments.find(seg => seg?.type === "json")
+      if (!jsonSeg) return null
+      const payload = jsonSeg?.data?.data ?? jsonSeg?.data?.json ?? jsonSeg?.data ?? jsonSeg?.json
+      return tryParseJsonPayload(payload)
+    }
+
+    if (!e.json) {
+      e.json = extractJsonFromSegments(e.rawSegments) || undefined
+    }
+
+    // 优先：用 rawSegments 按协议构造 universalMessage（支持 takeover 场景：message 为 icqq 段，但 segments/rawSegments 为 onebot/milky 段）
+    const looksLikeUniversalSegments = segments =>
+      Array.isArray(segments) &&
+      segments.some(
+        seg =>
+          (seg?.type === UniversalSegmentType.TEXT &&
+            seg?.data &&
+            Object.prototype.hasOwnProperty.call(seg.data, "content")) ||
+          (seg?.type === UniversalSegmentType.MENTION &&
+            seg?.data &&
+            Object.prototype.hasOwnProperty.call(seg.data, "target")) ||
+          (seg?.type === UniversalSegmentType.REPLY &&
+            seg?.data &&
+            (Object.prototype.hasOwnProperty.call(seg.data, "msgId") ||
+              Object.prototype.hasOwnProperty.call(seg.data, "seq"))),
+      )
+
+    const rawLooksUniversal = looksLikeUniversalSegments(e.rawSegments)
+    if (!e.universalMessage && Array.isArray(e.rawSegments) && e.protocol && !rawLooksUniversal) {
+      try {
+        e.universalMessage = UniversalMessage.from(e.protocol, e.rawSegments)
+      } catch {}
+    }
+
+    // 统一真值：e.message 始终为 UniversalMessage.segments
+    if (e.universalMessage) {
+      e.message = e.universalMessage.segments
+    } else if (Array.isArray(e.message) && e.protocol) {
+      const looksUniversal = looksLikeUniversalSegments(e.message)
+
+      if (!looksUniversal) {
+        try {
+          e.universalMessage = UniversalMessage.from(e.protocol, e.message)
+          e.message = e.universalMessage.segments
+        } catch {}
+      }
+    }
+
+    if (Array.isArray(e.message)) {
+      applyDerivedFieldsFromUniversalSegments(e)
+
+      // 若 url 未从文本中提取到，则尝试从分享卡片 json 推断
+      if (!e.url && e.json && typeof e.json === "object") {
+        const derivedUrl =
+          e.json?.meta?.detail_1?.qqdocurl ||
+          e.json?.meta?.detail_1?.url ||
+          e.json?.meta?.news?.jumpUrl ||
+          e.json?.meta?.news?.jump_url ||
+          e.json?.meta?.news?.jumpURL ||
+          ""
+        if (derivedUrl) e.url = String(derivedUrl)
+      }
+    } else if (!e.msg) {
+      e.msg = e.raw_message || ""
     }
 
     e.logText = ""
 
-    if (e.message_scene == "friend" || e.message_scene == "temp") {
-      e.isPrivate = true
+    // 私聊/群聊标记（优先 group_id，否则按 message_type/friend 兜底）
+    e.isGroup = Boolean(e.group_id)
+    e.isPrivate = !e.isGroup && (e.message_type === "private" || Boolean(e.friend))
 
-      if (e.sender) {
+    if (e.isPrivate) {
+      if (!e.sender) {
+        const nickname = e.friend?.nickname || e.sender?.nickname || ""
+        e.sender = { card: nickname, nickname }
+      } else if (e.sender && !e.sender.card) {
         e.sender.card = e.sender.nickname
-      } else {
+      }
+      const senderId = e.sender_id ?? e.user_id ?? ""
+      e.logText = `[私聊][${e.sender.nickname}(${senderId})]`
+    }
+
+    if (e.isGroup) {
+      if (!e.sender) {
         e.sender = {
-          card: e.friend?.nickname,
-          nickname: e.friend?.nickname,
+          card: e.group_member?.card,
+          nickname: e.group_member?.nickname,
         }
       }
-
-      e.logText = `[私聊][${e.sender.nickname}(${e.sender_id})]`
+      if (!e.group_name) e.group_name = e.group?.group_name || e.group_name
+      const displayName = e.sender?.card || e.sender?.nickname || ""
+      e.logText = `[${e.group_name || e.group_id}(${displayName})]`
     }
 
-    if (e.message_scene == "group" || e.group_id) {
-      e.group_id = e?.peer_id || e?.group_id
-      e.isGroup = true
-      e.sender = {
-        card: e.group_member?.card,
-        nickname: e.group_member?.nickname,
-      }
-
-      if (!e.group_name) e.group_name = e.group?.group_name
-
-      e.logText = `[${e.group_name}(${e.sender.card || e.sender.nickname})]`
-    } else if (e.detail_type === "guild") {
-      e.isGuild = true
-    }
-
-    const master = await this.getMaster()
-    if (master.includes(e.sender_id) || master.includes(e.user_id)) {
+    const masters = await this.getMaster()
+    const uid = e.sender_id ?? e.user_id
+    const uidNum = Number(uid)
+    if (Array.isArray(masters) && (masters.includes(uidNum) || masters.includes(uid))) {
       e.isMaster = true
     }
+    normalizeEventTargetFields(e)
 
-    e.self_id = Array.isArray(e.self_id) ? e.self_id[0] : e?.self_id
+    // 标准消息 API：getMessage / getReplyMessage / messageRef
+    attachStandardMessageApis(e)
 
-    if (e?.receiver_id) {
-      e.target_id = e.receiver_id
-      delete e.receiver_id
-    }
+    // 通用 QQBot API：覆盖协议差异（尤其是群申请 accept/reject 参数映射）
+    applyUniversalBotApi(e, {
+      bot: this,
+      adapterHint: this.adapter,
+      override: [
+        "getLoginInfo",
+        "getFriendList",
+        "getFriendInfo",
+        "getGroupList",
+        "getGroupInfo",
+        "setGroupName",
+        "setGroupMemberCard",
+        "setGroupMemberAdmin",
+        "setGroupMemberSpecialTitle",
+        "setGroupWholeMute",
+        "kickGroupMember",
+        "quitGroup",
+        "acceptFriendRequest",
+        "rejectFriendRequest",
+        "sendGroupMessageReaction",
+        "acceptGroupRequest",
+        "rejectGroupRequest",
+        "getUserInfo",
+        "getGroupMemberList",
+        "getGroupMemberInfo",
+        "setGroupMemberMute",
+        "pickUser",
+      ],
+    })
 
-    e.user_id = e?.sender_id || e?.user_id
-
-    //let config = await this.getConfig();
-    // if (config) {
-    //   if (e.user_id && config.masterQQ.includes(Number(e.user_id))) {
-    //     e.isMaster = true;
-    //   }
-
-    //   /** 只关注主动at msg处理 */
-    //   if (e.msg && e.isGroup) {
-    //     let groupCfg = config.getGroup(e.group_id);
-    //     let alias = groupCfg.botAlias;
-    //     if (!Array.isArray(alias)) {
-    //       alias = [alias];
-    //     }
-    //     for (let name of alias) {
-    //       if (e.msg.startsWith(name)) {
-    //         e.msg = lodash.trimStart(e.msg, name).trim();
-    //         e.hasAlias = true;
-    //         break;
-    //       }
-    //     }
-    //   }
-    // }
+    await enrichGroupRoleFlags(e)
   }
 
   async getMaster() {
@@ -665,18 +1361,19 @@ export default class BaseBot {
   }
   //制作消息转发
   async makeForwardMsg(e, msg = [], dec = "", msgsscr = false) {
-    console.log("make里的e", e)
-
     if (!Array.isArray(msg)) {
       msg = [msg]
     }
-    let name = msgsscr ? e?.sender?.card || e?.user_id : Bot.nickname
-    let id = e.user_id || Bot.uin
+    const defaultId = e?.user_id ?? Bot?.uin
+    let name = msgsscr ? e?.sender?.card || e?.sender?.nickname || e?.user_id : Bot.nickname
+    let id = defaultId
 
     if (e.isGroup) {
       try {
-        let info = await e.getGroupMemberInfo(e.group_id, id || Bot.uin)
-        name = info.card || info.nickname
+        if (id !== undefined && id !== null && id !== "") {
+          let info = await e.getGroupMemberInfo(e.group_id, id || Bot.uin)
+          name = info.card || info.nickname || name
+        }
       } catch (err) {
         logger.error(err)
       }
@@ -692,8 +1389,20 @@ export default class BaseBot {
       if (!message) {
         continue
       }
+      const itemUserId = message?.user_id ?? message?.uin ?? message?.id ?? userInfo.user_id
+      const explicitName = message?.nickname ?? message?.sender_name ?? message?.name
+      const itemName = explicitName ?? userInfo.nickname
       const m = {
         ...userInfo,
+      }
+      if (itemUserId !== undefined && itemUserId !== null && itemUserId !== "") {
+        m.user_id = itemUserId
+        m.uin = itemUserId
+      }
+      if (itemName !== undefined && itemName !== null && itemName !== "") {
+        m.nickname = itemName
+        m.sender_name = itemName
+        m.name = itemName
       }
       message?.content ? (m.message = message.content) : (m.message = message)
       message?.time ? (m.time = message.time) : ""

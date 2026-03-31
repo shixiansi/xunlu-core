@@ -2,7 +2,7 @@ import Renderer from "../../lib/renderer/Renderer.js"
 import os from "node:os"
 import lodash from "lodash"
 import puppeteer from "puppeteer"
-import { segment } from "../../Bot/segment.js"
+import { segment } from "../../Bot/segment_bk.js"
 import path from "path"
 import fs from "fs" // 新增：用于文件路径校验
 const _path = process.cwd()
@@ -214,6 +214,15 @@ class Puppeteer extends Renderer {
 
       // 跳转页面（核心修复：使用正确的file路径）
       await page.goto(fileUrl, pageGotoParams)
+      await page
+        .waitForFunction(
+          () =>
+            document?.body?.dataset?.renderReady === "1" ||
+            window.__renderReady === true ||
+            document?.documentElement?.dataset?.renderReady === "1",
+          { timeout: 3000 },
+        )
+        .catch(() => {})
       let body = (await page.$("#container")) || (await page.$("body"))
       if (!body) {
         throw new Error("未找到#container或body元素")

@@ -4,7 +4,8 @@ import { pathToFileURL } from "url";
 
 // 只做模块加载，不主动创建 express 对象或调用 register
 // 调用方负责根据运行上下文决定是否调用 plugin.register(bot)
-export async function loadPlugins(dir) {
+export async function loadPlugins(dir, options = {}) {
+  const cacheBust = Boolean(options.cacheBust)
   const plugins = [];
   if (!fs.existsSync(dir)) return plugins;
   const entries = fs.readdirSync(dir);
@@ -33,9 +34,11 @@ export async function loadPlugins(dir) {
         continue;
       }
 
-      if (loadedTargets.has(pathToFileURL(target).href)) continue;
-      const mod = await import(pathToFileURL(target).href);
-      loadedTargets.add(pathToFileURL(target).href);
+      const baseUrl = pathToFileURL(target).href;
+      if (loadedTargets.has(baseUrl)) continue;
+      const importUrl = cacheBust ? `${baseUrl}?update=${Date.now()}` : baseUrl;
+      const mod = await import(importUrl);
+      loadedTargets.add(baseUrl);
       const implementation = mod.default || mod;
       const name = implementation.name || path.basename(target, ".js");
       const plugin = { name, implementation };

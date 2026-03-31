@@ -1,0 +1,72 @@
+{{extend defaulthtml}}
+
+{{block 'css'}}
+<link rel="stylesheet" href="{{_res_path}}/html/diaoyu/diaoyu.css" />
+{{/block}}
+
+{{block 'main'}}
+<div class="diaoyu page-status">
+  <div class="diaoyu-header">
+    <div class="diaoyu-title">
+      <img class="diaoyu-icon" src="{{_res_path}}/img/icons/sign.png" alt="icon" />
+      <div>
+        <div class="diaoyu-title-main">钓鱼状态</div>
+        <div class="diaoyu-title-sub">{{date||''}}</div>
+      </div>
+    </div>
+    <div class="diaoyu-badge">{{signed?'已签到':'未签到'}} · 连签 {{streak}} 天</div>
+  </div>
+
+  <div class="diaoyu-body">
+    <div class="diaoyu-grid">
+      <div class="diaoyu-card">
+        <img class="diaoyu-card-icon" src="{{_res_path}}/img/icons/coin.png" alt="coin" />
+        <div>
+          <div class="diaoyu-card-label">金币</div>
+          <div class="diaoyu-card-value">{{coins}}</div>
+        </div>
+      </div>
+      <div class="diaoyu-card">
+        <img class="diaoyu-card-icon" src="{{_res_path}}/img/icons/rod.png" alt="rod" />
+        <div>
+          <div class="diaoyu-card-label">鱼竿等级</div>
+          <div class="diaoyu-card-value">Lv.{{rodLevel}}</div>
+        </div>
+      </div>
+      <div class="diaoyu-card">
+        <img class="diaoyu-card-icon" src="{{_res_path}}/img/icons/bag.png" alt="bag" />
+        <div>
+          <div class="diaoyu-card-label">鱼获数量</div>
+          <div class="diaoyu-card-value">{{fishCount}} 条</div>
+        </div>
+      </div>
+      <div class="diaoyu-card">
+        <img class="diaoyu-card-icon" src="{{_res_path}}/img/icons/bait.png" alt="bait" />
+        <div>
+          <div class="diaoyu-card-label">普通鱼饵</div>
+          <div class="diaoyu-card-value">{{bait}}</div>
+        </div>
+      </div>
+      <div class="diaoyu-card">
+        <img class="diaoyu-card-icon" src="{{_res_path}}/img/icons/bait_adv.png" alt="bait_adv" />
+        <div>
+          <div class="diaoyu-card-label">高级鱼饵</div>
+          <div class="diaoyu-card-value">{{baitAdv}}</div>
+        </div>
+      </div>
+      <div class="diaoyu-card">
+        <img class="diaoyu-card-icon" src="{{_res_path}}/img/icons/shop.png" alt="shop" />
+        <div>
+          <div class="diaoyu-card-label">快捷指令</div>
+          <div class="diaoyu-card-sub">钓鱼 / 钓鱼 高级</div>
+          <div class="diaoyu-card-sub">钓鱼商店 / 钓鱼买</div>
+          <div class="diaoyu-card-sub">钓鱼卖 / 钓鱼仓库</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="diaoyu-hint">提示：回复 “钓鱼帮助” 查看完整指令。</div>
+</div>
+{{/block}}
+

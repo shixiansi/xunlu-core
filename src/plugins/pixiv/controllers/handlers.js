@@ -80,7 +80,7 @@ async function getValidPixivPic(retryCount = 0) {
     // 原逻辑获取图片数据
     const picData = await (
       await fetch(
-        `https://shithink.xyz/api/pixivRandombg?mode=${lodash.random(1, 2) === 1 ? "pc" : "app"}`,
+        `https://shipixiv.de5.net/api/pixivRandombg?mode=${lodash.random(1, 2) === 1 ? "pc" : "app"}`,
       )
     ).json()
 

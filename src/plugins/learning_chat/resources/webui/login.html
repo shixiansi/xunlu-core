@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>learning_chat 登录</title>
+    <link rel="stylesheet" href="./static/style.css" />
+  </head>
+  <body class="page">
+    <div class="card narrow">
+      <div class="title">
+        <h1>learning_chat 后台登录</h1>
+        <div class="sub">默认：chat / admin</div>
+      </div>
+
+      <form id="loginForm">
+        <label>
+          用户名
+          <input name="username" autocomplete="username" value="chat" />
+        </label>
+        <label>
+          密码
+          <input name="password" type="password" autocomplete="current-password" placeholder="admin" />
+        </label>
+        <button type="submit">登录</button>
+        <div id="msg" class="msg"></div>
+      </form>
+
+      <div class="small" style="margin-top: 12px">
+        登录后请尽快修改默认用户名、密码，并旋转 token_secret。
+      </div>
+    </div>
+
+    <script>
+      const $ = s => document.querySelector(s)
+      const msg = $("#msg")
+      $("#loginForm").addEventListener("submit", async e => {
+        e.preventDefault()
+        msg.className = "msg"
+        msg.textContent = ""
+
+        const username = e.target.username.value.trim()
+        const password = e.target.password.value
+        if (!username || !password) {
+          msg.className = "msg err"
+          msg.textContent = "请输入用户名与密码"
+          return
+        }
+
+        try {
+          const res = await fetch("./api/login", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ username, password }),
+          })
+          const json = await res.json().catch(() => ({}))
+          if (!res.ok || !json.ok) {
+            msg.className = "msg err"
+            msg.textContent = json.error || "登录失败"
+            return
+          }
+          msg.className = "msg ok"
+          msg.textContent = "登录成功，正在跳转…"
+          location.href = "./admin"
+        } catch (err) {
+          msg.className = "msg err"
+          msg.textContent = err?.message || String(err)
+        }
+      })
+    </script>
+  </body>
+</html>
+

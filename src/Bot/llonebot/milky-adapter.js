@@ -1,8 +1,18 @@
 import { MilkyClient } from "@saltify/milky-node-sdk"
+// 导入通用消息类型（用于兼容判断）
+import { UniversalMessage, UniversalSegmentType } from "../message/universal-message.js"
+
+function normalizeMilkyApiName(name) {
+  if (name === undefined || name === null) return ""
+  let out = String(name).trim()
+  while (out.startsWith("/")) out = out.slice(1)
+  if (out.startsWith("api/")) out = out.slice("api/".length)
+  return out
+}
 
 /**
  * Milky标准的QQ机器人适配器
- * 完整实现milky标准的所有API接口，与icqq组件兼容
+ * 适配通用消息转换体系，完整实现milky标准API，兼容ICQQ插件
  */
 class MilkyAdapter {
   constructor(config = {}) {
@@ -23,20 +33,18 @@ class MilkyAdapter {
       this.config.useSSE,
     )
 
-    console.log(this.client)
+    console.log("[MilkyAdapter] 客户端初始化完成:", this.client)
 
-    //this.setupEventHandlers();
-
+    // 维护事件监听器列表（修复on/off/once方法）
+    this.eventListeners = new Map()
     // 标识适配器类型
     this.adapterType = "milky"
   }
 
   /**
-   * 设置事件处理器
+   * 设置事件处理器（可选，保持原有逻辑）
    */
   setupEventHandlers() {
-    // 监听milky事件并转发到内部事件系统
-    // 事件类型到中文描述的映射
     const eventTypeMap = {
       message_receive: "消息接收事件",
       message_recall: "消息撤回事件",
@@ -59,408 +67,522 @@ class MilkyAdapter {
     }
 
     Object.keys(eventTypeMap).forEach(eventType => {
-      this.client.onEvent(eventType, data => {
+      this.on(eventType, data => {
         const eventName = eventTypeMap[eventType] || eventType
         console.log(`[MilkyAdapter] 接收到事件: ${eventName}`, data)
       })
     })
   }
-  /**
-   * 系统API
-   */
 
-  async callApi(apiName, input) {
+  /**
+   * 系统API（保持原有逻辑，补充错误处理）
+   */
+  async callApi(apiName, input = {}) {
+    const normalizedName = normalizeMilkyApiName(apiName)
+    if (!normalizedName) throw new Error("[MilkyAdapter] callApi requires apiName")
+
     try {
-      return await this.client.callApi(apiName, input)
+      const result = await this.client.callApi(normalizedName, input)
+      console.debug(`[MilkyAdapter] 调用API ${normalizedName} 成功:`, result)
+      return result
     } catch (error) {
-      console.log(error)
+      console.error(`[MilkyAdapter] 调用API ${normalizedName} 失败:`, error)
+      throw error // 抛出错误，让上层处理
     }
   }
 
-  // 获取登录信息
+  /**
+   * 兼容：sendApi(action, params)（与文档路径写法一致）
+   * - 支持 "/api/get_login_info" / "api/get_login_info" / "get_login_info"
+   */
+  async sendApi(action, input = {}) {
+    return await this.callApi(action, input)
+  }
+
+  // ========== 系统/好友/群聊API（保持原有逻辑，仅补充错误处理） ==========
   async getLoginInfo() {
     return await this.callApi("get_login_info")
   }
-
-  // 获取协议端信息
   async getImplInfo() {
     return await this.callApi("get_impl_info")
   }
-
-  // 获取用户个人信息
   async getUserProfile(input) {
     return await this.callApi("get_user_profile", input)
   }
-
-  /**
-   * 好友API
-   */
-
-  // 获取好友列表
   async getFriendList(input) {
     return await this.callApi("get_friend_list", input)
   }
-
-  // 获取好友信息
   async getFriendInfo(input) {
     return await this.callApi("get_friend_info", input)
   }
-
-  // 发送好友戳一戳
   async sendFriendNudge(input) {
     return await this.callApi("send_friend_nudge", input)
   }
-
-  // 发送名片点赞
   async sendProfileLike(input) {
     return await this.callApi("send_profile_like", input)
   }
-
-  // 获取好友请求列表
   async getFriendRequests(input) {
     return await this.callApi("get_friend_requests", input)
   }
-
-  // 同意好友请求
   async acceptFriendRequest(input) {
     return await this.callApi("accept_friend_request", input)
   }
-
-  // 拒绝好友请求
   async rejectFriendRequest(input) {
     return await this.callApi("reject_friend_request", input)
   }
-
-  /**
-   * 群聊API
-   */
-
-  // 获取群列表
   async getGroupList(input) {
     return await this.callApi("get_group_list", input)
   }
-
-  // 获取群信息
   async getGroupInfo(input) {
     return await this.callApi("get_group_info", input)
   }
-
-  // 获取群成员列表
   async getGroupMemberList(input) {
     return await this.callApi("get_group_member_list", input)
   }
-
-  // 获取群成员信息
   async getGroupMemberInfo(input) {
     return await this.callApi("get_group_member_info", input)
   }
-
-  // 设置群名称
   async setGroupName(input) {
     return await this.callApi("set_group_name", input)
   }
-
-  // 设置群头像
   async setGroupAvatar(input) {
     return await this.callApi("set_group_avatar", input)
   }
-
-  // 设置群名片
   async setGroupMemberCard(input) {
     return await this.callApi("set_group_member_card", input)
   }
-
-  // 设置群成员专属头衔
   async setGroupMemberSpecialTitle(input) {
     return await this.callApi("set_group_member_special_title", input)
   }
-
-  // 设置群管理员
   async setGroupMemberAdmin(input) {
     return await this.callApi("set_group_member_admin", input)
   }
-
-  // 设置群成员禁言
   async setGroupMemberMute(input) {
     return await this.callApi("set_group_member_mute", input)
   }
-
-  // 设置群全员禁言
   async setGroupWholeMute(input) {
     return await this.callApi("set_group_whole_mute", input)
   }
-
-  // 踢出群成员
   async kickGroupMember(input) {
     return await this.callApi("kick_group_member", input)
   }
-
-  // 发送群戳一戳
   async sendGroupNudge(input) {
     return await this.callApi("send_group_nudge", input)
   }
-
-  // 退出群
   async quitGroup(input) {
     return await this.callApi("quit_group", input)
   }
-
-  // 获取群公告列表
   async getGroupAnnouncements(input) {
     return await this.callApi("get_group_announcements", input)
   }
-
-  // 发送群公告
   async sendGroupAnnouncement(input) {
     return await this.callApi("send_group_announcement", input)
   }
-
-  // 删除群公告
   async deleteGroupAnnouncement(input) {
     return await this.callApi("delete_group_announcement", input)
   }
-
-  // 获取群精华消息列表
   async getGroupEssenceMessages(input) {
     return await this.callApi("get_group_essence_messages", input)
   }
-
-  // 设置群精华消息
   async setGroupEssenceMessage(input) {
     return await this.callApi("set_group_essence_message", input)
   }
-
-  // 发送群消息表情回应
   async sendGroupMessageReaction(input) {
-    return await this.callApi("send_group_message_reaction", input)
-  }
+    const payload = { ...(input || {}) }
 
-  // 获取群通知列表
+    // milky-types: reaction 为 string，兼容外部传 emoji_id
+    const reactionRaw = payload.reaction ?? payload.emoji_id ?? payload.emojiId
+    if (reactionRaw !== undefined && reactionRaw !== null && reactionRaw !== "") {
+      payload.reaction = String(reactionRaw)
+    }
+
+    // 默认添加表情
+    if (payload.is_add === undefined && payload.isAdd === undefined) {
+      payload.is_add = true
+    } else if (payload.is_add === undefined && payload.isAdd !== undefined) {
+      payload.is_add = Boolean(payload.isAdd)
+    }
+
+    delete payload.emoji_id
+    delete payload.emojiId
+    delete payload.isAdd
+
+    try {
+      const result = await this.client.callApi("send_group_message_reaction", payload)
+      console.debug(`[MilkyAdapter] 调用API send_group_message_reaction 成功:`, result)
+      return result
+    } catch (err) {
+      const msg = err?.message || String(err)
+
+      // idempotent behavior: treat "already set" / "not set" as success
+      if (payload.is_add === true && /已经设置过该表情/.test(msg)) return {}
+      if (payload.is_add === false && /(未设置过该表情|没有设置过该表情)/.test(msg)) return {}
+
+      console.error(`[MilkyAdapter] 调用API send_group_message_reaction 失败:`, err)
+      throw err
+    }
+  }
   async getGroupNotifications(input) {
     return await this.callApi("get_group_notifications", input)
   }
-
-  // 同意入群/邀请他人入群请求
   async acceptGroupRequest(input) {
     return await this.callApi("accept_group_request", input)
   }
-
-  // 拒绝入群/邀请他人入群请求
   async rejectGroupRequest(input) {
     return await this.callApi("reject_group_request", input)
   }
-
-  // 同意他人邀请自身入群
   async acceptGroupInvitation(input) {
     return await this.callApi("accept_group_invitation", input)
   }
-
-  // 拒绝他人邀请自身入群
   async rejectGroupInvitation(input) {
     return await this.callApi("reject_group_invitation", input)
   }
-
-  /**
-   * 消息API
-   */
-
-  // 发送私聊消息
   async sendPrivateMessage(input) {
     return await this.callApi("send_private_message", input)
   }
-
-  // 发送群聊消息
   async sendGroupMessage(input) {
     return await this.callApi("send_group_message", input)
   }
-
-  // 撤回私聊消息
   async recallPrivateMessage(input) {
     return await this.callApi("recall_private_message", input)
   }
-
-  // 撤回群聊消息
   async recallGroupMessage(input) {
     return await this.callApi("recall_group_message", input)
   }
-
-  // 获取消息
   async getMessage(input) {
     return await this.callApi("get_message", input)
   }
-
-  // 获取历史消息列表
   async getHistoryMessages(input) {
     return await this.callApi("get_history_messages", input)
   }
-
-  // 标记消息为已读
   async markMessageAsRead(input) {
     return await this.callApi("mark_message_as_read", input)
   }
-
-  // 获取临时资源链接
   async getResourceTempUrl(input) {
     return await this.callApi("get_resource_temp_url", input)
   }
-
-  // 获取合并转发消息内容
   async getForwardedMessages(input) {
     return await this.callApi("get_forwarded_messages", input)
   }
-
-  /**
-   * 文件API
-   */
-
-  // 上传私聊文件
   async uploadPrivateFile(input) {
     return await this.callApi("upload_private_file", input)
   }
-
-  // 上传群文件
   async uploadGroupFile(input) {
     return await this.callApi("upload_group_file", input)
   }
-
-  // 获取私聊文件下载链接
   async getPrivateFileDownloadUrl(input) {
     return await this.callApi("get_private_file_download_url", input)
   }
-
-  // 获取群文件下载链接
   async getGroupFileDownloadUrl(input) {
     return await this.callApi("get_group_file_download_url", input)
   }
-
-  // 获取群文件列表
   async getGroupFiles(input) {
     return await this.callApi("get_group_files", input)
   }
-
-  // 移动群文件
   async moveGroupFile(input) {
     return await this.callApi("move_group_file", input)
   }
-
-  // 重命名群文件
   async renameGroupFile(input) {
     return await this.callApi("rename_group_file", input)
   }
-
-  // 删除群文件
   async deleteGroupFile(input) {
     return await this.callApi("delete_group_file", input)
   }
-
-  // 创建群文件夹
   async createGroupFolder(input) {
     return await this.callApi("create_group_folder", input)
   }
-
-  // 重命名群文件夹
   async renameGroupFolder(input) {
     return await this.callApi("rename_group_folder", input)
   }
-
-  // 删除群文件夹
   async deleteGroupFolder(input) {
     return await this.callApi("delete_group_folder", input)
   }
-
-  /**
-   * 事件监听
-   */
-
-  // 监听事件
-  on(eventType, listener) {
-    console.log(eventType, listener)
-
-    this.client.onEvent(eventType, listener)
-  }
-
-  // 一次性监听事件
-  once(eventType, listener) {
-    this.client.onEvent(eventType, listener)
-  }
-
-  // 移除事件监听器
-  off(eventType, listener) {
-    this.client.onEvent(eventType, listener)
-  }
-
-  /**
-   * 工具方法
-   */
-
-  // 获取Cookies
   async getCookies(input) {
     return await this.callApi("get_cookies", input)
   }
-
-  // 获取CSRF Token
   async getCSRFToken() {
     return await this.callApi("get_csrf_token")
   }
 
   /**
-   * 兼容性方法
-   * 为了与现有icqq插件兼容
+   * 修复事件监听方法（核心修改）
    */
-
-  // 兼容现有的Bot调用方式
-  async sendMsg(target, message) {
-    console.log(target, message)
-
-    if (typeof target === "string") {
-      // 私聊消息 - 将字符串ID转换为数字
-      return await this.sendPrivateMessage({
-        user_id: Number(target),
-        message: Array.isArray(message) ? message : [{ type: "text", data: { text: message } }],
+  on(eventType, listener) {
+    if (!this.eventListeners.has(eventType)) {
+      this.eventListeners.set(eventType, new Set())
+      // 绑定到Milky客户端
+      this.client.onEvent(eventType, data => {
+        this.eventListeners.get(eventType).forEach(cb => cb(data))
       })
-    } else if (target.group_id) {
-      // 群聊消息 - 确保group_id是数字
-      message = Array.isArray(message)
-        ? message.map(i => this.dealMilkyMsg(i))
-        : typeof message === "string"
-          ? [{ type: "text", data: { text: message } }]
-          : [this.dealMilkyMsg(message)]
-      let file = message.find(item => item.type == "file")
-      if (message.length == 1 && file) {
-        return await this.uploadGroupFile({
-          group_id: target.group_id,
-          file_uri: file.data.uri,
-          file_name: file.data.name,
-        })
-      }
+    }
+    this.eventListeners.get(eventType).add(listener)
+    console.log(
+      `[MilkyAdapter] 绑定事件监听器: ${eventType}, 总数: ${this.eventListeners.get(eventType).size}`,
+    )
+  }
 
-      let { message_seq, time } = await this.sendGroupMessage({
-        group_id: Number(target.group_id),
-        message: message,
-      })
-      return { seq: message_seq, time }
+  once(eventType, listener) {
+    const onceListener = data => {
+      listener(data)
+      this.off(eventType, onceListener) // 执行后移除
+    }
+    this.on(eventType, onceListener)
+  }
+
+  off(eventType, listener) {
+    if (this.eventListeners.has(eventType)) {
+      this.eventListeners.get(eventType).delete(listener)
+      console.log(
+        `[MilkyAdapter] 移除事件监听器: ${eventType}, 剩余: ${this.eventListeners.get(eventType).size}`,
+      )
     }
   }
 
+  /**
+   * 核心适配：处理消息格式转换（兼容通用消息段）
+   * @param {Object} msg 原始消息段（通用格式/ICQQ格式/Milky格式）
+   * @returns {Object} Milky标准格式消息段
+   */
   dealMilkyMsg(msg) {
-    console.log(msg)
+    console.debug("[MilkyAdapter] 处理消息段:", msg)
+
+    if (msg === undefined || msg === null) {
+      return { type: "text", data: { text: "" } }
+    }
+
+    if (typeof msg === "number" || typeof msg === "bigint" || typeof msg === "boolean") {
+      return { type: "text", data: { text: String(msg) } }
+    }
+
+    const toMilkyUri = input => {
+      if (input === undefined || input === null) return ""
+      const raw = String(input).trim()
+      if (!raw) return ""
+
+      // Already supported forms
+      if (/^(https?:\/\/|file:\/\/|base64:\/\/)/i.test(raw)) return raw
+
+      // Windows absolute path (C:\ or C:/)
+      if (/^[a-zA-Z]:[\\/]/.test(raw)) {
+        return `file:///${raw.replace(/\\/g, "/")}`
+      }
+
+      // UNC path (\\server\share\...)
+      if (raw.startsWith("\\\\")) {
+        return `file://${raw.replace(/\\/g, "/")}`
+      }
+
+      // POSIX absolute path
+      if (raw.startsWith("/")) {
+        return `file://${raw}`
+      }
+
+      return raw
+    }
+
+    const isSupportedMilkyUri = uri => {
+      if (!uri) return false
+      const s = String(uri).trim().toLowerCase()
+      return s.startsWith("http://") || s.startsWith("https://") || s.startsWith("file://") || s.startsWith("base64://")
+    }
+
+    // 1. 字符串直接转为文本段
     if (typeof msg === "string") {
-      msg = {
-        type: "text",
-        data: { text: msg },
+      return { type: "text", data: { text: msg } }
+    }
+
+    // 1.5 若已经是 milky 段，补齐关键字段类型（避免 user_id/message_seq 为 string 导致 API -400）
+    if (msg && typeof msg === "object") {
+      if (msg.type === "mention") {
+        const raw = msg?.data?.user_id ?? msg?.data?.uin ?? msg?.data?.qq
+        const uid = Number(raw)
+        if (Number.isFinite(uid) && uid > 0) {
+          return { ...msg, data: { ...(msg.data || {}), user_id: uid } }
+        }
+      }
+      if (msg.type === "reply") {
+        const raw = msg?.data?.message_seq ?? msg?.data?.seq ?? msg?.data?.id
+        const seq = Number(raw)
+        if (Number.isFinite(seq) && seq > 0) {
+          return { ...msg, data: { ...(msg.data || {}), message_seq: seq } }
+        }
       }
     }
+
+    // 2. 通用消息段转换为Milky格式
+    if (msg.type && Object.values(UniversalSegmentType).includes(msg.type)) {
+      switch (msg.type) {
+        case UniversalSegmentType.TEXT:
+          return {
+            type: "text",
+            data: { text: msg?.data?.content ?? msg?.data?.text ?? msg?.text ?? msg?.content ?? "" },
+          }
+
+        case UniversalSegmentType.EMOJI: // 通用face类型
+          {
+            const faceId = msg?.data?.id ?? msg?.id ?? msg?.data?.face_id ?? msg?.data?.faceId ?? undefined
+            const faceIdStr = faceId !== undefined && faceId !== null ? String(faceId) : ""
+            if (!faceIdStr) return { type: "text", data: { text: "" } }
+            return { type: "face", data: { face_id: faceIdStr } }
+          }
+
+        case UniversalSegmentType.IMAGE: // 通用图片类型
+          {
+            // Prefer URL/temp_url first (Milky only supports http(s)/file/base64 schemes for uri).
+            // Avoid using resource_id (fileId) as uri, otherwise Milky returns "Unsupported URI scheme".
+            const rawInput =
+              msg?.data?.url ??
+              msg?.url ??
+              msg?.data?.uri ??
+              msg?.uri ??
+              msg?.data?.temp_url ??
+              msg?.data?.tempUrl ??
+              msg?.temp_url ??
+              msg?.tempUrl ??
+              msg?.data?.path ??
+              msg?.path ??
+              msg?.data?.file ??
+              msg?.file ??
+              msg?.data?.fileId ??
+              msg?.fileId ??
+              msg?.data?.resource_id ??
+              msg?.resource_id ??
+              msg?.data?.resourceId ??
+              msg?.resourceId ??
+              ""
+
+            const uri = toMilkyUri(rawInput)
+
+            if (!uri) {
+              const fallback = msg?.data?.summary ?? msg?.summary ?? "[图片]"
+              return { type: "text", data: { text: String(fallback || "") } }
+            }
+
+            if (!isSupportedMilkyUri(uri)) {
+              const fallback = msg?.data?.summary ?? msg?.summary ?? "[图片]"
+              return { type: "text", data: { text: String(fallback || "") } }
+            }
+
+            const summaryRaw = msg?.data?.summary ?? msg?.summary
+            const summary = summaryRaw !== undefined && summaryRaw !== null && String(summaryRaw).trim()
+              ? String(summaryRaw)
+              : undefined
+
+            let subTypeRaw =
+              msg?.data?.sub_type ?? msg?.data?.subType ?? msg?.sub_type ?? msg?.subType ?? undefined
+
+            if (!subTypeRaw && summary) {
+              if (summary.includes("动画表情")) subTypeRaw = "sticker"
+            }
+
+            const sub_type = subTypeRaw ? String(subTypeRaw).toLowerCase() : undefined
+            const normalizedSubType = sub_type === "normal" || sub_type === "sticker" ? sub_type : undefined
+
+            const data = {
+              uri,
+              ...(normalizedSubType ? { sub_type: normalizedSubType } : {}),
+              ...(summary ? { summary } : {}),
+            }
+
+            return { type: "image", data }
+          }
+
+        case UniversalSegmentType.VOICE: // 通用语音类型（record）
+          {
+            const rawInput =
+              msg?.data?.url ??
+              msg?.url ??
+              msg?.data?.uri ??
+              msg?.uri ??
+              msg?.data?.path ??
+              msg?.path ??
+              msg?.data?.file ??
+              msg?.file ??
+              msg?.data?.fileId ??
+              msg?.fileId ??
+              ""
+            const uri = toMilkyUri(rawInput)
+            if (!uri || !isSupportedMilkyUri(uri)) return { type: "text", data: { text: "[语音]" } }
+            return { type: "record", data: { uri } }
+          }
+
+        case UniversalSegmentType.VIDEO: // 通用视频类型
+          {
+            const rawInput =
+              msg?.data?.url ??
+              msg?.url ??
+              msg?.data?.uri ??
+              msg?.uri ??
+              msg?.data?.path ??
+              msg?.path ??
+              msg?.data?.file ??
+              msg?.file ??
+              msg?.data?.fileId ??
+              msg?.fileId ??
+              ""
+            const uri = toMilkyUri(rawInput)
+            if (!uri || !isSupportedMilkyUri(uri)) return { type: "text", data: { text: "[视频]" } }
+            return { type: "video", data: { uri } }
+          }
+
+        case UniversalSegmentType.FILE: // 通用文件类型
+          {
+            const rawInput =
+              msg?.data?.url ??
+              msg?.url ??
+              msg?.data?.uri ??
+              msg?.uri ??
+              msg?.data?.path ??
+              msg?.path ??
+              msg?.data?.file ??
+              msg?.file ??
+              msg?.data?.fileId ??
+              msg?.fileId ??
+              ""
+            const uri = toMilkyUri(rawInput)
+            if (!uri || !isSupportedMilkyUri(uri)) {
+              const name = msg?.data?.name ?? msg?.name ?? ""
+              return { type: "text", data: { text: name ? `[文件] ${name}` : "[文件]" } }
+            }
+            const name = msg?.data?.name ?? msg?.name ?? ""
+            return { type: "file", data: { uri, ...(name ? { name } : {}) } }
+          }
+
+        case UniversalSegmentType.MENTION: // 通用@某人类型
+          {
+            const raw = msg?.data?.target ?? msg?.qq ?? ""
+            const uid = Number(raw)
+            if (!Number.isFinite(uid) || uid <= 0) {
+              return { type: "text", data: { text: raw ? `@${raw}` : "" } }
+            }
+            return { type: "mention", data: { user_id: uid } }
+          }
+
+        case UniversalSegmentType.MENTION_ALL: // 通用@全体类型
+          return { type: "mention_all", data: {} }
+
+        case UniversalSegmentType.REPLY: // 通用回复类型
+          {
+            const rawSeq = msg?.data?.seq ?? msg?.seq ?? msg?.data?.id ?? msg?.id ?? ""
+            const seq = Number(rawSeq)
+            return Number.isFinite(seq) && seq > 0
+              ? { type: "reply", data: { message_seq: seq } }
+              : { type: "text", data: { text: "" } }
+          }
+
+        default:
+          // 其他通用类型直接透传
+          return { type: msg.type, data: { ...msg.data } }
+      }
+    }
+
+    // 3. 兼容原有ICQQ格式
     switch (msg.type) {
       case "text":
-        msg = {
-          type: "text",
-          data: { text: msg?.data?.text || msg?.text },
-        }
-        break
-      case "image":
-        console.log(msg)
+        return { type: "text", data: { text: msg?.data?.text || msg?.text || "" } }
 
-        msg = {
+      case "image":
+        return {
           type: "image",
           data: {
             uri: msg?.file || msg?.data?.uri || msg?.data?.temp_url || "",
@@ -468,85 +590,239 @@ class MilkyAdapter {
             summary: msg.summary,
           },
         }
-        break
+
       case "record":
-        msg = {
+        return {
           type: "record",
-          data: {
-            uri: msg.file || msg.data.uri || "",
-          },
+          data: { uri: msg?.file || msg?.data?.uri || "" },
         }
-        break
+
       case "face":
-        console.log(msg)
-
-        msg = {
+        return {
           type: "face",
-          data: {
-            face_id: `${msg?.id || msg?.data?.face_id}`,
-          },
+          data: { face_id: `${msg?.id || msg?.data?.face_id}` },
         }
-        break
+
       case "video":
-        msg = {
+        return {
           type: "video",
-          data: {
-            uri: "file://" + msg.file,
-          },
+          data: { uri: msg?.file ? "file://" + msg.file : "" },
         }
-        break
+
       case "file":
-        msg = {
+        return {
           type: "file",
-          data: {
-            uri: msg.file,
-            name: msg.name,
-          },
+          data: { uri: msg?.file || "", name: msg?.name || "" },
         }
+
       default:
-        break
+        return msg // 未知类型透传
     }
-    return msg
   }
 
-  // 兼容pickUser方法
+  /**
+   * 兼容sendMsg方法（核心修改：支持通用消息）
+   * @param {string/Object} target 接收者（用户ID/群对象）
+   * @param {string/Array/UniversalMessage} message 消息内容
+   * @returns {Promise<Object>} 发送结果
+   */
+  async sendMsg(target, message) {
+    console.log("[MilkyAdapter] 发送消息:", { target, message })
+
+    // 1. 如果是UniversalMessage实例，先转换为Milky格式数组
+    if (message instanceof UniversalMessage) {
+      message = message.convertTo("milky")
+    }
+
+    // 2. 私聊消息（target为字符串/数字）
+    if (typeof target === "string" || typeof target === "number") {
+      const userId = Number(target)
+      if (isNaN(userId)) {
+        throw new Error(`[MilkyAdapter] 私聊用户ID格式错误: ${target}`)
+      }
+      const msgSegments = Array.isArray(message)
+        ? message.map(i => this.dealMilkyMsg(i))
+        : [this.dealMilkyMsg(message)]
+
+      return await this.sendPrivateMessage({
+        user_id: userId,
+        message: msgSegments,
+      })
+    }
+
+    // 3. 群聊消息（target含group_id）
+    else if (target?.group_id) {
+      const groupId = Number(target.group_id)
+      if (isNaN(groupId)) {
+        throw new Error(`[MilkyAdapter] 群ID格式错误: ${target.group_id}`)
+      }
+
+      // 处理消息段
+      const msgSegments = Array.isArray(message)
+        ? message.map(i => this.dealMilkyMsg(i))
+        : typeof message === "string"
+          ? [{ type: "text", data: { text: message } }]
+          : [this.dealMilkyMsg(message)]
+
+      // 单独发送文件
+      const fileSeg = msgSegments.find(item => item.type === "file")
+      if (msgSegments.length === 1 && fileSeg) {
+        return await this.uploadGroupFile({
+          group_id: groupId,
+          file_uri: fileSeg.data.uri,
+          file_name: fileSeg.data.name || "未命名文件",
+        })
+      }
+
+      // 发送群消息
+      const result = await this.sendGroupMessage({
+        group_id: groupId,
+        message: msgSegments,
+      })
+      return { seq: result.message_seq, time: result.time }
+    }
+
+    throw new Error(`[MilkyAdapter] 无效的发送目标: ${JSON.stringify(target)}`)
+  }
+
+  /**
+   * 兼容pickUser方法（补充错误处理）
+   */
   pickUser(userId) {
+    const uid = Number(userId)
+    if (isNaN(uid)) {
+      throw new Error(`[MilkyAdapter] 用户ID格式错误: ${userId}`)
+    }
     return {
       sendMsg: async message => {
-        return await this.sendPrivateMessage({
-          user_id: Number(userId),
-          message: Array.isArray(message) ? message : [{ type: "text", data: { text: message } }],
-        })
+        const msgSegments = Array.isArray(message)
+          ? message.map(i => this.dealMilkyMsg(i))
+          : [this.dealMilkyMsg(message)]
+        return await this.sendPrivateMessage({ user_id: uid, message: msgSegments })
       },
     }
   }
 
-  // 兼容pickGroup方法
+  /**
+   * 兼容pickGroup方法（补充错误处理）
+   */
   pickGroup(groupId) {
+    const gid = Number(groupId)
+    if (isNaN(gid)) {
+      throw new Error(`[MilkyAdapter] 群ID格式错误: ${groupId}`)
+    }
     return {
       sendMsg: async message => {
-        return await this.sendGroupMessage({
-          group_id: Number(groupId),
-          message: Array.isArray(message) ? message : [{ type: "text", data: { text: message } }],
-        })
+        const msgSegments = Array.isArray(message)
+          ? message.map(i => this.dealMilkyMsg(i))
+          : [this.dealMilkyMsg(message)]
+        return await this.sendGroupMessage({ group_id: gid, message: msgSegments })
       },
     }
   }
 
+  /**
+   * 适配通用消息的转发消息方法
+   * @param {Array} forwardMsg 转发消息列表（兼容通用消息段）
+   * @returns {Array} Milky格式转发消息段
+   */
   async makeForwardMsg(forwardMsg) {
-    console.log("makeForwardMsg input:", forwardMsg)
-    console.log("makedata", forwardMsg.data)
+    console.log("[MilkyAdapter] 构建转发消息:", forwardMsg)
+
+    const list = Array.isArray(forwardMsg) ? forwardMsg : forwardMsg ? [forwardMsg] : []
+    const tempUrlCache = new Map()
+
+    const toResourceId = seg => {
+      if (!seg || typeof seg !== "object") return ""
+      const data = seg.data && typeof seg.data === "object" ? seg.data : null
+      const raw =
+        data?.resource_id ??
+        data?.resourceId ??
+        seg.resource_id ??
+        seg.resourceId ??
+        data?.file_id ??
+        data?.fileId ??
+        seg.file_id ??
+        seg.fileId ??
+        ""
+      return raw !== undefined && raw !== null ? String(raw).trim() : ""
+    }
+
+    const toForwardSegment = async input => {
+      const seg = input
+      if (!seg || typeof seg !== "object") return this.dealMilkyMsg(seg)
+
+      const type = String(seg.type || "").toLowerCase()
+      if (type !== "image") return this.dealMilkyMsg(seg)
+
+      const resource_id = toResourceId(seg)
+      if (!resource_id) return this.dealMilkyMsg(seg)
+
+      let url = tempUrlCache.get(resource_id) || ""
+      if (!url) {
+        try {
+          const res = await this.callApi("get_resource_temp_url", { resource_id })
+          const nextUrl = res?.url !== undefined && res?.url !== null ? String(res.url).trim() : ""
+          if (nextUrl) {
+            url = nextUrl
+            tempUrlCache.set(resource_id, url)
+          }
+        } catch (err) {
+          console.warn(
+            "[MilkyAdapter] get_resource_temp_url failed, fallback to original temp_url:",
+            err?.message || err,
+          )
+        }
+      }
+
+      if (!url) return this.dealMilkyMsg(seg)
+
+      const data = seg.data && typeof seg.data === "object" ? seg.data : {}
+      const patched = {
+        ...seg,
+        data: {
+          ...data,
+          // unify possible fields so dealMilkyMsg can pick it up safely
+          url,
+          uri: url,
+          temp_url: url,
+          tempUrl: url,
+        },
+      }
+
+      return this.dealMilkyMsg(patched)
+    }
 
     return [
       {
         type: "forward",
         data: {
-          messages: forwardMsg.map(item => ({
-            user_id: item.user_id,
-            sender_name: item.nickname,
-            segments: Array.isArray(item.message)
-              ? item.message.map(i => this.dealMilkyMsg(i))
-              : [this.dealMilkyMsg(item.message)],
+          messages: await Promise.all(list.map(async item => {
+            const uidRaw = item?.user_id ?? item?.uin ?? item?.id
+            const uid = Number(uidRaw)
+            const user_id = Number.isFinite(uid) && uid > 0 ? uid : 0
+
+            const sender_name = String(item?.nickname ?? item?.sender_name ?? item?.name ?? "未知发送者")
+
+            const content = item?.message ?? item?.content ?? item?.segments ?? item
+            const rawSegs = Array.isArray(content) ? content : [content]
+            const filtered = rawSegs.filter(v => v !== undefined && v !== null)
+
+            const segments =
+              filtered.length > 0
+                ? await Promise.all(
+                    filtered.map(async i => {
+                      try {
+                        return await toForwardSegment(i)
+                      } catch (err) {
+                        console.warn("[MilkyAdapter] 转发段转换失败，已降级为文本:", err?.message || err)
+                        return { type: "text", data: { text: String(i ?? "") } }
+                      }
+                    }),
+                  )
+                : [{ type: "text", data: { text: "" } }]
+
+            return { user_id, sender_name, segments }
           })),
         },
       },
@@ -554,17 +830,21 @@ class MilkyAdapter {
   }
 
   /**
-   * 资源清理
+   * 资源清理（修复eventEmitter未定义问题）
    */
-
-  // 释放资源
   dispose() {
-    this.client.dispose()
-    this.eventEmitter.removeAllListeners()
+    try {
+      this.client.dispose()
+      // 清空事件监听器
+      this.eventListeners.clear()
+      console.log("[MilkyAdapter] 资源已释放")
+    } catch (error) {
+      console.error("[MilkyAdapter] 释放资源失败:", error)
+    }
   }
 
   [Symbol.dispose]() {
-    // this.dispose();
+    this.dispose()
   }
 }
 

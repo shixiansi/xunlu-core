@@ -1,0 +1,152 @@
+.container,
+.container * {
+  font-family: "Microsoft YaHei", "PingFang SC", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.container {
+  width: 980px;
+  box-sizing: border-box;
+  padding: 18px;
+  border-radius: 18px;
+  overflow: hidden;
+  color: #e5e7eb;
+  background: radial-gradient(1000px 520px at 20% 10%, rgba(59, 130, 246, 0.25), rgba(0, 0, 0, 0)),
+    radial-gradient(900px 520px at 75% 12%, rgba(34, 211, 238, 0.22), rgba(0, 0, 0, 0)),
+    radial-gradient(900px 520px at 40% 85%, rgba(168, 85, 247, 0.18), rgba(0, 0, 0, 0)),
+    linear-gradient(135deg, #070c18, #0b1327);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.55);
+}
+
+.version {
+  background: transparent;
+  margin-top: 10px;
+  padding: 0;
+  font-size: 12px;
+  opacity: 0.5;
+}
+
+.h-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.h-title {
+  font-size: 34px;
+  font-weight: 950;
+  letter-spacing: 1px;
+}
+
+.h-sub {
+  margin-top: 6px;
+  font-size: 13px;
+  opacity: 0.78;
+}
+
+.h-meta {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.h-badge {
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(8px);
+  white-space: nowrap;
+}
+
+.h-body {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  padding: 14px;
+  backdrop-filter: blur(10px);
+}
+
+.plugin {
+  margin-bottom: 14px;
+}
+
+.plugin:last-child {
+  margin-bottom: 0;
+}
+
+.plugin-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.plugin-name {
+  font-size: 18px;
+  font-weight: 950;
+  letter-spacing: 0.4px;
+}
+
+.plugin-count {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.cmd-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.cmd {
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+}
+
+.cmd-example {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 950;
+  letter-spacing: 0.4px;
+}
+
+.cmd-example code {
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 14px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: rgba(226, 232, 240, 0.96);
+}
+
+.cmd-desc {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.35;
+  opacity: 0.82;
+}
+
+.cmd-tag {
+  margin-top: 10px;
+  display: inline-block;
+  font-size: 11px;
+  opacity: 0.72;
+}
+
+.note {
+  margin-top: 12px;
+  font-size: 12px;
+  opacity: 0.72;
+}
+

@@ -1,0 +1,43 @@
+{{extend defaulthtml}}
+
+{{block 'css'}}
+<link rel="stylesheet" href="{{_res_path}}/html/diaoyu/diaoyu.css" />
+{{/block}}
+
+{{block 'main'}}
+<div class="diaoyu page-catch">
+  <div class="diaoyu-header">
+    <div class="diaoyu-title">
+      <img class="diaoyu-icon" src="{{_res_path}}/img/catch/{{fishImg}}" alt="fish" />
+      <div>
+        <div class="diaoyu-title-main">钓鱼结果</div>
+        <div class="diaoyu-title-sub">鱼竿 Lv.{{rodLevel}} · {{baitName}} -1（剩余 {{baitLeft}}）</div>
+      </div>
+    </div>
+    <div class="diaoyu-badge rarity {{rarityClass}}">{{rarityName}}</div>
+  </div>
+
+  <div class="diaoyu-body">
+    <div class="big-fish">
+      <img class="big-fish-icon" src="{{_res_path}}/img/catch/{{fishImg}}" alt="fish" />
+      <div>
+        <div class="big-fish-title">{{fishName}}</div>
+        <div class="big-fish-sub">{{rarityName}} · {{weightG}}g · 估价 {{value}} 金币</div>
+      </div>
+    </div>
+
+    <div class="kv">
+      <div class="kv-item">
+        <div class="kv-key">建议</div>
+        <div class="kv-value">钓鱼卖 {{fishName}} 1</div>
+      </div>
+      <div class="kv-item">
+        <div class="kv-key">下一步</div>
+        <div class="kv-value">钓鱼状态 / 钓鱼仓库</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="diaoyu-hint">提示：高级鱼饵更容易钓到稀有鱼。</div>
+</div>
+{{/block}}

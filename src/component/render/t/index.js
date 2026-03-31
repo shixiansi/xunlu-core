@@ -12,7 +12,6 @@ class ToImageService {
   async jsxToImage(jsxCode, data, options) {
     const reactElement = await toReactElement.jsxToReactElement(jsxCode, data);
     const height = await this.calculateElementHeight(reactElement);
-    console.log(height);
 
     //fs.writeFileSync("test.html", ReactDOMServer.renderToString(reactElement));
     return await TakumiRenderer.render(reactElement, {

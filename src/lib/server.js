@@ -13,7 +13,8 @@ export async function startServer(port = process.env.PORT || 3000) {
   app.get("/health", (req, res) => res.json({ status: "ok" }))
 
   // 加载本地插件并挂载其 API 路由
-  const plugins = await loadPlugins(path.join(__dirname, "plugins"))
+  // src/lib -> src/plugins
+  const plugins = await loadPlugins(path.join(__dirname, "..", "plugins"))
   for (const p of plugins) {
     const impl = p.implementation
     // 如果插件需要注册 bot，可传入一个简单的 bot shim

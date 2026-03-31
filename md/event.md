@@ -1,47 +1,37 @@
-# 事件
+# 事件（event）速查：插件如何过滤事件类型
 
-## Bot
+在 `xunlu-core` 中，插件通常注册“消息命令”（`message` 事件）。当你需要监听更具体的事件时，可以在 `registerCommand` 的 `commandSpec` 中指定 `event` 过滤字符串。
 
-### 消息
+核心规则（用于匹配）：
 
-#### message_receive: 消息接收
+```
+<post_type>.<kind_type>.<sub_type>
+```
 
-#### message_recall :  消息撤回
+- `post_type`：`message | notice | request`
+- `kind_type`：
+  - 当 `post_type=message`：取 `message_type`（`group | private`）
+  - 当 `post_type=notice`：取 `notice_type`
+  - 当 `post_type=request`：取 `request_type`
+- `sub_type`：子类型（例如 `normal` 等，取决于协议/适配器）
 
-### 私聊
+支持通配：`*`
 
-#### friend_request : 好友请求 
+---
 
-#### friend_poke: 好友戳一戳事件
+## 示例
 
-####  friend_file_upload: 好友文件上传事件
+```js
+// 仅群消息
+botApi.registerCommand(["^hello$", "message.group.normal"], async ctx => {
+  return await ctx.reply("world")
+})
 
-### 群聊
+// 所有消息（群/私聊）
+botApi.registerCommand(["^ping$", "message.*.*"], async ctx => {
+  return await ctx.reply("pong")
+})
+```
 
-#### group_join_request: 加群请求事件"
+> 绝大多数插件无需写 `event`，默认监听消息事件即可；更完整的 `ctx` 字段与通用 API 见 `md/api.md`。
 
-#### group_invited_join_request: 邀请入群请求事件
-
-#### group_invitation  他人邀请自身入群事件
-
-#### group_admin_change:群管理员变更事件
-
-#### group_essence_message_change: 群精华消息变更事件
-
-#### group_member_increase 群员新增
-
-#### group_member_decrease 群员减少
-
-#### group_name_change 群名称修改
-
-#### group_message_reaction 群消息表情回应事件
-
-#### group_mute: 群禁言事件
-
-#### group_all_mute 群全体禁言事件
-
-#### group_poke 群戳一戳
-
-#### group_file_upload 群文件上传事件
-
-#### 

@@ -1,4 +1,46 @@
+import fs from "node:fs"
+import path from "node:path"
+
 import lodash from "lodash"
+
+import env from "../../../lib/env.js"
+
+const DATA_DIR = path.resolve(env.RootPath, "data", "chuo")
+const CONFIG_PATH = path.join(DATA_DIR, "config.json")
+
+let cachedConfig = null
+let cachedAt = 0
+
+function ensureDir() {
+  fs.mkdirSync(DATA_DIR, { recursive: true })
+}
+
+function readConfigFromDisk() {
+  ensureDir()
+
+  if (!fs.existsSync(CONFIG_PATH)) {
+    const init = { enabled: true }
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(init, null, 2), "utf8")
+    return init
+  }
+
+  try {
+    const raw = fs.readFileSync(CONFIG_PATH, "utf8")
+    const data = raw ? JSON.parse(raw) : null
+    if (!data || typeof data !== "object") return { enabled: true }
+    return { enabled: data.enabled !== false }
+  } catch {
+    return { enabled: true }
+  }
+}
+
+function getConfig({ ttlMs = 5000 } = {}) {
+  const now = Date.now()
+  if (cachedConfig && now - cachedAt < ttlMs) return cachedConfig
+  cachedConfig = readConfigFromDisk()
+  cachedAt = now
+  return cachedConfig
+}
 const textChuo = [
   "唔… 被戳到啦🥺 揉揉小脸蛋",
   "戳戳？是想贴贴我嘛～",
@@ -26,7 +68,16 @@ export function register(bot) {
   bot.registerCommand(["", "notice.group.poke"], ctx => {
     console.log("触发戳一戳了", ctx)
 
-    if (ctx.target_id !== ctx.self_id) return false
+    const cfg = getConfig()
+    if (cfg.enabled === false) return false
+
+    const targetId =
+      ctx.target_id ??
+      ctx.targetId ??
+      ctx.receiver_id ??
+      ctx.receiverId ??
+      ctx.user_id
+    if (String(targetId || "") !== String(ctx.self_id || "")) return false
     return ctx.reply(textChuo[lodash.random(0, textChuo.length - 1)])
   })
   console.log("[example-plugin] registered with bot shim")

@@ -1,0 +1,103 @@
+{{extend defaulthtml}}
+
+{{block 'css'}}
+<link rel="stylesheet" href="{{_res_path}}/html/qun-daily/qun-daily.css" />
+{{/block}}
+
+{{block 'main'}}
+<div class="qd">
+  <div class="qd-header">
+    <div>
+      <div class="qd-title">{{title}}</div>
+      <div class="qd-sub">{{startDate}} ~ {{endDate}} · {{scopeLabel}}</div>
+    </div>
+    <div class="qd-badges">
+      <div class="qd-badge">文本样本 {{textSampleCount}}</div>
+      <div class="qd-badge">总消息 {{totalMessages}}</div>
+      <div class="qd-badge">输出词条 {{words && words.length || 0}}</div>
+    </div>
+  </div>
+
+  <div class="qd-panel">
+    <div class="qd-panel-title">词云</div>
+    {{if words && words.length}}
+    <div class="qd-cloud-wrap">
+      <canvas id="wordcloud-canvas" class="qd-cloud" width="920" height="420"></canvas>
+    </div>
+    {{else}}
+    <div class="qd-empty">暂无足够文本数据，暂时无法生成词云</div>
+    {{/if}}
+  </div>
+
+  <div class="qd-panel qd-panel-top">
+    <div class="qd-panel-title">高频词排行榜</div>
+    {{if words && words.length}}
+    <div class="qd-word-grid">
+      {{each words item}}
+      <div class="qd-word-card">
+        <div class="qd-word-rank">TOP {{item.rank}}</div>
+        <div class="qd-word-text">{{item.word}}</div>
+        <div class="qd-word-count">{{item.count}} 次</div>
+      </div>
+      {{/each}}
+    </div>
+    {{else}}
+    <div class="qd-empty">暂无足够文本数据，暂时无法统计高频词</div>
+    {{/if}}
+  </div>
+
+  <div class="qd-note">已过滤链接、纯符号、常见语气词与部分机器人命令词，结果更贴近群聊语义。</div>
+</div>
+<script src="{{_res_path}}/html/qun-daily/wordcloud2.js"></script>
+<script>
+  (function () {
+    var ready = function () {
+      document.body.dataset.renderReady = "1"
+    }
+
+    var list = {{@ wordCloudJson || '[]' }}
+    if (!Array.isArray(list) || !list.length || typeof WordCloud !== "function") {
+      ready()
+      return
+    }
+
+    var canvas = document.getElementById("wordcloud-canvas")
+    if (!canvas) {
+      ready()
+      return
+    }
+
+    canvas.addEventListener("wordcloudstop", function () {
+      ready()
+    }, { once: true })
+
+    canvas.addEventListener("wordcloudabort", function () {
+      ready()
+    }, { once: true })
+
+    WordCloud(canvas, {
+      list: list.map(function (item) { return [item[0], item[1]] }),
+      backgroundColor: "rgba(0,0,0,0)",
+      color: function (word, weight) {
+        if (weight >= 60) return "#fef08a"
+        if (weight >= 48) return "#7dd3fc"
+        if (weight >= 36) return "#86efac"
+        if (weight >= 26) return "#c4b5fd"
+        return "#e2e8f0"
+      },
+      gridSize: Math.max(8, Math.round(canvas.width / 36)),
+      weightFactor: 1,
+      fontFamily: "'Microsoft YaHei', 'PingFang SC', sans-serif",
+      rotateRatio: 0.15,
+      minRotation: -Math.PI / 8,
+      maxRotation: Math.PI / 8,
+      shuffle: true,
+      drawOutOfBound: false,
+      shrinkToFit: true,
+      ellipticity: 0.7
+    })
+
+    setTimeout(ready, 2500)
+  })()
+</script>
+{{/block}}

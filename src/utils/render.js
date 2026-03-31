@@ -5,21 +5,21 @@ import fs from "fs"
 import Path from "path" // 新增：路径处理
 import env from "../lib/env.js"
 class Render {
-  async render(plugin, path, data = {}, cfg = {}) {
+  async render(plugin, tplPath, data = {}, cfg = {}) {
     // 修复：路径处理，避免空值
-    if (!path || typeof path !== "string") {
+    if (!tplPath || typeof tplPath !== "string") {
       console.error("[Render] 无效的path参数")
       return false
     }
 
     // 处理路径（移除.html，过滤空值）
-    path = path.replace(/.html$/, "")
-    let paths = lodash.filter(path.split("/"), p => !!p && typeof p === "string")
+    tplPath = tplPath.replace(/.html$/, "")
+    let paths = lodash.filter(tplPath.split("/"), p => !!p && typeof p === "string")
     if (paths.length === 0) {
       console.error("[Render] 路径解析后为空")
       return false
     }
-    path = paths.join("/")
+    tplPath = paths.join("/")
 
     // 创建目录（修复路径拼接）
     const mkdir = check => {
@@ -34,14 +34,15 @@ class Render {
       }
       return currDir
     }
-    mkdir(`html/${plugin}/${path}`)
+    mkdir(`html/${plugin}/${tplPath}`)
 
     // 计算资源路径（修复重复../问题）
-    const resLevel = paths.length + (process.env.xunLuEnv.includes("YunZai") ? 3 : 3)
+    const xunLuEnv = String(process.env.xunLuEnv || "")
+    const resLevel = paths.length + (xunLuEnv.includes("YunZai") ? 3 : 3)
     let pluResPath =
       lodash.repeat("../", resLevel) +
       `${
-        process.env.xunLuEnv.includes("YunZai") ? "plugins/xunlu-core/src/" : "src/"
+        xunLuEnv.includes("YunZai") ? "plugins/xunlu-core/src/" : "src/"
       }plugins/${plugin}/resources/`
 
     // 渲染数据（修复tplFile路径）
@@ -49,13 +50,13 @@ class Render {
       ...data,
       _plugin: plugin,
       sys: { scale: 1 },
-      _htmlPath: path,
+      _htmlPath: tplPath,
       pluResPath,
       tplFile: Path.resolve(
         env.RootPath,
         `${
-          process.env.xunLuEnv.includes("YunZai") ? "src/" : "src/"
-        }plugins/${plugin}/resources/${path}.html`,
+          xunLuEnv.includes("YunZai") ? "src/" : "src/"
+        }plugins/${plugin}/resources/${tplPath}.html`,
       ),
       saveId: data.saveId || data.save_id || paths[paths.length - 1],
       pageGotoParams: {
@@ -72,20 +73,20 @@ class Render {
     // 调试模式保存数据
     if (process.argv.includes("web-debug")) {
       let saveDir = mkdir(`ViewData/${plugin}`)
-      let file = path.join(saveDir, `${data._htmlPath.split("/").join("_")}.json`)
-      fs.writeFileSync(file, JSON.stringify(data, null, 2))
+      let saveFile = Path.join(saveDir, `${data._htmlPath.split("/").join("_")}.json`)
+      fs.writeFileSync(saveFile, JSON.stringify(data, null, 2))
     }
 
     // 截图
-    console.log(`[Render] 开始截图：${plugin}/${path}`)
-    let base64 = await puppeteer.screenshot(`${plugin}/${path}`, data)
+    console.log(`[Render] 开始截图：${plugin}/${tplPath}`)
+    let base64 = await puppeteer.screenshot(`${plugin}/${tplPath}`, data)
     if (!base64) {
       console.error("[Render] 截图失败")
       return false
     }
 
     // 处理返回结果
-    base64 = segment.image(base64)
+    base64 = Array.isArray(base64) ? base64.map(item => segment.image(item)) : segment.image(base64)
     if (cfg.retType === "base64") {
       return base64
     }

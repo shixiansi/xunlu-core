@@ -1,0 +1,59 @@
+{{extend defaulthtml}}
+
+{{block 'css'}}
+<link rel="stylesheet" href="{{_res_path}}/html/diaoyu/diaoyu.css" />
+{{/block}}
+
+{{block 'main'}}
+<div class="diaoyu page-bag">
+  <div class="diaoyu-header">
+    <div class="diaoyu-title">
+      <img class="diaoyu-icon" src="{{_res_path}}/img/icons/bag.png" alt="bag" />
+      <div>
+        <div class="diaoyu-title-main">钓鱼仓库</div>
+        <div class="diaoyu-title-sub">金币 {{coins}} · 鱼竿 Lv.{{rodLevel}} · 普通饵 {{bait}} / 高级饵 {{baitAdv}}</div>
+      </div>
+    </div>
+    <div class="diaoyu-badge">鱼获 {{fishCount}} 条</div>
+  </div>
+
+  <div class="diaoyu-body">
+    {{if fishList && fishList.length}}
+    <table class="diaoyu-table">
+      <thead>
+        <tr>
+          <th style="width: 38%;">鱼</th>
+          <th style="width: 12%;">数量</th>
+          <th style="width: 16%;">总重</th>
+          <th style="width: 16%;">均重</th>
+          <th style="width: 18%;">估价</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{each fishList f}}
+        <tr>
+          <td>
+            <div class="fish-name">
+              <img class="fish-icon" src="{{_res_path}}/img/catch/{{f.img}}" alt="fish" />
+              <div>
+                <div style="font-weight:900;">{{f.name}}</div>
+                <div class="rarity {{f.rarityClass}}">{{f.rarityName}}</div>
+              </div>
+            </div>
+          </td>
+          <td>{{f.count}}</td>
+          <td>{{f.totalWeight}}g</td>
+          <td>{{f.avgWeight}}g</td>
+          <td>{{f.value}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+    {{else}}
+    <div class="diaoyu-lines">
+      <div class="diaoyu-line">（没有鱼获，快去 “钓鱼” 吧）</div>
+    </div>
+    {{/if}}
+  </div>
+</div>
+{{/block}}

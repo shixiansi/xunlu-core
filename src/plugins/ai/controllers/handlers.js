@@ -9,23 +9,25 @@ let file = new Filemage("./src/plugins/ai/resources/CharacterDesign/")
 export function register(bot) {
   if (!bot || !bot.registerCommand) return
   bot.registerCommand(["", 5000], async ctx => {
-    if (ctx?.message?.[0]?.type == "reply" || ctx?.source) {
-      console.log(ctx.message)
-      console.log(ctx.source)
-      const replyMsg_seq = ctx?.source?.seq || ctx.message[0]?.message_seq || ctx.message[0]?.id
-      console.log(replyMsg_seq)
+    const hasReply = Array.isArray(ctx.message) && ctx.message.some(seg => seg?.type === "reply")
+    if (hasReply || ctx?.source) {
+      const replied = await ctx.getReplyMessage?.()
+      if (!replied) return false
 
-      let msgInfo = await ctx.getMsg(replyMsg_seq)
-      console.log(msgInfo)
-      let msglist = msgInfo?.message
-      let raw_message = msglist?.raw_message || msglist[0]?.text
-      console.log(raw_message)
-      if (!raw_message || !msgInfo) return false
-      if (raw_message?.includes("id") || raw_message.includes("画师")) {
+      const repliedText = (replied.message || [])
+        .filter(seg => seg?.type === "text")
+        .map(seg => seg?.data?.content || "")
+        .join("")
+
+      if (!repliedText) return false
+      if (repliedText.includes("id") || repliedText.includes("画师")) {
         return ctx.recallMessage.call(ctx, {
-          peer_id: msgInfo?.message?.peer_id || msgInfo[0].group_id,
-          message_seq: msgInfo?.message?.message_seq || msgInfo[0]?.message_id,
-          isGroup: msgInfo?.message?.message_scene == "group" || msgInfo[0].group_id,
+          peer_id: replied.peer_id || replied.group_id || ctx.peer_id || ctx.group_id,
+          message_seq: replied.seq || replied.message_seq,
+          message_id: replied.message_id,
+          isGroup:
+            replied.message_scene === "group" ||
+            Boolean(replied.group_id || replied.peer_id || ctx.group_id),
         })
       }
     }

@@ -16,4 +16,6 @@ logs/
 mirage_tank_web.png
 src/plugins/tts/resources/audio/
 src/plugins/bilibili/resources/video/
+src/plugins/bilibili/data/
+qun-daily/data/
 /temp/

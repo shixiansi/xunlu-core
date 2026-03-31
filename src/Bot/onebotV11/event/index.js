@@ -2,7 +2,12 @@ import OneBotV11Adapter from "../onebot.js"
 import config from "../../../lib/config.js"
 import MessageDB from "../../../db/MessageDB.js"
 import OneBot from "../index.js"
-import getImageDisplay from "../../../utils/imgdisplay.js"
+import { UniversalMessage } from "../../message/universal-message.js"
+import { coerceToUniversalMessage } from "../../message/context.js"
+import { applyUniversalBotApi } from "../../api/universal-bot-api.js"
+import { startControlServer } from "../../../lib/controlServer.js"
+import { startWebuiServer } from "../../../lib/webuiServer.js"
+import { simulateIncomingMessage } from "../../message/cli-simulator.js"
 /**
  * OneBot V11 事件监听处理类
  * 负责绑定OneBotV11适配器事件、标准化事件格式、处理消息存储与分发
@@ -18,6 +23,9 @@ export default class OneBotV11EventListener {
     group_decrease: "decrease",
     group_increase: "increase",
     group_recall: "recall",
+    friend_recall: "recall",
+    group_ban: "ban",
+    group_whole_ban: "allban",
     notify: "poke",
   }
 
@@ -38,20 +46,50 @@ export default class OneBotV11EventListener {
   async load() {
     this.#oneBotAdapter.startServer()
     try {
-      setTimeout(async () => {
-        try {
-          await this.#initAdapter()
-          // 2. 初始化全局Bot对象
-          await this.#initGlobalBot()
-          // 3. 绑定所有事件监听
-          this.#bindAllEvents()
+      // 等待连接后再初始化（替代固定延迟）
+      await this.#oneBotAdapter.waitUntilConnected({ timeoutMs: 60000 })
 
-          console.log("[OneBotV11EventListener] 初始化完成，已绑定所有事件监听")
-        } catch (error) {
-          console.error("[OneBotV11EventListener] 延迟加载失败：", error)
-        }
-      }, 5000)
-      // 1. 初始化适配器并校验登录状态
+      await this.#initAdapter()
+      // 2. 初始化全局Bot对象
+      await this.#initGlobalBot()
+
+      try {
+        await startWebuiServer()
+      } catch (err) {
+        console.warn("[OneBotV11EventListener] webui server start failed:", err)
+      }
+
+      // 3. 绑定所有事件监听
+      this.#bindAllEvents()
+
+      try {
+        startControlServer({
+          getStatus: () => ({
+            protocol: "onebotv11",
+            adapterType: "OneBotV11",
+            uin: global.Bot?.uin,
+            nickname: global.Bot?.nickname,
+            pluginCount: Object.keys(this.#oneBot.plugins || {}).length,
+            plugins: Object.keys(this.#oneBot.plugins || {}),
+          }),
+          reloadPlugins: async () => {
+            return await this.#oneBot.reloadBotPlugins({ cacheBust: true })
+          },
+          sendMessage: async payload => {
+            return await simulateIncomingMessage({
+              bot: this.#oneBot,
+              protocol: "onebotv11",
+              adapterType: "OneBotV11",
+              payload,
+              selfId: global.Bot?.uin,
+            })
+          },
+        })
+      } catch (err) {
+        console.warn("[OneBotV11EventListener] control server start failed:", err)
+      }
+
+      console.log("[OneBotV11EventListener] 初始化完成，已绑定所有事件监听")
     } catch (error) {
       console.error("[OneBotV11EventListener] 初始化失败：", error)
       throw error // 抛出错误，让上层感知
@@ -72,9 +110,10 @@ export default class OneBotV11EventListener {
 
     // 绑定基础回复方法
     const bindEvent = {
-      reply: this.#oneBot.reply,
+      reply: this.#oneBot.reply.bind(this.#oneBot),
     }
     OneBotV11EventListener.bindOneBotFunctions(bindEvent, this.#oneBotAdapter, this.#oneBot)
+    applyUniversalBotApi(bindEvent, { bot: this.#oneBot, adapterHint: "onebotv11" })
     this.#oneBot.bindEvent = bindEvent
     await this.#oneBot.initBot()
   }
@@ -84,21 +123,89 @@ export default class OneBotV11EventListener {
    */
   async #initGlobalBot() {
     if (!global.Bot) {
+      const adapter = this.#oneBotAdapter
+
+      // 注意：不能用 `{ ...adapter }`（类方法在 prototype 上，不可枚举），否则会导致通用 API 找不到原生方法
       global.Bot = {
         uin: this.loginInfo.user_id,
         nickname: this.loginInfo.nickname,
-        ...this.#oneBotAdapter,
-        ...{ reply: this.#oneBot.reply },
-        ...this.#oneBot.bindEvent,
-        makeGroupForwardMsg: this.#oneBotAdapter.makeForwardMsg.bind(this.#oneBotAdapter),
+        ...adapter,
+        adapterType: adapter.adapterType,
+
+        // passthrough API (doc-friendly): callApi/sendApi
+        callApi: adapter.callApi.bind(adapter),
+        sendApi: (adapter.sendApi ?? adapter.callApi).bind(adapter),
+
+        // onebot adapter core (bound): 供通用 API / 插件直接调用（默认抛异常，不吞错）
+        sendMsg: adapter.sendMsg.bind(adapter),
+        deleteMessage: adapter.deleteMessage.bind(adapter),
+        getLoginInfo: adapter.getLoginInfo.bind(adapter),
+        getFriendList: adapter.getFriendList.bind(adapter),
+        getFriendInfo: adapter.getFriendInfo.bind(adapter),
+        acceptFriendRequest: adapter.acceptFriendRequest.bind(adapter),
+        rejectFriendRequest: adapter.rejectFriendRequest.bind(adapter),
+        getGroupList: adapter.getGroupList.bind(adapter),
+        getGroupInfo: adapter.getGroupInfo.bind(adapter),
+        getGroupMemberList: adapter.getGroupMemberList.bind(adapter),
+        getGroupMemberInfo: adapter.getGroupMemberInfo.bind(adapter),
+        setGroupName: adapter.setGroupName.bind(adapter),
+        setGroupMemberCard: adapter.setGroupMemberCard.bind(adapter),
+        setGroupMemberAdmin: adapter.setGroupMemberAdmin.bind(adapter),
+        setGroupMemberSpecialTitle: adapter.setGroupMemberSpecialTitle.bind(adapter),
+        setGroupMemberMute: adapter.setGroupMemberMute.bind(adapter),
+        setGroupWholeMute: adapter.setGroupWholeMute.bind(adapter),
+        kickGroupMember: adapter.kickGroupMember.bind(adapter),
+        quitGroup: adapter.quitGroup.bind(adapter),
+        sendGroupMessageReaction: adapter.sendGroupMessageReaction.bind(adapter),
+        acceptGroupRequest: adapter.acceptGroupRequest.bind(adapter),
+        rejectGroupRequest: adapter.rejectGroupRequest.bind(adapter),
+        pickUser: adapter.pickUser.bind(adapter),
+        pickGroup: adapter.pickGroup.bind(adapter),
+
+        // compatibility aliases
+        sendMessage: adapter.sendMsg.bind(adapter),
+        makeGroupForwardMsg: adapter.makeForwardMsg.bind(adapter),
+
+        // core bot abilities
+        reply: this.#oneBot.reply,
         getGroupChatHistory: this.#oneBot.getGroupHistoryMsg,
       }
-      console.log(Bot)
-
       console.log("[GlobalBot] 全局Bot对象初始化完成：", Object.keys(global.Bot))
     } else {
       console.warn("[GlobalBot] 全局Bot对象已存在，跳过初始化")
     }
+
+    // 全局Bot补齐通用API（注意：仅覆盖群申请 accept/reject 的参数语义）
+    try {
+      applyUniversalBotApi(global.Bot, {
+        bot: this.#oneBot,
+        adapterHint: "onebotv11",
+        override: [
+          "getLoginInfo",
+          "getFriendList",
+          "getFriendInfo",
+          "getGroupList",
+          "getGroupInfo",
+          "setGroupName",
+          "setGroupMemberCard",
+          "setGroupMemberAdmin",
+          "setGroupMemberSpecialTitle",
+          "setGroupWholeMute",
+          "kickGroupMember",
+          "quitGroup",
+          "acceptFriendRequest",
+          "rejectFriendRequest",
+          "sendGroupMessageReaction",
+          "acceptGroupRequest",
+          "rejectGroupRequest",
+          "getUserInfo",
+          "getGroupMemberList",
+          "getGroupMemberInfo",
+          "setGroupMemberMute",
+          "pickUser",
+        ],
+      })
+    } catch {}
     await this.#oneBot.runMount()
   }
 
@@ -111,6 +218,7 @@ export default class OneBotV11EventListener {
         try {
           // 补充适配器类型标识
           data.adapterType = this.#oneBotAdapter.adapterType
+          data.protocol = "onebotv11"
 
           // 处理群消息存储
           if (eventType === "message" && data.group_id) {
@@ -121,10 +229,8 @@ export default class OneBotV11EventListener {
           OneBotV11EventListener.bindOneBotFunctions(data, this.#oneBotAdapter, this.#oneBot)
           // 标准化事件格式
           this.#normalizeEventData(data)
-          // 分发事件到OneBot核心处理
-          await OneBotV11EventListener.dealMessage(data)
           data.adapterType = "OneBotV11"
-          this.#oneBot.deal(data)
+          await this.#oneBot.deal(data)
 
           console.debug(`[OneBotV11Adapter] 处理完成事件：${eventType}`)
         } catch (error) {
@@ -210,19 +316,32 @@ export default class OneBotV11EventListener {
     }
 
     // 发送群消息表情回应（修正重复赋值，优化参数映射）
-    target.sendGroupMessageReaction = data => {
-      return adapter.sendGroupMessageReaction.call(adapter, {
-        message_id: data.message_id,
-        emoji_id: data.reaction,
-      })
+    target.sendGroupMessageReaction = async data => {
+      try {
+        await adapter.sendGroupMessageReaction.call(adapter, {
+          message_id: data.message_id,
+          emoji_id: Number(data.emoji_id ?? data.reaction),
+        })
+        return true
+      } catch (err) {
+        console.warn("[sendGroupMessageReaction] onebotv11 failed:", err?.message || err)
+        return false
+      }
     }
 
     // 绑定核心方法
     target.sendMessage = async (ctx, msg) => {
-      msg = await OneBotV11EventListener.dealMessage({ message: msg })
-      console.log("发送方法绑的msg", msg)
+      if (msg?.message) msg = msg.message
 
-      return await adapter.sendMsg.call(adapter, ctx, msg)
+      // forward/raw onebot 消息直接透传，避免被 UniversalMessage 误转换
+      const rawList = Array.isArray(msg) ? msg : msg ? [msg] : []
+      if (rawList.some(i => i?.type === "node")) {
+        return await adapter.sendMsg.call(adapter, ctx, rawList)
+      }
+
+      const universalMsg = coerceToUniversalMessage(msg)
+      const onebotSegments = universalMsg.convertTo("onebotv11")
+      return await adapter.sendMsg.call(adapter, ctx, onebotSegments)
     }
 
     // 获取消息（增加参数校验，优化类型转换）
@@ -233,7 +352,7 @@ export default class OneBotV11EventListener {
       }
       try {
         const msgData = await adapter.getMessage(Number(message_id))
-        return await OneBotV11EventListener.dealMessage({ message: msgData })
+        return await OneBotV11EventListener.dealMessage({ ...msgData, protocol: "onebotv11" })
       } catch (error) {
         console.error(`[OneBotV11Adapter] 获取消息 ${message_id} 失败：`, error)
         return null
@@ -271,54 +390,12 @@ export default class OneBotV11EventListener {
    */
   static async dealMessage(e) {
     if (!e || !e.message || typeof e.message === "string") return e
-    if (!Array.isArray(e.message)) e.message = [e.message]
-    let imgdisplay
-    if (e.user_id === e.self_id) {
-      imgdisplay = await getImageDisplay()
-    }
 
-    // 简化数组处理，移除冗余的展开/包裹
-    console.log("处理消息dealmesg", e.message)
-    let msg = ""
-    e.message = e.message.map(item => {
-      if (typeof item === "string") return { type: "text", data: { text: item } }
-      const result = { type: item.type, data: item.data, ...item.data }
-      // 图片类型特殊处理
-      switch (item.type) {
-        case "image":
-          result.data = {
-            file: item.file,
-            summary: imgdisplay || item?.data?.summary,
-          }
-          break
-        case "face":
-          result.data = {
-            id: item?.id || item?.data?.id,
-          }
-          break
-        case "text":
-          result.data = {
-            text: item?.data?.text || item?.text,
-          }
-          msg += result.data.text
-          break
-        case "json":
-          console.log(item)
-
-          result.data = {
-            json: item?.data?.data || item?.json,
-          }
-          e.json = JSON.parse(result.data.json)
-          break
-      }
-      return result
-    })
-    console.log("处理完毕", e.message)
-
-    const regurl = /(https?|http|ftp|file):\/\/[-A-Za-z0-9+&@#/%?=~_|!:,.;]+[-A-Za-z0-9+&@#/%=~_|]/g
-    let url = msg?.match(regurl)
-    e.url = url?.[0] || ""
-
+    // 统一真值：ctx.message 为 UniversalMessage.segments
+    e.protocol = e.protocol || "onebotv11"
+    const rawSegments = Array.isArray(e.message) ? e.message : [e.message]
+    e.universalMessage = UniversalMessage.fromOnebotV11(rawSegments)
+    e.message = e.universalMessage.segments
     return e
   }
 }

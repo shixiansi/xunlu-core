@@ -1,0 +1,69 @@
+{{extend defaulthtml}}
+
+{{block 'css'}}
+<link rel="stylesheet" href="{{_res_path}}/html/qun-daily/qun-daily.css" />
+{{/block}}
+
+{{block 'main'}}
+<div class="qd">
+  <div class="qd-header">
+    <div>
+      <div class="qd-title">{{title}}</div>
+      <div class="qd-sub">{{startDate}} ~ {{endDate}} · {{scopeLabel}}</div>
+    </div>
+    <div class="qd-badges">
+      <div class="qd-badge">总消息 {{totalMessages}}</div>
+      <div class="qd-badge">活跃人数 {{activeUsers}}</div>
+      <div class="qd-badge">统计周期 {{rangeDays}} 天</div>
+    </div>
+  </div>
+
+  <div class="qd-cards">
+    <div class="qd-card">
+      <div class="qd-card-k">水天帝</div>
+      <div class="qd-card-v">{{kings.waterKing.name}}</div>
+      <div class="qd-card-s">{{kings.waterKing.subtitle}} · {{kings.waterKing.value}}</div>
+    </div>
+    <div class="qd-card">
+      <div class="qd-card-k">表情帝</div>
+      <div class="qd-card-v">{{kings.emojiKing.name}}</div>
+      <div class="qd-card-s">{{kings.emojiKing.subtitle}} · {{kings.emojiKing.value}}</div>
+    </div>
+    <div class="qd-card">
+      <div class="qd-card-k">潜水帝</div>
+      <div class="qd-card-v">{{kings.diveKing.name}}</div>
+      <div class="qd-card-s">{{kings.diveKing.subtitle}} · {{kings.diveKing.value}}</div>
+    </div>
+  </div>
+
+  <div class="qd-panel">
+    <div class="qd-panel-title">活跃排行榜 Top 10</div>
+    {{if talkers && talkers.length}}
+    <table class="qd-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>成员</th>
+          <th>消息数</th>
+          <th>图片数</th>
+          <th>QQ</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{each talkers item}}
+        <tr>
+          <td>{{item.rank}}</td>
+          <td>{{item.displayName}}</td>
+          <td>{{item.messageCount}}</td>
+          <td>{{item.imageCount}}</td>
+          <td>{{item.userId}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+    {{else}}
+    <div class="qd-empty">当天暂无可统计消息</div>
+    {{/if}}
+  </div>
+</div>
+{{/block}}

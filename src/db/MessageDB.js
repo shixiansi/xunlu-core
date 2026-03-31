@@ -47,7 +47,21 @@ class GroupMessageDB {
   // 保存消息到指定群的表
   async saveMessage(groupId, messageData) {
     const table = await this.getGroupTable(groupId)
-    return await table.create(messageData)
+    try {
+      return await table.create(messageData)
+    } catch (err) {
+      // idempotent: ignore duplicate inserts for the same message_id
+      if (err?.name === "SequelizeUniqueConstraintError") {
+        try {
+          const message_id = messageData?.message_id
+          if (message_id !== undefined && message_id !== null && String(message_id).trim()) {
+            return await table.findByPk(String(message_id))
+          }
+        } catch {}
+        return null
+      }
+      throw err
+    }
   }
 
   // 查询指定群的消息

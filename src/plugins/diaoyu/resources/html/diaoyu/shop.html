@@ -1,0 +1,56 @@
+{{extend defaulthtml}}
+
+{{block 'css'}}
+<link rel="stylesheet" href="{{_res_path}}/html/diaoyu/diaoyu.css" />
+{{/block}}
+
+{{block 'main'}}
+<div class="diaoyu page-shop">
+  <div class="diaoyu-header">
+    <div class="diaoyu-title">
+      <img class="diaoyu-icon" src="{{_res_path}}/img/icons/shop.png" alt="shop" />
+      <div>
+        <div class="diaoyu-title-main">钓鱼商店</div>
+        <div class="diaoyu-title-sub">购买：钓鱼买 &lt;物品&gt; &lt;数量&gt;</div>
+      </div>
+    </div>
+    <div class="diaoyu-badge">当前金币 {{coins}}</div>
+  </div>
+
+  <div class="diaoyu-body">
+    <div class="diaoyu-section-title">商品</div>
+    <div class="shop-items">
+      {{each items item}}
+      <div class="diaoyu-card">
+        <div style="flex:1 1 auto;">
+          <div class="shop-item-head">
+            <img class="diaoyu-card-icon" src="{{_res_path}}/img/icons/{{item.icon}}" alt="icon" />
+            <div>
+              <div class="shop-item-title">{{item.name}}</div>
+              <div class="shop-item-meta">{{item.key}} · {{item.price}} 金币/{{item.unit}}</div>
+            </div>
+          </div>
+          <div class="shop-item-desc">{{item.desc}}</div>
+        </div>
+      </div>
+      {{/each}}
+    </div>
+
+    <div class="diaoyu-section-title">鱼竿升级</div>
+    <div class="diaoyu-card">
+      <img class="diaoyu-card-icon" src="{{_res_path}}/img/icons/rod.png" alt="rod" />
+      <div style="flex:1 1 auto;">
+        <div class="shop-item-title">当前：Lv.{{rodLevel}}</div>
+        {{if canUpgrade}}
+        <div class="shop-item-desc">指令：钓鱼升级（消耗 {{upgradeCost}} 金币，Lv.{{rodLevel}} → Lv.{{rodLevel+1}}）</div>
+        {{else}}
+        <div class="shop-item-desc">已满级（Lv.{{maxRodLevel}}）</div>
+        {{/if}}
+      </div>
+    </div>
+  </div>
+
+  <div class="diaoyu-hint">提示：高级鱼饵可提高稀有鱼概率。</div>
+</div>
+{{/block}}
+

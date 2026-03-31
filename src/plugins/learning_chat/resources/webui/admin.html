@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>learning_chat 后台</title>
+    <link rel="stylesheet" href="./static/style.css" />
+  </head>
+  <body class="page">
+    <div class="card">
+      <div class="title">
+        <h1>learning_chat 管理后台</h1>
+        <div class="sub" id="versionText"></div>
+      </div>
+
+      <div class="toolbar">
+        <div class="left">
+          <span class="pill" id="authUser"></span>
+          <span class="pill" id="webHint">路径：/learning_chat</span>
+        </div>
+        <div class="right">
+          <button class="ghost" id="btnReload">刷新</button>
+          <button class="ghost" id="btnLogout">退出登录</button>
+        </div>
+      </div>
+
+      <div id="toast" class="msg"></div>
+
+      <div class="section">
+        <h2>群选择</h2>
+        <div class="row">
+          <label>
+            选择群
+            <select id="groupSelect"></select>
+          </label>
+          <label>
+            当前群概览
+            <input id="groupSummary" readonly />
+          </label>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>全局配置</h2>
+        <div class="row">
+          <label>
+            回复阈值（reply_threshold）
+            <input id="g_reply_threshold" type="number" min="1" />
+          </label>
+          <label>
+            回复概率（reply_prob）
+            <input id="g_reply_prob" type="number" step="0.01" min="0" max="1" />
+          </label>
+        </div>
+        <div class="row">
+          <label>
+            回复冷却（秒，reply_cooldown_sec）
+            <input id="g_reply_cooldown_sec" type="number" min="0" />
+          </label>
+          <label>
+            学习最大间隔（秒，learn_max_gap_sec）
+            <input id="g_learn_max_gap_sec" type="number" min="0" />
+          </label>
+        </div>
+        <div class="row">
+          <label>
+            复读开关（repeat.enable）
+            <select id="g_repeat_enable">
+              <option value="true">true</option>
+              <option value="false">false</option>
+            </select>
+          </label>
+          <label>
+            复读阈值（repeat.threshold）
+            <input id="g_repeat_threshold" type="number" min="2" />
+          </label>
+        </div>
+        <div class="row">
+          <label>
+            主动发言开关（proactive.enable）
+            <select id="g_proactive_enable">
+              <option value="true">true</option>
+              <option value="false">false</option>
+            </select>
+          </label>
+          <label>
+            默认允许主动发言（proactive.allow_default）
+            <select id="g_proactive_allow_default">
+              <option value="true">true</option>
+              <option value="false">false</option>
+            </select>
+          </label>
+        </div>
+        <div class="row">
+          <label>
+            全局屏蔽词（learning.block_words，每行一个）
+            <textarea id="g_block_words"></textarea>
+          </label>
+          <label>
+            全局屏蔽用户（learning.block_users，每行一个）
+            <textarea id="g_block_users"></textarea>
+          </label>
+        </div>
+        <button id="btnSaveGlobal">保存全局配置</button>
+      </div>
+
+      <div class="section">
+        <h2>分群配置</h2>
+        <div class="row">
+          <label>
+            本群学习开关（learning_enabled）
+            <select id="c_learning_enabled">
+              <option value="true">true</option>
+              <option value="false">false</option>
+            </select>
+          </label>
+          <label>
+            本群主动发言开关（proactive_enabled）
+            <select id="c_proactive_enabled">
+              <option value="true">true</option>
+              <option value="false">false</option>
+            </select>
+          </label>
+        </div>
+        <div class="row">
+          <label>
+            本群回复概率覆盖（reply_prob，可空）
+            <input id="c_reply_prob" type="number" step="0.01" min="0" max="1" placeholder="留空=使用全局" />
+          </label>
+          <label>
+            说明
+            <input readonly value="群内指令：@bot 开启学习/关闭学习；@bot 不可以（回复机器人消息）" />
+          </label>
+        </div>
+        <div class="row">
+          <label>
+            本群屏蔽词（每行一个）
+            <textarea id="c_block_words"></textarea>
+          </label>
+          <label>
+            本群屏蔽用户（每行一个）
+            <textarea id="c_block_users"></textarea>
+          </label>
+        </div>
+        <button id="btnSaveGroup">保存本群配置</button>
+      </div>
+
+      <div class="section">
+        <h2>已学习内容（Top 50）</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>count</th>
+              <th>from</th>
+              <th>to</th>
+              <th>to_hash</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="learnedTbody"></tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <h2>禁用回复</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>created_at</th>
+              <th>preview</th>
+              <th>reply_hash</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="bansTbody"></tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <h2>群消息（最近 50 条预览）</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>time</th>
+              <th>user_id</th>
+              <th>preview</th>
+              <th>message_id</th>
+            </tr>
+          </thead>
+          <tbody id="msgTbody"></tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <h2>安全</h2>
+        <div class="row">
+          <label>
+            修改用户名（可选）
+            <input id="auth_username" placeholder="留空=不改" />
+          </label>
+          <label>
+            修改密码（可选）
+            <input id="auth_password" type="password" placeholder="留空=不改" />
+          </label>
+        </div>
+        <div class="row">
+          <label>
+            旋转 token_secret（会使当前登录失效）
+            <select id="auth_rotate">
+              <option value="false">false</option>
+              <option value="true">true</option>
+            </select>
+          </label>
+          <label>
+            提示
+            <input readonly value="建议首次登录后：改密码 + 旋转 token_secret" />
+          </label>
+        </div>
+        <button class="danger" id="btnSaveAuth">保存安全设置</button>
+      </div>
+    </div>
+
+    <script src="./static/app.js"></script>
+  </body>
+</html>
+

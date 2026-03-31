@@ -1,0 +1,104 @@
+{{extend defaulthtml}}
+
+{{block 'css'}}
+<link rel="stylesheet" href="{{_res_path}}/html/qun-daily/qun-daily.css" />
+{{/block}}
+
+{{block 'main'}}
+<div class="qd">
+  <div class="qd-header">
+    <div>
+      <div class="qd-title">{{title}}</div>
+      <div class="qd-sub">{{startDate}} ~ {{endDate}} · {{scopeLabel}}</div>
+    </div>
+    <div class="qd-badges">
+      <div class="qd-badge">总调用 {{totalCount}}</div>
+      <div class="qd-badge">使用人数 {{uniqueUsers}}</div>
+      <div class="qd-badge">涉及指令 {{uniqueCommands}}</div>
+    </div>
+  </div>
+
+  {{if targetUser}}
+  <div class="qd-panel">
+    <div class="qd-panel-title">成员指令画像</div>
+    <div class="qd-cards qd-cards-single">
+      <div class="qd-card">
+        <div class="qd-card-k">成员</div>
+        <div class="qd-card-v">{{targetUser.displayName}}</div>
+        <div class="qd-card-s">总调用 {{targetUser.totalCount}} 次</div>
+      </div>
+    </div>
+    <table class="qd-table qd-table-gap">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>reg</th>
+          <th>次数</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{each targetUser.topCommands item}}
+        <tr>
+          <td>{{$index + 1}}</td>
+          <td>{{item.reg}}</td>
+          <td>{{item.count}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+  </div>
+  {{else}}
+  <div class="qd-panel">
+    <div class="qd-panel-title">指令排行榜</div>
+    <table class="qd-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>reg</th>
+          <th>调用次数</th>
+          <th>使用人数</th>
+          <th>常见输入</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{each topCommands item}}
+        <tr>
+          <td>{{item.rank}}</td>
+          <td>{{item.reg}}</td>
+          <td>{{item.count}}</td>
+          <td>{{item.uniqueUsers}}</td>
+          <td>{{item.topRawCommand}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="qd-panel qd-panel-top">
+    <div class="qd-panel-title">成员排行榜</div>
+    <table class="qd-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>成员</th>
+          <th>调用次数</th>
+          <th>常用 reg</th>
+          <th>常用命令</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{each topUsers item}}
+        <tr>
+          <td>{{item.rank}}</td>
+          <td>{{item.displayName}}</td>
+          <td>{{item.totalCount}}</td>
+          <td>{{item.topReg}}</td>
+          <td>{{item.topCommand}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+  </div>
+  {{/if}}
+</div>
+{{/block}}

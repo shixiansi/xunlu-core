@@ -1,0 +1,62 @@
+{{extend defaulthtml}}
+
+{{block 'css'}}
+<link rel="stylesheet" href="{{_res_path}}/html/help/help.css" />
+{{/block}}
+
+{{block 'main'}}
+<div class="h">
+  <div class="h-head">
+    <div>
+      <div class="h-title">{{title||'插件帮助'}}</div>
+      <div class="h-sub">{{header||''}}</div>
+    </div>
+    <div class="h-meta">
+      <div class="h-badge">生成时间 {{generatedAt}}</div>
+      <div class="h-badge">插件 {{pluginCount}}</div>
+      <div class="h-badge">指令 {{commandCount}}</div>
+      {{if query}}
+      <div class="h-badge">筛选 {{queryType}}：{{query}}</div>
+      {{/if}}
+    </div>
+  </div>
+
+  <div class="h-body">
+    {{if plugins && plugins.length}}
+      {{each plugins p}}
+      <div class="plugin">
+        <div class="plugin-head">
+          <div class="plugin-name">{{p.name}}</div>
+          <div class="plugin-count">{{p.count}} 条</div>
+        </div>
+        {{if p.commands && p.commands.length}}
+          <div class="cmd-grid">
+            {{each p.commands c}}
+            <div class="cmd">
+              <div class="cmd-example"><code>{{c.example}}</code></div>
+              <div class="cmd-desc">{{c.desc}}</div>
+              {{if c.event && c.event !== 'message'}}
+              <div class="cmd-tag">event: {{c.event}}</div>
+              {{/if}}
+            </div>
+            {{/each}}
+          </div>
+        {{else}}
+          <div class="cmd">
+            <div class="cmd-example"><code>（暂无指令）</code></div>
+            <div class="cmd-desc">该插件当前未注册可用命令。</div>
+          </div>
+        {{/if}}
+      </div>
+      {{/each}}
+    {{else}}
+      <div class="cmd">
+        <div class="cmd-example"><code>（无匹配）</code></div>
+        <div class="cmd-desc">没有找到相关插件/指令。</div>
+      </div>
+    {{/if}}
+
+    <div class="note">用法：帮助 / 帮助 &lt;插件名&gt; / 帮助 &lt;关键词&gt;（示例与说明为自动生成或由插件提供）。</div>
+  </div>
+</div>
+{{/block}}

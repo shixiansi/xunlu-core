@@ -1,54 +1,34 @@
-class RkeyManager {
-  serverUrl = ""
-  rkeyData = {
-    group_rkey: "",
-    private_rkey: "",
-    expired_time: 0,
-  }
+import rkeyService, {
+  DEFAULT_SERVER_URL,
+  getRkeyBundle,
+  getRkeySnapshot,
+  refreshRkeyBundle,
+} from "../../../utils/rkey.js"
 
-  constructor(serverUrl) {
+class RkeyManager {
+  constructor(serverUrl = DEFAULT_SERVER_URL) {
     this.serverUrl = serverUrl
   }
 
+  get rkeyData() {
+    return getRkeySnapshot()
+  }
+
   async getRkey() {
-    if (this.isExpired()) {
-      try {
-        await this.refreshRkey()
-      } catch (e) {
-        console.log("获取rkey失败", e)
-      }
-    }
-    return this.rkeyData
+    return await getRkeyBundle()
   }
 
   isExpired() {
-    const now = new Date().getTime() / 1000
-    // console.log(`now: ${now}, expired_time: ${this.rkeyData.expired_time}`)
-    return now > this.rkeyData.expired_time
+    return rkeyService.isExpired()
   }
 
   async refreshRkey() {
-    //刷新rkey
-    this.rkeyData = await this.fetchServerRkey()
+    return await refreshRkeyBundle()
   }
 
   async fetchServerRkey() {
-    return new Promise((resolve, reject) => {
-      fetch(this.serverUrl)
-        .then(response => {
-          if (!response.ok) {
-            return reject(response.statusText) // 请求失败，返回错误信息
-          }
-          return response.json() // 解析 JSON 格式的响应体
-        })
-        .then(data => {
-          resolve(data)
-        })
-        .catch(error => {
-          reject(error)
-        })
-    })
+    return await rkeyService.fetchServerRkey()
   }
 }
 
-export default new RkeyManager("https://llob.linyuchen.net/rkey")
+export default new RkeyManager()

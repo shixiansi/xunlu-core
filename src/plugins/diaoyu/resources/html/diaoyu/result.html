@@ -1,0 +1,46 @@
+{{extend defaulthtml}}
+
+{{block 'css'}}
+<link rel="stylesheet" href="{{_res_path}}/html/diaoyu/diaoyu.css" />
+{{/block}}
+
+{{block 'main'}}
+<div class="diaoyu page-result">
+  <div class="diaoyu-header">
+    <div class="diaoyu-title">
+      <img
+        class="diaoyu-icon"
+        src="{{_res_path}}/img/{{iconDir||'icons'}}/{{icon||'ok.png'}}"
+        alt="icon"
+      />
+      <div>
+        <div class="diaoyu-title-main">{{title||'提示'}}</div>
+        {{if subtitle}}
+        <div class="diaoyu-title-sub">{{subtitle}}</div>
+        {{/if}}
+      </div>
+    </div>
+    {{if badge}}
+    <div class="diaoyu-badge">{{badge}}</div>
+    {{/if}}
+  </div>
+
+  <div class="diaoyu-body">
+    {{if lines && lines.length}}
+    <div class="diaoyu-lines">
+      {{each lines line}}
+      <div class="diaoyu-line">{{line}}</div>
+      {{/each}}
+    </div>
+    {{else}}
+    <div class="diaoyu-lines">
+      <div class="diaoyu-line">（无内容）</div>
+    </div>
+    {{/if}}
+  </div>
+
+  {{if hint}}
+  <div class="diaoyu-hint">{{hint}}</div>
+  {{/if}}
+</div>
+{{/block}}

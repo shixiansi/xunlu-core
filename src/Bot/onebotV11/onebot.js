@@ -1,11 +1,81 @@
 import { WebSocketServer, WebSocket } from "ws"
+import fs from "node:fs"
 import { fileURLToPath } from "url"
-import { dirname } from "path"
+import { dirname, resolve as resolvePath } from "path"
 import EventEmitter from "events"
+import { classifyMediaReference, coerceToUniversalMessage } from "../message/context.js"
 
 // 解决 ES6 模块中 __dirname 缺失问题
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
+const PROJECT_ROOT = resolvePath(__dirname, "..", "..", "..")
+
+function normalizeOnebotAction(action) {
+  if (action === undefined || action === null) return ""
+  let out = String(action).trim()
+  while (out.startsWith("/")) out = out.slice(1)
+  return out
+}
+
+function dedupeStringList(list) {
+  const out = []
+  const seen = new Set()
+  for (const item of Array.isArray(list) ? list : []) {
+    const text = String(item || "").trim()
+    if (!text || seen.has(text)) continue
+    seen.add(text)
+    out.push(text)
+  }
+  return out
+}
+
+function resolveOnebotMediaTarget(
+  value,
+  { cwd = process.cwd(), projectRoot = PROJECT_ROOT, exists = fs.existsSync } = {},
+) {
+  const ref = classifyMediaReference(value)
+  if (!ref.value) {
+    return {
+      ok: false,
+      kind: ref.kind,
+      value: "",
+      reason: "empty",
+      message: "[OneBotV11Adapter] empty media reference",
+    }
+  }
+
+  if (["url", "fileUri", "base64", "dataUri", "opaqueId"].includes(ref.kind)) {
+    return { ok: true, kind: ref.kind, value: ref.value }
+  }
+
+  if (ref.kind === "absolutePath") {
+    if (exists(ref.value)) return { ok: true, kind: ref.kind, value: ref.value }
+    return {
+      ok: false,
+      kind: ref.kind,
+      value: ref.value,
+      reason: "missing_absolute_path",
+      message: `[OneBotV11Adapter] local media path not found: ${ref.value}`,
+      tried: [ref.value],
+    }
+  }
+
+  if (ref.kind === "relativePath" || ref.kind === "basename") {
+    const tried = dedupeStringList([resolvePath(cwd, ref.value), resolvePath(projectRoot, ref.value)])
+    const hit = tried.find(item => exists(item))
+    if (hit) return { ok: true, kind: ref.kind, value: hit, tried }
+    return {
+      ok: false,
+      kind: ref.kind,
+      value: ref.value,
+      reason: "missing_local_path",
+      message: `[OneBotV11Adapter] unresolved local media reference: ${ref.value}; tried: ${tried.join(", ")}`,
+      tried,
+    }
+  }
+
+  return { ok: true, kind: ref.kind, value: ref.value }
+}
 
 /**
  * OneBot V11 反向WS适配器（Milky标准风格）
@@ -32,6 +102,294 @@ class OneBotV11Adapter {
 
     // 标识适配器类型
     this.adapterType = "onebot-v11"
+  }
+
+  #fixCorruptedJpegHeader(buf) {
+    if (!Buffer.isBuffer(buf) || buf.length < 12) return buf
+
+    const looksLikeJfif =
+      buf[0] === 0xfd &&
+      buf[1] === 0xfd &&
+      buf[2] === 0xfd &&
+      buf[3] === 0xfd &&
+      buf[4] === 0x00 &&
+      buf[5] === 0x10 &&
+      buf[6] === 0x4a &&
+      buf[7] === 0x46 &&
+      buf[8] === 0x49 &&
+      buf[9] === 0x46 &&
+      buf[10] === 0x00
+
+    if (!looksLikeJfif) return buf
+
+    const fixed = Buffer.from(buf)
+    fixed[0] = 0xff
+    fixed[1] = 0xd8
+    fixed[2] = 0xff
+    fixed[3] = 0xe0
+    return fixed
+  }
+
+  #fixCorruptedJpegBase64(base64) {
+    if (typeof base64 !== "string") return base64
+    const b64 = base64.trim()
+    if (!b64) return b64
+
+    // Fast-path: known corrupted prefix (FD FD FD FD 00 10 ...)
+    if (b64.startsWith("/f39/QAQ")) {
+      return `/9j/4AAQ${b64.slice(8)}`
+    }
+
+    // Light check: decode a small prefix to detect the corruption pattern
+    try {
+      const head = b64.slice(0, 24) // multiple of 4, enough for 18 bytes
+      const buf = Buffer.from(head, "base64")
+      const looksLikeJfif =
+        buf[0] === 0xfd &&
+        buf[1] === 0xfd &&
+        buf[2] === 0xfd &&
+        buf[3] === 0xfd &&
+        buf[4] === 0x00 &&
+        buf[5] === 0x10 &&
+        buf[6] === 0x4a &&
+        buf[7] === 0x46 &&
+        buf[8] === 0x49 &&
+        buf[9] === 0x46
+
+      if (looksLikeJfif && b64.length >= 8) {
+        return `/9j/4AAQ${b64.slice(8)}`
+      }
+    } catch {}
+
+    return b64
+  }
+
+  #extractMessageId(resp) {
+    if (resp === null || resp === undefined) return undefined
+
+    if (typeof resp === "number") {
+      // Some implementations use signed 32-bit ints; message_id can be negative.
+      return Number.isFinite(resp) && resp !== 0 ? resp : undefined
+    }
+
+    if (typeof resp === "string") {
+      const n = Number(resp)
+      return Number.isFinite(n) && n !== 0 ? n : undefined
+    }
+
+    if (typeof resp !== "object") return undefined
+
+    const direct = resp.message_id ?? resp.messageId ?? resp.msg_id ?? resp.msgId ?? resp.id
+    if (direct !== undefined && direct !== null) {
+      const n = Number(direct)
+      return Number.isFinite(n) && n !== 0 ? n : undefined
+    }
+
+    const nested = resp.data && typeof resp.data === "object" ? resp.data : null
+    if (nested) {
+      const mid =
+        nested.message_id ?? nested.messageId ?? nested.msg_id ?? nested.msgId ?? nested.id
+      if (mid !== undefined && mid !== null) {
+        const n = Number(mid)
+        return Number.isFinite(n) && n !== 0 ? n : undefined
+      }
+    }
+
+    return undefined
+  }
+
+  #shouldFallbackForMissingMessageId(resp) {
+    if (resp === null || resp === undefined) return true
+    if (typeof resp !== "object") return true
+    if (Array.isArray(resp)) return resp.length === 0
+    return Object.keys(resp).length === 0
+  }
+
+  #normalizeOnebotFile(file) {
+    if (!file) return ""
+
+    // Buffer -> base64://
+    if (Buffer.isBuffer(file)) {
+      const fixed = this.#fixCorruptedJpegHeader(file)
+      return `base64://${fixed.toString("base64")}`
+    }
+
+    const resolved = resolveOnebotMediaTarget(file)
+    if (!resolved.ok) throw new Error(resolved.message)
+
+    const f = String(resolved.value || "").trim()
+    if (!f) return ""
+
+    // Already supported forms
+    if (f.startsWith("base64://")) {
+      const b64 = f.slice("base64://".length)
+      return `base64://${this.#fixCorruptedJpegBase64(b64)}`
+    }
+    if (f.startsWith("http://") || f.startsWith("https://") || f.startsWith("file://")) return f
+
+    // data URI -> base64://...
+    if (f.startsWith("data:image/")) {
+      const idx = f.indexOf(",")
+      if (idx > -1 && idx < f.length - 1) {
+        return `base64://${f.slice(idx + 1)}`
+      }
+      return ""
+    }
+
+    // Looks like raw binary string (common when Buffer was coerced to string)
+    const head = f.slice(0, 64)
+    const hasControlBytes = /[\x00-\x08\x0E-\x1F]/.test(head) || head.includes("\u0000")
+    const hasJfif = head.includes("JFIF") || head.includes("Exif")
+    const looksBinary = hasControlBytes || hasJfif
+
+    if (looksBinary) {
+      const buf = this.#fixCorruptedJpegHeader(Buffer.from(f, "latin1"))
+      return `base64://${buf.toString("base64")}`
+    }
+
+    // Looks like pure base64 (missing prefix) -> add prefix
+    if (
+      f.length > 128 &&
+      (f.startsWith("/9j/") || f.startsWith("iVBORw0KGgo") || f.startsWith("R0lGOD")) // jpg/png/gif
+    ) {
+      return `base64://${f}`
+    }
+    return f
+  }
+
+  #pickOutgoingMediaValue(item) {
+    return (
+      item?.data?.file ??
+      item?.data?.url ??
+      item?.data?.uri ??
+      item?.data?.path ??
+      item?.data?.fileId ??
+      item?.file ??
+      item?.url ??
+      item?.uri ??
+      item?.path ??
+      item?.fileId ??
+      ""
+    )
+  }
+
+  #normalizeOutgoingMediaSegment(item, type) {
+    const file = this.#normalizeOnebotFile(this.#pickOutgoingMediaValue(item))
+    if (!file) throw new Error(`[OneBotV11Adapter] ${type} segment missing file/url/path/fileId`)
+    const nextData = item?.data && typeof item.data === "object" ? { ...item.data, file } : { file }
+    return { ...item, type, data: nextData }
+  }
+
+  #summarizeForLog(value) {
+    const summarizeString = str => {
+      const s = String(str)
+      if (s.startsWith("base64://")) return `base64://<len=${s.length}>`
+      if (s.length > 160) return `${s.slice(0, 160)}...<len=${s.length}>`
+      return s
+    }
+
+    if (value === null || value === undefined) return value
+    if (typeof value === "string" || typeof value === "number") return summarizeString(value)
+
+    if (Array.isArray(value)) {
+      return value.map(v => this.#summarizeForLog(v))
+    }
+
+    if (typeof value === "object") {
+      const out = {}
+      for (const [k, v] of Object.entries(value)) {
+        if (k === "file" && typeof v === "string") out[k] = summarizeString(v)
+        else if (k === "message" || k === "params") out[k] = this.#summarizeForLog(v)
+        else if (k === "data") out[k] = this.#summarizeForLog(v)
+        else out[k] = v
+      }
+      return out
+    }
+
+    return value
+  }
+
+  #canEncodeAsCq(message) {
+    const supportedTypes = new Set(["text", "face", "at", "image", "record", "video", "reply"])
+    const list = Array.isArray(message) ? message : [message]
+    return list.every(seg => {
+      if (seg === null || seg === undefined) return true
+      if (typeof seg === "string" || typeof seg === "number") return true
+      if (typeof seg !== "object") return false
+      return supportedTypes.has(seg.type)
+    })
+  }
+
+  #onebotSegmentsToCqCode(message) {
+    const list = Array.isArray(message) ? message : message ? [message] : []
+    const escape = v =>
+      String(v ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/,/g, "&#44;")
+        .replace(/\[/g, "&#91;")
+        .replace(/\]/g, "&#93;")
+
+    let out = ""
+    for (const seg of list) {
+      if (seg === null || seg === undefined) continue
+      if (typeof seg === "string" || typeof seg === "number") {
+        out += String(seg)
+        continue
+      }
+      if (typeof seg !== "object") {
+        out += String(seg)
+        continue
+      }
+
+      const type = seg.type
+      const data = seg.data || {}
+
+      if (type === "text") {
+        out += String(data.text ?? seg.text ?? "")
+        continue
+      }
+
+      if (type === "face") {
+        const id = data.id ?? data.face_id ?? seg.id ?? seg.face_id ?? ""
+        out += `[CQ:face,id=${escape(id)}]`
+        continue
+      }
+
+      if (type === "at") {
+        const qq = data.qq ?? seg.qq
+        out += `[CQ:at,qq=${escape(qq)}]`
+        continue
+      }
+
+      if (type === "image") {
+        const file = data.file ?? seg.file ?? ""
+        out += `[CQ:image,file=${escape(file)}]`
+        continue
+      }
+
+      if (type === "record") {
+        const file = data.file ?? seg.file ?? ""
+        out += `[CQ:record,file=${escape(file)}]`
+        continue
+      }
+
+      if (type === "video") {
+        const file = data.file ?? seg.file ?? ""
+        out += `[CQ:video,file=${escape(file)}]`
+        continue
+      }
+
+      if (type === "reply") {
+        const id = data.id ?? seg.id ?? ""
+        out += `[CQ:reply,id=${escape(id)}]`
+        continue
+      }
+
+      // fallback
+      out += escape(JSON.stringify(seg))
+    }
+
+    return out
   }
 
   /**
@@ -65,6 +423,7 @@ class OneBotV11Adapter {
         this.client = ws
         this.isConnected = true
         console.log(`✅ llonebot客户端已连接 (IP: ${req.socket.remoteAddress})`)
+        this.eventEmitter.emit("connect", { ip: req.socket.remoteAddress })
 
         // 监听客户端消息
         ws.on("message", data => this.handleMessage(data))
@@ -143,10 +502,12 @@ class OneBotV11Adapter {
     }
     // 请求事件
     else if (post_type === "request") {
-      this.eventEmitter.emit(eventType, payload)
+      this.eventEmitter.emit("request", payload)
     }
     // 通知事件
     else if (post_type === "notice") {
+      console.log("Received notice event:", payload)
+
       this.eventEmitter.emit("notice", payload)
     }
     // 元事件
@@ -165,6 +526,10 @@ class OneBotV11Adapter {
    * @returns {Promise<Object>} API响应结果
    */
   async callApi(action, params = {}) {
+    const normalizedAction = normalizeOnebotAction(action)
+    if (!normalizedAction) throw new Error("[OneBotV11Adapter] callApi requires action")
+    action = normalizedAction
+
     return new Promise((resolve, reject) => {
       // 检查连接状态
       if (!this.isConnected || !this.client) {
@@ -178,8 +543,34 @@ class OneBotV11Adapter {
 
       // 存储回调
       this.requests.set(echo, (err, data) => {
-        if (err) reject(err)
-        else resolve(data?.data || data) // 兼容OneBot响应格式（取data字段）
+        if (err) {
+          reject(err)
+          return
+        }
+
+        const status = data?.status
+        const retcode = data?.retcode
+
+        // 仅对明确的失败做 reject，避免“无声失败”
+        if ((status && status !== "ok") || (retcode !== undefined && Number(retcode) !== 0)) {
+          const msg = data?.msg ?? data?.wording ?? data?.message ?? ""
+          console.error(
+            `❌ OneBot API响应失败：${action} retcode=${retcode} status=${status} msg=${msg}`,
+            this.#summarizeForLog(data),
+          )
+          reject(
+            new Error(
+              `[OneBotV11Adapter] ${action} failed: retcode=${retcode} status=${status} msg=${msg}`,
+            ),
+          )
+          return
+        }
+
+        if (action === "send_msg" || action === "send_group_msg" || action === "send_private_msg") {
+          console.log(`📥 OneBot API响应：${action}`, this.#summarizeForLog(data))
+        }
+
+        resolve(data?.data || data) // 兼容OneBot响应格式（取data字段）
       })
 
       // 发送请求（ws@8.18.1 兼容）
@@ -189,7 +580,7 @@ class OneBotV11Adapter {
           this.requests.delete(echo)
           reject(err)
         } else {
-          console.log(`📤 发送OneBot API请求：${action}，参数：`, params)
+          console.log(`📤 发送OneBot API请求：${action}，参数：`, this.#summarizeForLog(params))
         }
       })
 
@@ -201,6 +592,14 @@ class OneBotV11Adapter {
         }
       }, this.config.timeout)
     })
+  }
+
+  /**
+   * 兼容：sendApi(action, params)（与文档路径写法一致）
+   * - 支持 "/send_like" / "send_like"
+   */
+  async sendApi(action, params = {}) {
+    return await this.callApi(action, params)
   }
 
   // ==================== 系统API（Milky风格） ====================
@@ -418,11 +817,81 @@ class OneBotV11Adapter {
    * @returns {Promise<Object>}
    */
   async sendPrivateMessage(params) {
-    return await this.callApi("send_msg", {
-      message_type: "private",
-      user_id: Number(params.user_id),
-      message: this.dealOneBotMsg(params.message),
-    })
+    const user_id = Number(params.user_id)
+    const message = this.dealOneBotMsg(params.message)
+
+    const cq = this.#onebotSegmentsToCqCode(message)
+    const preferCq = this.#canEncodeAsCq(message) && typeof cq === "string" && cq.trim().length > 0
+
+    let lastErr = null
+    let lastRes = null
+
+    const tryOnce = async (action, paramsObj, label) => {
+      try {
+        const res = await this.callApi(action, paramsObj)
+        lastRes = res
+
+        const mid = this.#extractMessageId(res)
+        if (mid !== undefined) return { ok: true, res }
+
+        if (this.#shouldFallbackForMissingMessageId(res)) {
+          console.warn(
+            `[OneBotV11Adapter] ${label} returned without message_id, fallback to next method:`,
+            this.#summarizeForLog(res),
+          )
+          return { ok: false, res }
+        }
+
+        // Some implementations don't return message_id; treat as success to avoid duplicated sends.
+        console.warn(
+          `[OneBotV11Adapter] ${label} returned without message_id, treat as success:`,
+          this.#summarizeForLog(res),
+        )
+        return { ok: true, res }
+      } catch (err) {
+        lastErr = err
+        console.warn(`[OneBotV11Adapter] ${label} failed:`, err?.message || err)
+        return { ok: false, err }
+      }
+    }
+
+    // 优先：CQ字符串（兼容性更好）
+    if (preferCq) {
+      const r1 = await tryOnce("send_private_msg", { user_id, message: cq }, "send_private_msg(CQ)")
+      if (r1.ok) return r1.res
+    }
+
+    // 回退：segments数组
+    {
+      const r2 = await tryOnce(
+        "send_private_msg",
+        { user_id, message },
+        "send_private_msg(segments)",
+      )
+      if (r2.ok) return r2.res
+    }
+
+    // 再回退：send_msg（同样优先 CQ）
+    if (preferCq) {
+      const r3 = await tryOnce(
+        "send_msg",
+        { message_type: "private", user_id, message: cq },
+        "send_msg(private,CQ)",
+      )
+      if (r3.ok) return r3.res
+    }
+
+    {
+      const r4 = await tryOnce(
+        "send_msg",
+        { message_type: "private", user_id, message },
+        "send_msg(private,segments)",
+      )
+      if (r4.ok) return r4.res
+    }
+
+    if (lastErr) throw lastErr
+    return lastRes
   }
 
   /**
@@ -431,13 +900,76 @@ class OneBotV11Adapter {
    * @returns {Promise<Object>}
    */
   async sendGroupMessage(params) {
-    console.log("处理后的消息", this.dealOneBotMsg(params.message))
+    const group_id = Number(params.group_id)
+    const message = this.dealOneBotMsg(params.message)
 
-    return await this.callApi("send_msg", {
-      message_type: "group",
-      group_id: Number(params.group_id),
-      message: this.dealOneBotMsg(params.message),
-    })
+    const cq = this.#onebotSegmentsToCqCode(message)
+    const preferCq = this.#canEncodeAsCq(message) && typeof cq === "string" && cq.trim().length > 0
+
+    let lastErr = null
+    let lastRes = null
+
+    const tryOnce = async (action, paramsObj, label) => {
+      try {
+        const res = await this.callApi(action, paramsObj)
+        lastRes = res
+
+        const mid = this.#extractMessageId(res)
+        if (mid !== undefined) return { ok: true, res }
+
+        if (this.#shouldFallbackForMissingMessageId(res)) {
+          console.warn(
+            `[OneBotV11Adapter] ${label} returned without message_id, fallback to next method:`,
+            this.#summarizeForLog(res),
+          )
+          return { ok: false, res }
+        }
+
+        console.warn(
+          `[OneBotV11Adapter] ${label} returned without message_id, treat as success:`,
+          this.#summarizeForLog(res),
+        )
+        return { ok: true, res }
+      } catch (err) {
+        lastErr = err
+        console.warn(`[OneBotV11Adapter] ${label} failed:`, err?.message || err)
+        return { ok: false, err }
+      }
+    }
+
+    // 优先：CQ字符串（兼容性更好）
+    if (preferCq) {
+      const r1 = await tryOnce("send_group_msg", { group_id, message: cq }, "send_group_msg(CQ)")
+      if (r1.ok) return r1.res
+    }
+
+    // 回退：segments数组
+    {
+      const r2 = await tryOnce("send_group_msg", { group_id, message }, "send_group_msg(segments)")
+      if (r2.ok) return r2.res
+    }
+
+    // 再回退：send_msg（同样优先 CQ）
+    if (preferCq) {
+      const r3 = await tryOnce(
+        "send_msg",
+        { message_type: "group", group_id, message: cq },
+        "send_msg(group,CQ)",
+      )
+      if (r3.ok) return r3.res
+    }
+
+    {
+      const r4 = await tryOnce(
+        "send_msg",
+        { message_type: "group", group_id, message },
+        "send_msg(group,segments)",
+      )
+      if (r4.ok) return r4.res
+    }
+
+    if (lastErr) throw lastErr
+    return lastRes
   }
 
   /**
@@ -550,6 +1082,34 @@ class OneBotV11Adapter {
     this.eventEmitter.off(eventType, listener)
   }
 
+  /**
+   * 等待客户端连接（用于替代固定延迟 setTimeout）
+   * @param {Object} options
+   * @param {number} options.timeoutMs
+   */
+  async waitUntilConnected({ timeoutMs = 60000 } = {}) {
+    if (this.isConnected) return true
+
+    return await new Promise((resolve, reject) => {
+      const onConnect = () => {
+        cleanup()
+        resolve(true)
+      }
+
+      const timer = setTimeout(() => {
+        cleanup()
+        reject(new Error(`[OneBotV11Adapter] waitUntilConnected timeout after ${timeoutMs}ms`))
+      }, timeoutMs)
+
+      const cleanup = () => {
+        clearTimeout(timer)
+        this.eventEmitter.off("connect", onConnect)
+      }
+
+      this.eventEmitter.once("connect", onConnect)
+    })
+  }
+
   // ==================== 兼容性方法（适配Milky风格） ====================
   /**
    * 通用发送消息（兼容Milky的sendMsg）
@@ -561,7 +1121,7 @@ class OneBotV11Adapter {
     if (message?.message) message = message.message
     if (typeof target === "string" || typeof target === "number") {
       // 私聊消息
-      if (message.find(i => i.type == "node")) {
+      if (Array.isArray(message) && message.find(i => i.type == "node")) {
         delete message[0].uin
         delete message[0].name
         return await this.sendPrivateForwardMsg({
@@ -575,9 +1135,8 @@ class OneBotV11Adapter {
       })
     } else if (target.group_id) {
       //
-      console.log(message)
 
-      if (Array.isArray(message) && message?.find(i => i.type == "node")) {
+      if (Array.isArray(message) && message.find(i => i.type == "node")) {
         return await this.sendGroupForwardMsg({
           group_id: Number(target.group_id),
           messages: message,
@@ -600,7 +1159,6 @@ class OneBotV11Adapter {
     if (typeof msg === "string") {
       return msg
     }
-    console.log("onebot自身消息处理前", msg)
     if (!Array.isArray(msg)) msg = [msg]
     if (Array.isArray(msg)) {
       return msg.map(item => {
@@ -609,20 +1167,13 @@ class OneBotV11Adapter {
         }
         switch (item.type) {
           case "image":
-            return {
-              type: "image",
-              data: {
-                file: item?.data?.file || item?.data?.uri || item?.file || "",
-                summary: item?.data?.summary || item?.summary || "",
-              },
-            }
+            return this.#normalizeOutgoingMediaSegment(item, "image")
           case "record":
-            return {
-              type: "record",
-              data: {
-                file: item.file || item.data.uri || "",
-              },
-            }
+            return this.#normalizeOutgoingMediaSegment(item, "record")
+          case "video":
+            return this.#normalizeOutgoingMediaSegment(item, "video")
+          case "file":
+            return this.#normalizeOutgoingMediaSegment(item, "file")
           default:
             return item
         }
@@ -674,17 +1225,33 @@ class OneBotV11Adapter {
       return []
     }
 
-    // 遍历所有消息，而非仅处理第一条
-    return [
-      {
+    // 遍历所有消息并统一转换为 OneBotV11 节点（兼容 UniversalMessage/通用段/原生段）
+    // 旧实现把所有段压进一个 node，容易超长/超时；这里按“每条消息一个 node”生成。
+    const nodes = []
+    for (const item of msg) {
+      if (!item) continue
+
+      const uinRaw = item.user_id ?? item.uin ?? item.qq ?? msg[0]?.user_id
+      const nameRaw = item.nickname ?? item.name ?? item.sender_name ?? msg[0]?.nickname ?? "用户"
+      const uin = Number(uinRaw)
+      const nodeUin = Number.isFinite(uin) ? uin : String(uinRaw || "")
+      const nodeName = String(nameRaw || "")
+
+      const content = item.message ?? item.content ?? item
+      const universal = coerceToUniversalMessage(content)
+      const segments = this.dealOneBotMsg(universal.convertTo("onebotv11"))
+
+      nodes.push({
         type: "node",
         data: {
-          uin: msg[0].user_id,
-          name: msg[0].nickname,
-          content: this.dealOneBotMsg(msg.map(i => i.message)),
+          uin: nodeUin,
+          name: nodeName,
+          content: segments,
         },
-      },
-    ]
+      })
+    }
+
+    return nodes
   }
 
   // ==================== 资源清理（Milky风格） ====================
@@ -719,4 +1286,5 @@ class OneBotV11Adapter {
 }
 
 // 导出适配器类（可按需初始化）
+export { resolveOnebotMediaTarget }
 export default OneBotV11Adapter

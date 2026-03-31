@@ -9,10 +9,8 @@ export default class messageEvent extends EventListener {
   }
 
   async execute(e) {
-    this.dealUrl(e)
-    this.dealJson(e)
-    this.plugins.deal(e)
-    this.addMessage(e)
+    await this.plugins.deal(e)
+    await this.addMessage(e)
   }
 
   dealUrl(e) {
@@ -37,9 +35,9 @@ export default class messageEvent extends EventListener {
     }
   }
 
-  addMessage(e) {
+  async addMessage(e) {
     if (!e.group_id) return false
-    GroupMessageDB.saveMessage(e.group_id, {
+    await GroupMessageDB.saveMessage(e.group_id, {
       message_id: e.message_id,
       user_id: e.user_id,
       message: e.message,

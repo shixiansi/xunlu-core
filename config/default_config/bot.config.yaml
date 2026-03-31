@@ -1,4 +1,27 @@
 #Milky服务器地址
+# bot 运行适配器：milky | onebotv11 | icqq | auto
+adapter: milky
+
+# 接管模式下是否额外启动 xunlu-core 自己的 icqq 监听（可能引入额外覆写/噪音，默认关闭）
+icqq_bridge_enable: false
+
+# 本地控制台（供 CLI 调用）
+ctl_enable: true
+ctl_port: 3081
+ctl_token:
+
+# Web UI（内置后台）
+webui_enable: true
+webui_host: 127.0.0.1
+webui_port: 3000
+
+# CLI 发送默认上下文（可选）
+# - 未指定 group_id 时默认走私聊
+# - 建议配置一个测试群用于 CLI 调试
+ctl_default_scene: group
+ctl_default_group_id:
+ctl_default_group_name:
+ctl_default_user_id:
 authority: localhost
 # 基础路径
 
