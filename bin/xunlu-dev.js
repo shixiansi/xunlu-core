@@ -407,7 +407,10 @@ async function prepareLearningChatProactiveTest(flags = {}) {
   const patch = buildLearningChatProactiveTestPatch(flags.whitelist)
   await model.updateGlobalConfig(patch)
   if (groupId) {
-    await model.setGroupOverrides(groupId, { proactive_enabled: true })
+    await model.setGroupOverrides(groupId, {
+      proactive_enabled: true,
+      proactive_command_enabled: true,
+    })
   }
 
   const status = await getLearningChatStatus({ group: groupId, backup: backupPath })

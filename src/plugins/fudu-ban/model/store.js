@@ -14,9 +14,16 @@ function ensureDataDir() {
   fs.mkdirSync(DATA_DIR, { recursive: true })
 }
 
+export function getDbPath() {
+  return DB_PATH
+}
+
 function defaultDb() {
   return {
-    version: 1,
+    version: 2,
+    settings: {
+      enabled: true,
+    },
     groups: {},
   }
 }
@@ -35,7 +42,10 @@ export function loadDb() {
     const data = raw ? JSON.parse(raw) : null
     if (!data || typeof data !== "object") return defaultDb()
     if (!data.groups || typeof data.groups !== "object") data.groups = {}
-    if (!data.version) data.version = 1
+    if (!data.settings || typeof data.settings !== "object") data.settings = {}
+    if (data.settings.enabled === undefined) data.settings.enabled = true
+    else data.settings.enabled = Boolean(data.settings.enabled)
+    if (!data.version) data.version = 2
 
     // prune expired muted records
     const now = nowTs()
@@ -44,6 +54,11 @@ export function loadDb() {
       if (!g || typeof g !== "object") continue
       if (!g.users || typeof g.users !== "object") g.users = {}
       if (!g.muted || typeof g.muted !== "object") g.muted = {}
+      if (!g.config || typeof g.config !== "object") g.config = {}
+      if (g.enabled !== undefined && g.config.enabled === undefined) {
+        g.config.enabled = Boolean(g.enabled)
+        delete g.enabled
+      }
       for (const uid of Object.keys(g.muted)) {
         const rec = g.muted[uid]
         const until = Number(rec?.until ?? 0)
@@ -67,6 +82,7 @@ export function getOrCreateGroup(db, groupId) {
   if (!gid) return null
   if (!db.groups[gid]) {
     db.groups[gid] = {
+      config: {},
       users: {},
       muted: {},
       createdAt: nowTs(),
@@ -74,6 +90,7 @@ export function getOrCreateGroup(db, groupId) {
     }
   }
   const group = db.groups[gid]
+  if (!group.config || typeof group.config !== "object") group.config = {}
   if (!group.users || typeof group.users !== "object") group.users = {}
   if (!group.muted || typeof group.muted !== "object") group.muted = {}
   group.updatedAt = nowTs()
@@ -109,4 +126,42 @@ export function getOrCreateUser(group, userId) {
   if (!Number.isFinite(Number(user.lastBotRepeatAt))) user.lastBotRepeatAt = 0
   user.updatedAt = nowTs()
   return user
+}
+
+export function getGlobalRepeatMuteEnabled(db) {
+  return Boolean(db?.settings?.enabled !== false)
+}
+
+export function getGroupRepeatMuteOverride(group) {
+  const enabled = group?.config?.enabled
+  return typeof enabled === "boolean" ? enabled : null
+}
+
+export function getEffectiveRepeatMuteEnabled(db, groupId) {
+  const globalEnabled = getGlobalRepeatMuteEnabled(db)
+  const group = getOrCreateGroup(db, groupId)
+  if (!group) return globalEnabled
+
+  const override = getGroupRepeatMuteOverride(group)
+  return typeof override === "boolean" ? override : globalEnabled
+}
+
+export function setGlobalRepeatMuteEnabled(db, enabled) {
+  if (!db.settings || typeof db.settings !== "object") db.settings = {}
+  db.settings.enabled = Boolean(enabled)
+  db.version = Math.max(2, Number(db.version) || 0)
+  return getGlobalRepeatMuteEnabled(db)
+}
+
+export function setGroupRepeatMuteEnabled(group, enabled) {
+  if (!group || typeof group !== "object") return null
+  if (!group.config || typeof group.config !== "object") group.config = {}
+
+  if (enabled === undefined || enabled === null) {
+    delete group.config.enabled
+    return null
+  }
+
+  group.config.enabled = Boolean(enabled)
+  return group.config.enabled
 }

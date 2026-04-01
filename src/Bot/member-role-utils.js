@@ -154,6 +154,12 @@ function isAmbiguousMemberRoleInfo(info, { expectedUserId } = {}) {
   return !role && !hasFlags
 }
 
+function isUsableMemberRoleInfo(info, { expectedUserId } = {}) {
+  const member = unwrapMemberRoleInfo(info)
+  if (!member || typeof member !== "object") return false
+  return !isAmbiguousMemberRoleInfo(member, { expectedUserId })
+}
+
 function pickGroupMemberRoleInfo(group, userId, { ignorePlaceholder = false } = {}) {
   try {
     const picked = group?.pickMember?.(userId)
@@ -287,43 +293,69 @@ async function getMemberInfoWithFallback(
   userId,
   { allowLocalFallback = true, allowNativeOnebotFallback = true } = {},
 ) {
-  const upstreamInfo = await callCtxGroupMemberInfo(ctx, groupId, userId)
-  if (!isAmbiguousMemberRoleInfo(upstreamInfo, { expectedUserId: userId })) {
-    return unwrapMemberRoleInfo(upstreamInfo)
+  let fallbackInfo = null
+  const remember = info => {
+    const member = unwrapMemberRoleInfo(info)
+    if (!fallbackInfo && member) fallbackInfo = member
+    return member
+  }
+
+  const upstreamInfo = remember(await callCtxGroupMemberInfo(ctx, groupId, userId))
+  if (isUsableMemberRoleInfo(upstreamInfo, { expectedUserId: userId })) {
+    return upstreamInfo
   }
 
   if (allowLocalFallback) {
-    const localInfo = pickGroupMemberRoleInfo(ctx?.group, userId, { ignorePlaceholder: true })
-    if (localInfo) return unwrapMemberRoleInfo(localInfo)
-  }
-
-  const runtimeInfo = await callRuntimeBotGroupMemberInfo(groupId, userId)
-  if (!isAmbiguousMemberRoleInfo(runtimeInfo, { expectedUserId: userId })) {
-    return unwrapMemberRoleInfo(runtimeInfo)
-  }
-  if (runtimeInfo) return unwrapMemberRoleInfo(runtimeInfo)
-
-  if (allowNativeOnebotFallback) {
-    const nativeInfo = await callNativeOnebotGroupMemberInfo(ctx, groupId, userId)
-    if (!isAmbiguousMemberRoleInfo(nativeInfo, { expectedUserId: userId })) {
-      return unwrapMemberRoleInfo(nativeInfo)
+    const localInfo = remember(
+      pickGroupMemberRoleInfo(ctx?.group, userId, { ignorePlaceholder: true }),
+    )
+    if (isUsableMemberRoleInfo(localInfo, { expectedUserId: userId })) {
+      return localInfo
     }
-    if (nativeInfo) return unwrapMemberRoleInfo(nativeInfo)
   }
 
-  const listInfo = await callCtxGroupMemberList(ctx, groupId, userId)
-  if (!isAmbiguousMemberRoleInfo(listInfo, { expectedUserId: userId })) {
-    return unwrapMemberRoleInfo(listInfo)
+  const candidateLoaders = []
+  if (allowNativeOnebotFallback) {
+    candidateLoaders.push(() => callNativeOnebotGroupMemberInfo(ctx, groupId, userId))
   }
-  if (listInfo) return unwrapMemberRoleInfo(listInfo)
+  candidateLoaders.push(() => callCtxGroupMemberList(ctx, groupId, userId))
+  candidateLoaders.push(() => callRuntimeBotGroupMemberInfo(groupId, userId))
+  candidateLoaders.push(() => callRuntimeBotGroupMemberList(groupId, userId))
 
-  const runtimeListInfo = await callRuntimeBotGroupMemberList(groupId, userId)
-  if (!isAmbiguousMemberRoleInfo(runtimeListInfo, { expectedUserId: userId })) {
-    return unwrapMemberRoleInfo(runtimeListInfo)
+  for (const load of candidateLoaders) {
+    const info = remember(await load())
+    if (isUsableMemberRoleInfo(info, { expectedUserId: userId })) {
+      return info
+    }
   }
-  if (runtimeListInfo) return unwrapMemberRoleInfo(runtimeListInfo)
 
-  return unwrapMemberRoleInfo(upstreamInfo)
+  return fallbackInfo
+}
+
+async function getMemberRoleFlagsWithFallback(ctx, groupId, userId, options = {}) {
+  const info = await getMemberInfoWithFallback(ctx, groupId, userId, options)
+  return extractMemberRoleFlags(info)
+}
+
+function isOwnerRole(role) {
+  return String(role || "")
+    .trim()
+    .toLowerCase() === "owner"
+}
+
+function isAdminRole(role) {
+  const normalized = String(role || "").trim().toLowerCase()
+  return normalized === "owner" || normalized === "admin"
+}
+
+function hasOwnerRole(info) {
+  const flags = extractMemberRoleFlags(info)
+  return Boolean(flags?.isOwner || isOwnerRole(flags?.role))
+}
+
+function hasAdminRole(info) {
+  const flags = extractMemberRoleFlags(info)
+  return Boolean(flags?.isOwner || flags?.isAdmin || isAdminRole(flags?.role))
 }
 
 function selectPreferredRoleFlags({
@@ -375,8 +407,13 @@ export {
   extractMemberRoleFlags,
   findMemberInfoInGroupMemberList,
   getMemberInfoWithFallback,
+  getMemberRoleFlagsWithFallback,
   getNormalizedMemberRole,
+  hasAdminRole,
+  hasOwnerRole,
+  isAdminRole,
   isAmbiguousMemberRoleInfo,
+  isOwnerRole,
   isPlaceholderMemberInfo,
   pickGroupMemberRoleInfo,
   selectPreferredRoleFlags,

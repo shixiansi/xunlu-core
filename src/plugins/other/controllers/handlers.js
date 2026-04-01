@@ -121,7 +121,7 @@ function extractTextFromCtx(ctx) {
     .filter(seg => seg && typeof seg === "object" && String(seg.type || "") === "text")
     .map(seg => {
       const data = seg.data && typeof seg.data === "object" ? seg.data : {}
-      return String(data.content ?? data.text ?? seg.text ?? "")
+      return String(data.text ?? data.content ?? seg.text ?? "")
     })
     .join("")
     .trim()

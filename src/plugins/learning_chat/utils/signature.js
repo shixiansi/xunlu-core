@@ -65,9 +65,9 @@ export function filterLearningSegments(segments) {
     const data = seg.data && typeof seg.data === "object" ? seg.data : {}
 
     if (type === UniversalSegmentType.TEXT) {
-      const content = String(data.content ?? "").replace(/\s+/g, " ").trim()
+      const content = String(data.text ?? data.content ?? "").replace(/\s+/g, " ").trim()
       if (!content) continue
-      out.push({ type: UniversalSegmentType.TEXT, data: { content } })
+      out.push({ type: UniversalSegmentType.TEXT, data: { text: content } })
       continue
     }
 
@@ -79,16 +79,14 @@ export function filterLearningSegments(segments) {
     }
 
     if (type === UniversalSegmentType.IMAGE) {
-      const url = data.url ?? ""
-      const fileId = data.fileId ?? ""
-      const path = data.path ?? ""
-      if (!url && !fileId && !path) continue
+      const file = data.file ?? data.url ?? data.path ?? ""
+      const id = data.id ?? data.fileId ?? ""
+      if (!file && !id) continue
       out.push({
         type: UniversalSegmentType.IMAGE,
         data: {
-          url: url || undefined,
-          fileId: fileId || undefined,
-          path: path || undefined,
+          file: file || undefined,
+          id: id || undefined,
           summary: data.summary,
           name: data.name,
           width: data.width,
@@ -110,7 +108,7 @@ export function buildSignature(segments) {
     const type = seg.type
     const data = seg.data || {}
     if (type === UniversalSegmentType.TEXT) {
-      const content = String(data.content ?? "").replace(/\s+/g, " ").trim()
+      const content = String(data.text ?? data.content ?? "").replace(/\s+/g, " ").trim()
       if (!content) continue
       textLen += content.length
       textJoined += content
@@ -124,10 +122,11 @@ export function buildSignature(segments) {
       continue
     }
     if (type === UniversalSegmentType.IMAGE) {
-      const milkySha1 = tryMilkyResourceSha1(data.fileId)
+      const mediaId = data.id ?? data.fileId
+      const milkySha1 = tryMilkyResourceSha1(mediaId)
       const key = milkySha1
         ? `milkysha1:${milkySha1}`
-        : normalizeMediaKey(data.fileId || data.url || data.path || "")
+        : normalizeMediaKey(data.file || data.url || data.path || mediaId || "")
       parts.push(key ? `img:${key}` : "img")
       continue
     }
@@ -138,7 +137,7 @@ export function buildSignature(segments) {
 
   const preview = segments
     .map(seg => {
-      if (seg.type === UniversalSegmentType.TEXT) return String(seg.data?.content ?? "")
+      if (seg.type === UniversalSegmentType.TEXT) return String(seg.data?.text ?? seg.data?.content ?? "")
       if (seg.type === UniversalSegmentType.EMOJI) return `[face:${seg.data?.id ?? ""}]`
       if (seg.type === UniversalSegmentType.IMAGE) return "[image]"
       return ""
@@ -149,4 +148,3 @@ export function buildSignature(segments) {
 
   return { sig, hash, preview, textLen, textJoined }
 }
-

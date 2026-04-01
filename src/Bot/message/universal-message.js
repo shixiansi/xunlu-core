@@ -1,366 +1,702 @@
 import { OnebotV11Converter, MilkyConverter, ICQQConverter } from "./message-converters.js"
+import { pickPrimaryMediaReference, resolveMediaReferenceFields } from "./media-reference.js"
 
-const UniversalSegmentType = {
-  MENTION: "at", // 提及（@某人）
-  MENTION_ALL: "atAll", // 提及全体
-  EMOJI: "face", // 表情
-  REPLY: "reply", // 回复
-  IMAGE: "image", // 图片
-  VOICE: "record", // 语音
-  VIDEO: "video", // 视频
-  FORWARD: "forward", // 合并转发
-  TEXT: "text", // 文本
-  FILE: "file", // 文件
+const UniversalSegmentType = Object.freeze({
+  TEXT: "text",
+  MENTION: "at",
+  MENTION_ALL: "atAll",
+  EMOJI: "face",
+  REPLY: "reply",
+  IMAGE: "image",
+  VOICE: "record",
+  VIDEO: "video",
+  FORWARD: "forward",
+  FILE: "file",
+})
+
+const UNIVERSAL_TYPE_ALIASES = Object.freeze({
+  text: UniversalSegmentType.TEXT,
+  mention: UniversalSegmentType.MENTION,
+  at: UniversalSegmentType.MENTION,
+  mention_all: UniversalSegmentType.MENTION_ALL,
+  mentionAll: UniversalSegmentType.MENTION_ALL,
+  atAll: UniversalSegmentType.MENTION_ALL,
+  emoji: UniversalSegmentType.EMOJI,
+  face: UniversalSegmentType.EMOJI,
+  quote: UniversalSegmentType.REPLY,
+  reply: UniversalSegmentType.REPLY,
+  image: UniversalSegmentType.IMAGE,
+  audio: UniversalSegmentType.VOICE,
+  voice: UniversalSegmentType.VOICE,
+  record: UniversalSegmentType.VOICE,
+  video: UniversalSegmentType.VIDEO,
+  file: UniversalSegmentType.FILE,
+  forward: UniversalSegmentType.FORWARD,
+})
+
+function toOptionalString(value, { trim = true } = {}) {
+  if (value === undefined || value === null) return undefined
+  const text = trim ? String(value).trim() : String(value)
+  return text || undefined
 }
 
-/**
- * 通用消息段类 - 修复@类型兼容 + 统一工具方法
- */
+function toRequiredString(value, field) {
+  const text = toOptionalString(value, { trim: false })
+  if (text === undefined) throw new Error(`${field} is required`)
+  return text
+}
+
+function toOptionalNumber(value) {
+  if (value === undefined || value === null || value === "") return undefined
+  const num = Number(value)
+  return Number.isFinite(num) ? num : undefined
+}
+
+function pickFirstValue(values, mapper = value => value) {
+  for (const value of values) {
+    const mapped = mapper(value)
+    if (mapped !== undefined) return mapped
+  }
+  return undefined
+}
+
+function normalizeUniversalSegmentType(type) {
+  const key = String(type || "").trim()
+  const normalized = UNIVERSAL_TYPE_ALIASES[key]
+  if (!normalized) {
+    throw new Error(
+      `invalid universal segment type: ${type}; supported: ${Object.values(UniversalSegmentType).join(", ")}`,
+    )
+  }
+  return normalized
+}
+
+function isUniversalSegmentType(type) {
+  try {
+    normalizeUniversalSegmentType(type)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function clonePreview(preview) {
+  if (Array.isArray(preview)) {
+    return preview
+      .map(item => toOptionalString(item, { trim: false }))
+      .filter(item => item !== undefined)
+  }
+  const single = toOptionalString(preview, { trim: false })
+  return single ? [single] : undefined
+}
+
+function applyCompatAliases(type, data, raw = {}) {
+  switch (type) {
+    case UniversalSegmentType.TEXT:
+      data.content = data.text
+      break
+    case UniversalSegmentType.MENTION:
+      data.target = data.qq
+      if (raw.user_id !== undefined || raw.target !== undefined) {
+        const userId = pickFirstValue(
+          [raw.user_id, raw.target, data.qq],
+          value => toOptionalString(value, { trim: true }),
+        )
+        if (userId !== undefined) data.user_id = userId
+      }
+      break
+    case UniversalSegmentType.REPLY:
+      if (data.id !== undefined) {
+        data.msgId = data.id
+        data.message_id = data.id
+      }
+      if (data.seq !== undefined) {
+        data.message_seq = data.seq
+      }
+      break
+    case UniversalSegmentType.IMAGE:
+    case UniversalSegmentType.VOICE:
+    case UniversalSegmentType.VIDEO:
+    case UniversalSegmentType.FILE:
+      if (data.id !== undefined) data.fileId = data.id
+      if (data.url === undefined || data.path === undefined || data.fileId === undefined) {
+        const refs = resolveMediaReferenceFields([
+          { value: data.file, preferred: "auto" },
+          { value: data.id, preferred: "fileId" },
+        ])
+        if (data.url === undefined && refs.url) data.url = refs.url
+        if (data.path === undefined && refs.path) data.path = refs.path
+        if (data.fileId === undefined && refs.fileId) data.fileId = refs.fileId
+      }
+      if (data.uri === undefined && data.file !== undefined) data.uri = data.file
+      if (data.temp_url === undefined && data.url !== undefined) data.temp_url = data.url
+      break
+    default:
+      break
+  }
+  return data
+}
+
+function normalizeTextData(raw = {}) {
+  return applyCompatAliases(UniversalSegmentType.TEXT, {
+    text: String(raw.text ?? raw.content ?? raw.value ?? ""),
+  })
+}
+
+function normalizeMentionData(raw = {}) {
+  const qq = pickFirstValue(
+    [raw.qq, raw.target, raw.user_id, raw.uid, raw.id],
+    value => toOptionalString(value, { trim: true }),
+  )
+  if (!qq) throw new Error("mention segment requires qq/target/user_id")
+
+  const data = { qq }
+  const name = pickFirstValue(
+    [raw.name, raw.display, raw.nickname, raw.card],
+    value => toOptionalString(value, { trim: false }),
+  )
+  if (name !== undefined) data.name = name
+  return applyCompatAliases(UniversalSegmentType.MENTION, data, raw)
+}
+
+function normalizeReplyData(raw = {}) {
+  const id = pickFirstValue(
+    [raw.id, raw.msgId, raw.message_id, raw.messageId],
+    value => toOptionalString(value, { trim: true }),
+  )
+  const seq = pickFirstValue([raw.seq, raw.message_seq, raw.messageSeq], value =>
+    toOptionalNumber(value),
+  )
+  if (id === undefined && seq === undefined) {
+    throw new Error("reply segment requires id/msgId/message_id or seq/message_seq")
+  }
+
+  const data = {}
+  if (id !== undefined) data.id = id
+  if (seq !== undefined) data.seq = seq
+
+  const text = pickFirstValue([raw.text, raw.content], value =>
+    toOptionalString(value, { trim: false }),
+  )
+  if (text !== undefined) data.text = text
+
+  return applyCompatAliases(UniversalSegmentType.REPLY, data, raw)
+}
+
+function normalizeFaceData(raw = {}) {
+  const id = pickFirstValue([raw.id, raw.face_id], value => toOptionalNumber(value))
+  if (id === undefined) throw new Error("face segment requires id")
+  return { id }
+}
+
+function normalizeMediaData(type, raw = {}) {
+  const refs = resolveMediaReferenceFields([
+    { value: raw.file, preferred: "auto" },
+    { value: raw.url, preferred: "url" },
+    { value: raw.uri, preferred: "url" },
+    { value: raw.temp_url, preferred: "url" },
+    { value: raw.path, preferred: "path" },
+    { value: raw.fileId, preferred: "fileId" },
+    { value: raw.resource_id, preferred: "fileId" },
+    { value: raw.file_id, preferred: "fileId" },
+    { value: raw.fid, preferred: "fileId" },
+    { value: raw.id, preferred: "fileId" },
+  ])
+
+  const id = pickFirstValue(
+    [raw.id, raw.fileId, raw.resource_id, raw.file_id, raw.fid, refs.fileId],
+    value => toOptionalString(value, { trim: true }),
+  )
+
+  const file =
+    pickPrimaryMediaReference(
+      raw.file,
+      raw.url,
+      raw.uri,
+      raw.temp_url,
+      raw.path,
+      raw.fileId,
+      raw.resource_id,
+      raw.file_id,
+      raw.fid,
+      raw.id,
+      refs.url,
+      refs.path,
+      refs.fileId,
+    ) || id
+
+  if (!file) {
+    throw new Error(`${type} segment requires file/url/path/fileId/resource_id`)
+  }
+
+  const data = { file }
+  if (id !== undefined) data.id = id
+
+  const name = pickFirstValue([raw.name, raw.file_name], value =>
+    toOptionalString(value, { trim: false }),
+  )
+  if (name !== undefined) data.name = name
+
+  const size = pickFirstValue([raw.size, raw.file_size], value => toOptionalNumber(value))
+  if (size !== undefined) data.size = size
+
+  const summary = pickFirstValue([raw.summary], value => toOptionalString(value, { trim: false }))
+  if (summary !== undefined) data.summary = summary
+
+  const duration = pickFirstValue([raw.duration, raw.seconds], value => toOptionalNumber(value))
+  if (duration !== undefined) data.duration = duration
+
+  const width = pickFirstValue([raw.width], value => toOptionalNumber(value))
+  if (width !== undefined) data.width = width
+
+  const height = pickFirstValue([raw.height], value => toOptionalNumber(value))
+  if (height !== undefined) data.height = height
+
+  return applyCompatAliases(type, data, raw)
+}
+
+function normalizeForwardData(raw = {}) {
+  const data = {}
+
+  const id = pickFirstValue(
+    [raw.id, raw.forward_id, raw.resid],
+    value => toOptionalString(value, { trim: true }),
+  )
+  if (id !== undefined) data.id = id
+
+  const title = pickFirstValue([raw.title], value => toOptionalString(value, { trim: false }))
+  if (title !== undefined) data.title = title
+
+  const summary = pickFirstValue([raw.summary], value => toOptionalString(value, { trim: false }))
+  if (summary !== undefined) data.summary = summary
+
+  const prompt = pickFirstValue([raw.prompt], value => toOptionalString(value, { trim: false }))
+  if (prompt !== undefined) data.prompt = prompt
+
+  const preview = clonePreview(raw.preview)
+  if (preview !== undefined) data.preview = preview
+
+  if (Array.isArray(raw.messages)) data.messages = raw.messages
+
+  return data
+}
+
+function normalizeSegmentData(type, raw = {}) {
+  switch (type) {
+    case UniversalSegmentType.TEXT:
+      return normalizeTextData(raw)
+    case UniversalSegmentType.MENTION:
+      return normalizeMentionData(raw)
+    case UniversalSegmentType.MENTION_ALL:
+      return {}
+    case UniversalSegmentType.EMOJI:
+      return normalizeFaceData(raw)
+    case UniversalSegmentType.REPLY:
+      return normalizeReplyData(raw)
+    case UniversalSegmentType.IMAGE:
+    case UniversalSegmentType.VOICE:
+    case UniversalSegmentType.VIDEO:
+    case UniversalSegmentType.FILE:
+      return normalizeMediaData(type, raw)
+    case UniversalSegmentType.FORWARD:
+      return normalizeForwardData(raw)
+    default:
+      throw new Error(`unsupported universal segment type: ${type}`)
+  }
+}
+
+function fromOnebotV11Segment(segment) {
+  if (segment === undefined || segment === null) return UniversalMessageSegment.text("")
+  if (typeof segment === "string" || typeof segment === "number") {
+    return UniversalMessageSegment.text(String(segment))
+  }
+
+  const type = String(segment?.type || "").trim()
+  const data = segment?.data && typeof segment.data === "object" ? segment.data : {}
+
+  switch (type) {
+    case "text":
+      return UniversalMessageSegment.text(data.text ?? segment.text ?? "")
+    case "at":
+      return data.qq === "all"
+        ? UniversalMessageSegment.mentionAll()
+        : UniversalMessageSegment.mention(data.qq ?? segment.qq)
+    case "face":
+    case "mface":
+      return UniversalMessageSegment.face(data.id ?? data.face_id ?? segment.id)
+    case "reply":
+      return UniversalMessageSegment.reply({
+        id: data.id ?? segment.id,
+        seq: data.message_seq ?? segment.message_seq ?? segment.seq,
+      })
+    case "image":
+      return UniversalMessageSegment.image({
+        file: data.file ?? data.url ?? segment.file ?? segment.url,
+        id: data.file ?? data.file_id,
+        width: data.width,
+        height: data.height,
+        summary: data.summary,
+      })
+    case "record":
+      return UniversalMessageSegment.record({
+        file: data.file ?? data.url ?? segment.file ?? segment.url,
+        id: data.file ?? data.file_id,
+        duration: data.duration,
+      })
+    case "video":
+      return UniversalMessageSegment.video({
+        file: data.file ?? data.url ?? segment.file ?? segment.url,
+        id: data.file ?? data.file_id,
+        duration: data.duration,
+        width: data.width,
+        height: data.height,
+      })
+    case "file":
+      return UniversalMessageSegment.file({
+        file: data.file ?? data.url ?? segment.file ?? segment.url,
+        id: data.file ?? data.file_id,
+        name: data.name,
+        size: data.size,
+      })
+    case "forward":
+      return UniversalMessageSegment.forward({
+        id: data.id,
+        title: data.title,
+        preview: data.preview,
+        summary: data.summary ?? "forward",
+      })
+    default:
+      return UniversalMessageSegment.text(JSON.stringify(segment))
+  }
+}
+
+function fromMilkySegment(segment) {
+  if (segment === undefined || segment === null) return UniversalMessageSegment.text("")
+  if (typeof segment === "string" || typeof segment === "number") {
+    return UniversalMessageSegment.text(String(segment))
+  }
+
+  const type = String(segment?.type || "").trim()
+  const data = segment?.data && typeof segment.data === "object" ? segment.data : {}
+
+  switch (type) {
+    case "text":
+      return UniversalMessageSegment.text(data.text ?? segment.text ?? "")
+    case "mention":
+      return UniversalMessageSegment.mention(data.user_id ?? segment.user_id)
+    case "mention_all":
+    case "mentionAll":
+      return UniversalMessageSegment.mentionAll()
+    case "face":
+      return UniversalMessageSegment.face(data.face_id ?? data.id)
+    case "reply":
+      return UniversalMessageSegment.reply({
+        seq: data.message_seq ?? segment.message_seq,
+        id: data.message_id ?? segment.message_id,
+      })
+    case "image":
+      return UniversalMessageSegment.image({
+        file: data.uri ?? data.temp_url ?? data.resource_url ?? data.resource_id,
+        id: data.resource_id,
+        width: data.width,
+        height: data.height,
+        summary: data.summary,
+      })
+    case "record":
+      return UniversalMessageSegment.record({
+        file: data.uri ?? data.temp_url ?? data.resource_id,
+        id: data.resource_id,
+        duration: data.duration,
+      })
+    case "video":
+      return UniversalMessageSegment.video({
+        file: data.uri ?? data.temp_url ?? data.resource_id,
+        id: data.resource_id,
+        duration: data.duration,
+        width: data.width,
+        height: data.height,
+      })
+    case "file":
+      return UniversalMessageSegment.file({
+        file: data.uri ?? data.file_hash ?? data.file_id,
+        id: data.file_id,
+        name: data.file_name ?? data.name,
+        size: data.file_size ?? data.size,
+      })
+    case "forward":
+      return UniversalMessageSegment.forward({
+        id: data.id,
+        title: data.title,
+        preview: data.preview,
+        summary: data.summary,
+        messages: data.messages,
+      })
+    default:
+      return UniversalMessageSegment.text(JSON.stringify(segment))
+  }
+}
+
+function fromICQQSegment(segment) {
+  if (segment === undefined || segment === null) return UniversalMessageSegment.text("")
+  if (typeof segment === "string" || typeof segment === "number") {
+    return UniversalMessageSegment.text(String(segment))
+  }
+
+  const type = String(segment?.type || "").trim()
+  const data = segment?.data && typeof segment.data === "object" ? segment.data : {}
+
+  switch (type) {
+    case "text":
+      return UniversalMessageSegment.text(segment.text ?? data.text ?? data.content ?? "")
+    case "at": {
+      const qq = segment.qq ?? data.qq
+      return qq === "all" || qq === 0 || String(qq) === "0"
+        ? UniversalMessageSegment.mentionAll()
+        : UniversalMessageSegment.mention(qq)
+    }
+    case "face":
+    case "sface":
+    case "bface":
+      return UniversalMessageSegment.face(segment.id ?? data.id)
+    case "reply":
+    case "quote":
+    case "source":
+      return UniversalMessageSegment.reply({
+        id: segment.id ?? data.id ?? segment.message_id ?? data.message_id,
+        seq:
+          segment.seq ??
+          segment.message_seq ??
+          data.seq ??
+          data.message_seq ??
+          data.messageSeq,
+      })
+    case "image":
+    case "flash":
+      return UniversalMessageSegment.image({
+        file: segment.file ?? segment.url ?? data.file ?? data.url,
+        id: segment.fid ?? data.fid ?? segment.file_id ?? data.file_id,
+        width: segment.width ?? data.width,
+        height: segment.height ?? data.height,
+        summary: segment.summary ?? data.summary,
+      })
+    case "record":
+      return UniversalMessageSegment.record({
+        file: segment.file ?? segment.url ?? data.file ?? data.url,
+        id: segment.fid ?? data.fid,
+        duration: segment.seconds ?? data.seconds ?? data.duration,
+      })
+    case "video":
+    case "bubble":
+      return UniversalMessageSegment.video({
+        file: segment.file ?? segment.url ?? data.file ?? data.url,
+        id: segment.fid ?? data.fid,
+        duration: segment.seconds ?? data.seconds ?? data.duration,
+        width: segment.width ?? data.width,
+        height: segment.height ?? data.height,
+      })
+    case "file":
+      return UniversalMessageSegment.file({
+        file: segment.file ?? segment.url ?? data.file ?? data.url,
+        id: segment.fid ?? data.fid ?? segment.file_id ?? data.file_id,
+        name: segment.name ?? data.name,
+        size: segment.size ?? data.size,
+      })
+    case "multimsg":
+    case "node":
+    case "long_msg":
+      return UniversalMessageSegment.forward({
+        id: segment.resid ?? data.resid ?? segment.id ?? data.id,
+        title: segment.title ?? data.title,
+        preview: segment.preview ?? data.preview,
+        summary: segment.summary ?? data.summary ?? "[chat history]",
+        messages: segment.messages ?? data.messages,
+      })
+    default:
+      return UniversalMessageSegment.text(JSON.stringify(segment))
+  }
+}
+
+function normalizeProtocol(protocol) {
+  const value = String(protocol || "").trim().toLowerCase()
+  if (value === "onebot" || value === "onebot11") return "onebotv11"
+  return value
+}
+
+function getProtocolParser(protocol) {
+  switch (normalizeProtocol(protocol)) {
+    case "onebotv11":
+      return fromOnebotV11Segment
+    case "milky":
+      return fromMilkySegment
+    case "icqq":
+      return fromICQQSegment
+    default:
+      throw new Error(`unsupported protocol: ${protocol}`)
+  }
+}
+
 class UniversalMessageSegment {
   constructor(type, data = {}) {
-    if (!Object.values(UniversalSegmentType).includes(type)) {
-      throw new Error(
-        `无效的消息段类型: ${type}，仅支持 ${Object.values(UniversalSegmentType).join(", ")}`,
-      )
-    }
-    this.type = type
-    this.data = this._validateData(type, data)
+    const normalizedType = normalizeUniversalSegmentType(type)
+    this.type = normalizedType
+    this.data = normalizeSegmentData(normalizedType, data)
   }
 
-  /**
-   * 校验数据（保持原有逻辑，仅补充注释）
-   */
-  _validateData(type, data) {
-    const validated = { ...data }
-    switch (type) {
-      case UniversalSegmentType.MENTION:
-        if (!validated.target) throw new Error("mention类型必须指定target（用户ID）")
-        validated.target = String(validated.target)
-        break
-      case UniversalSegmentType.REPLY:
-        if (!validated.msgId && !validated.seq)
-          throw new Error("reply类型必须指定msgId（消息ID）或者seq（消息序号）")
-        if (validated.msgId) validated.msgId = String(validated.msgId)
-        if (validated.seq) validated.seq = Number(validated.seq)
-        break
-      case UniversalSegmentType.FORWARD:
-        break
-      case UniversalSegmentType.TEXT:
-        if (validated.content === undefined || validated.content === null) {
-          throw new Error("text类型必须指定content（文本内容）")
-        }
-        validated.content = String(validated.content)
-        break
-      case UniversalSegmentType.FILE:
-        if (!validated.url && !validated.fileId && !validated.path) {
-          throw new Error("file类型必须指定url/fileId/path中的至少一个")
-        }
-        ;["url", "fileId", "path", "name"].forEach(key => {
-          if (validated[key]) validated[key] = String(validated[key])
-        })
-        if (validated.size) validated.size = Number(validated.size)
-        break
-      case UniversalSegmentType.EMOJI:
-        if (validated.id) validated.id = Number(validated.id)
-        break
-      case UniversalSegmentType.IMAGE:
-        if (!validated.url && !validated.fileId && !validated.path) {
-          throw new Error("image类型必须指定url/fileId/path中的至少一个")
-        }
-        ;["url", "fileId", "path", "name"].forEach(key => {
-          if (validated[key]) validated[key] = String(validated[key])
-        })
-        if (validated.size) validated.size = Number(validated.size)
-        break
-      case UniversalSegmentType.VOICE:
-      case UniversalSegmentType.VIDEO:
-        ;["url", "fileId", "path"].forEach(key => {
-          if (validated[key]) validated[key] = String(validated[key])
-        })
-        ;["duration", "width", "height"].forEach(key => {
-          if (validated[key]) validated[key] = Number(validated[key])
-        })
-        break
-      default:
-        break
-    }
-    return validated
+  static text(text) {
+    return new UniversalMessageSegment(UniversalSegmentType.TEXT, { text })
   }
 
-  // ========== 便捷创建方法（统一@类型参数） ==========
-  static text(content) {
-    return new UniversalMessageSegment(UniversalSegmentType.TEXT, { content })
+  static mention(target, name) {
+    return new UniversalMessageSegment(UniversalSegmentType.MENTION, { qq: target, name })
   }
-  static file(options) {
-    return new UniversalMessageSegment(UniversalSegmentType.FILE, options)
-  }
-  // 统一@某人的创建方法（仅需传target，兼容所有协议）
-  static mention(target) {
-    return new UniversalMessageSegment(UniversalSegmentType.MENTION, { target })
-  }
+
   static mentionAll() {
     return new UniversalMessageSegment(UniversalSegmentType.MENTION_ALL, {})
   }
+
   static face(id) {
     return new UniversalMessageSegment(UniversalSegmentType.EMOJI, { id })
   }
+
   static reply(options) {
-    // 优化：支持对象参数，兼容msgId/seq
-    return new UniversalMessageSegment(UniversalSegmentType.REPLY, options)
+    if (options && typeof options !== "object") {
+      return new UniversalMessageSegment(UniversalSegmentType.REPLY, { id: options })
+    }
+    return new UniversalMessageSegment(UniversalSegmentType.REPLY, options || {})
   }
+
   static image(options) {
-    return new UniversalMessageSegment(UniversalSegmentType.IMAGE, options)
+    return new UniversalMessageSegment(UniversalSegmentType.IMAGE, options || {})
   }
+
   static record(options) {
-    return new UniversalMessageSegment(UniversalSegmentType.VOICE, options)
+    return new UniversalMessageSegment(UniversalSegmentType.VOICE, options || {})
   }
+
   static video(options) {
-    return new UniversalMessageSegment(UniversalSegmentType.VIDEO, options)
+    return new UniversalMessageSegment(UniversalSegmentType.VIDEO, options || {})
   }
+
+  static file(options) {
+    return new UniversalMessageSegment(UniversalSegmentType.FILE, options || {})
+  }
+
   static forward(options) {
-    // 修正拼写错误 forwoerd → forward
-    return new UniversalMessageSegment(UniversalSegmentType.FORWARD, options)
+    return new UniversalMessageSegment(UniversalSegmentType.FORWARD, options || {})
   }
 
-  // ========== 新增：统一识别@类型的工具方法（核心兼容） ==========
-  /**
-   * 统一解析不同协议的@类型消息段
-   * @param {Object} segment 原生消息段
-   * @param {string} protocol 协议类型（onebotv11/milky/icqq）
-   * @returns {UniversalMessageSegment}
-   */
-  static parseMentionSegment(segment, protocol) {
-    const { type, data = {} } = segment
-    // 根据协议识别@类型
-    switch (protocol.toLowerCase()) {
-      case "milky":
-        // Milky: mention → @某人, mentionAll → @全体
-        if (type === "mention") return UniversalMessageSegment.mention(data.user_id)
-        if (type === "mention_all" || type === "mentionAll") return UniversalMessageSegment.mentionAll()
-        break
-      case "onebotv11":
-        // OnebotV11: at → @某人/全体（qq=all）
-        if (type === "at") {
-          return data.qq === "all"
-            ? UniversalMessageSegment.mentionAll()
-            : UniversalMessageSegment.mention(data.qq)
-        }
-        break
-      case "icqq":
-        // ICQQ: at → @某人/全体（type=all）
-        if (type === "at") {
-          const qq = segment.qq ?? data.qq
-          return qq === "all" || qq === 0 || String(qq) === "0"
-            ? UniversalMessageSegment.mentionAll()
-            : UniversalMessageSegment.mention(qq)
-        }
-        break
-    }
-    return null // 不是@类型，返回null
-  }
-
-  // ========== 协议→通用 转换方法（修复@兼容 + 修正错误） ==========
   static fromOnebotV11(segment) {
-    const { type, data = {} } = segment
-    // 优先解析@类型（核心兼容）
-    const mentionSeg = this.parseMentionSegment(segment, "onebotv11")
-    if (mentionSeg) return mentionSeg
-
-    switch (type) {
-      case "text":
-        return UniversalMessageSegment.text(data.text ?? segment.text ?? "")
-      case "face":
-        return UniversalMessageSegment.face(data.id)
-      case "reply":
-        return UniversalMessageSegment.reply({ msgId: data.id })
-      case "image":
-        return UniversalMessageSegment.image({
-          url: data.url || data.file,
-          fileId: data.file,
-          width: data.width,
-          height: data.height,
-          summary: data.summary,
-        })
-      case "record":
-        return UniversalMessageSegment.record({
-          url: data.url,
-          fileId: data.file,
-          duration: data.duration || 0,
-        })
-      case "video":
-        return UniversalMessageSegment.video({
-          url: data.url,
-          fileId: data.file,
-          duration: data.duration || 0,
-          width: data.width || 0,
-          height: data.height || 0,
-        })
-      case "file":
-        return UniversalMessageSegment.file({
-          url: data.url,
-          fileId: data.file,
-          name: data.name,
-          size: data.size || 0,
-        })
-      case "forward":
-        return UniversalMessageSegment.forward({
-          id: data.id,
-          title: data.title || "",
-          preview: "",
-          summary: "转发消息",
-        })
-      default:
-        console.warn(`不支持的OnebotV11类型: ${type}，降级为文本`)
-        return UniversalMessageSegment.text(JSON.stringify(segment))
-    }
+    return fromOnebotV11Segment(segment)
   }
 
   static fromMilky(segment) {
-    const { type, data = {} } = segment
-    // 优先解析@类型（核心兼容）
-    const mentionSeg = this.parseMentionSegment(segment, "milky")
-    if (mentionSeg) return mentionSeg
-
-    switch (type) {
-      case "text":
-        return UniversalMessageSegment.text(data.text || "")
-      case "face":
-        return UniversalMessageSegment.face(data.face_id)
-      case "reply":
-        return UniversalMessageSegment.reply({ seq: data.message_seq }) // 优化：传对象参数
-      case "image":
-        return UniversalMessageSegment.image({
-          url: data.temp_url,
-          fileId: data.resource_id,
-          width: data.width,
-          height: data.height,
-          summary: data.summary,
-        })
-      case "record":
-        return UniversalMessageSegment.record({
-          url: data.temp_url,
-          fileId: data.resource_id,
-          duration: data.duration || 0,
-        })
-      case "video":
-        return UniversalMessageSegment.video({
-          url: data.temp_url,
-          fileId: data.resource_id,
-          duration: data.duration || 0,
-          width: data.width || 0,
-          height: data.height || 0,
-        })
-      case "file":
-        return UniversalMessageSegment.file({
-          url: "",
-          fileId: data.file_id,
-          path: data.file_hash,
-          name: data.file_name,
-          size: data.file_size || 0,
-        })
-      case "forward":
-        return UniversalMessageSegment.forward({
-          id: data.id,
-          title: data.title || "",
-          preview: data.preview,
-          summary: data.summary,
-        })
-      default:
-        console.warn(`不支持的Milky类型: ${type}，降级为文本`)
-        return UniversalMessageSegment.text(JSON.stringify(segment))
-    }
+    return fromMilkySegment(segment)
   }
 
   static fromICQQ(segment) {
-    const { type } = segment
-    // 优先解析@类型（核心兼容）
-    const mentionSeg = this.parseMentionSegment(segment, "icqq")
-    if (mentionSeg) return mentionSeg
-
-    switch (type) {
-      case "text":
-        return UniversalMessageSegment.text(segment.text || "")
-      case "face":
-        return UniversalMessageSegment.face(segment.id)
-      case "reply":
-        return UniversalMessageSegment.reply({
-          msgId: segment.id ?? segment?.data?.id,
-          seq: segment.seq ?? segment.message_seq ?? segment?.data?.message_seq,
-        })
-      case "image":
-        return UniversalMessageSegment.image({
-          url: segment.url || segment.file,
-          fileId: segment.file,
-          width: segment.width || 0,
-          height: segment.height || 0,
-          summary: segment.summary,
-        })
-      case "record":
-        return UniversalMessageSegment.record({
-          url: segment.file || segment.url,
-          fileId: segment.file,
-          duration: segment.seconds || 0,
-        })
-      case "video":
-        return UniversalMessageSegment.video({
-          url: segment.file || segment.url,
-          fileId: segment.fid,
-          duration: segment.seconds || 0,
-          width: segment.width || 0,
-          height: segment.height || 0,
-        })
-      case "file":
-        return UniversalMessageSegment.file({
-          url: segment.file,
-          fileId: segment.fid,
-          name: segment.name,
-          size: segment.size || 0,
-        })
-      case "multimsg":
-        return UniversalMessageSegment.forward({
-          id: segment.resid,
-          title: segment.title || "",
-          preview: segment.preview,
-          summary: "[聊天记录]",
-        })
-
-      default:
-        console.warn(`不支持的ICQQ类型: ${type}，降级为文本`)
-        return UniversalMessageSegment.text(JSON.stringify(segment))
-    }
+    return fromICQQSegment(segment)
   }
 }
 
-/**
- * 通用消息类（保持原有逻辑，仅修正注释）
- */
+export function getSegmentText(segment) {
+  if (!segment || segment.type !== UniversalSegmentType.TEXT) return ""
+  return String(segment?.data?.text ?? segment?.data?.content ?? "")
+}
+
+export function getSegmentMentionTarget(segment) {
+  if (!segment || segment.type !== UniversalSegmentType.MENTION) return ""
+  return String(segment?.data?.qq ?? segment?.data?.target ?? "")
+}
+
+export function getSegmentReplyRef(segment) {
+  if (!segment || segment.type !== UniversalSegmentType.REPLY) return null
+  const id = pickFirstValue(
+    [segment?.data?.id, segment?.data?.msgId, segment?.data?.message_id],
+    value => toOptionalString(value, { trim: true }),
+  )
+  const seq = pickFirstValue(
+    [segment?.data?.seq, segment?.data?.message_seq],
+    value => toOptionalNumber(value),
+  )
+  if (id === undefined && seq === undefined) return null
+  return { id, seq }
+}
+
+export function getSegmentMediaFile(segment) {
+  const data = segment?.data
+  if (!data || typeof data !== "object") return ""
+  return (
+    pickPrimaryMediaReference(
+      data.file,
+      data.url,
+      data.uri,
+      data.temp_url,
+      data.path,
+      data.id,
+      data.fileId,
+    ) || ""
+  )
+}
+
+export function getSegmentMediaId(segment) {
+  const data = segment?.data
+  if (!data || typeof data !== "object") return undefined
+  return pickFirstValue(
+    [data.id, data.fileId, data.resource_id, data.file_id, data.fid],
+    value => toOptionalString(value, { trim: true }),
+  )
+}
+
+export function isUniversalSegment(segment) {
+  return Boolean(
+    segment &&
+      typeof segment === "object" &&
+      isUniversalSegmentType(segment.type) &&
+      segment.data &&
+      typeof segment.data === "object",
+  )
+}
+
+export function isUniversalSegmentArray(segments) {
+  return Array.isArray(segments) && segments.every(segment => isUniversalSegment(segment))
+}
+
 class UniversalMessage {
-  constructor() {
+  constructor(segments = []) {
     this.segments = []
+    this.addSegments(segments)
   }
 
   addSegment(segment) {
-    if (!(segment instanceof UniversalMessageSegment)) {
-      throw new Error("添加的消息段必须是UniversalMessageSegment实例")
+    if (segment instanceof UniversalMessageSegment) {
+      this.segments.push(segment)
+      return
     }
-    this.segments.push(segment)
+
+    if (isUniversalSegment(segment)) {
+      this.segments.push(new UniversalMessageSegment(segment.type, segment.data))
+      return
+    }
+
+    throw new Error("segment must be a UniversalMessageSegment or a universal segment object")
   }
 
   addSegments(segments) {
-    segments.forEach(seg => this.addSegment(seg))
+    for (const segment of Array.isArray(segments) ? segments : []) {
+      this.addSegment(segment)
+    }
   }
 
-  addText(content) {
-    this.addSegment(UniversalMessageSegment.text(content))
+  addText(text) {
+    this.addSegment(UniversalMessageSegment.text(text))
   }
 
   addFile(options) {
     this.addSegment(UniversalMessageSegment.file(options))
   }
 
-  addMention(target) {
-    // 统一参数：仅需target
-    this.addSegment(UniversalMessageSegment.mention(target))
+  addMention(target, name) {
+    this.addSegment(UniversalMessageSegment.mention(target, name))
   }
 
   addMentionAll() {
@@ -368,62 +704,42 @@ class UniversalMessage {
   }
 
   convertTo(protocol) {
-    const converter = this._getConverter(protocol)
-    return converter.convert(this.segments)
-  }
-
-  _getConverter(protocol) {
-    switch (protocol.toLowerCase()) {
+    const normalized = normalizeProtocol(protocol)
+    switch (normalized) {
       case "onebotv11":
-        return new OnebotV11Converter()
+        return new OnebotV11Converter().convert(this.segments)
       case "milky":
-        return new MilkyConverter()
+        return new MilkyConverter().convert(this.segments)
       case "icqq":
-        return new ICQQConverter()
+        return new ICQQConverter().convert(this.segments)
       default:
-        throw new Error(`不支持的协议类型: ${protocol}，仅支持 onebotv11/milky/icqq`)
+        throw new Error(`unsupported protocol: ${protocol}`)
     }
-  }
-
-  static fromOnebotV11(onebotSegments) {
-    const msg = new UniversalMessage()
-    if (!Array.isArray(onebotSegments)) return msg
-    onebotSegments.forEach(seg => {
-      msg.addSegment(UniversalMessageSegment.fromOnebotV11(seg))
-    })
-    return msg
-  }
-
-  static fromMilky(milkySegments) {
-    const msg = new UniversalMessage()
-    if (!Array.isArray(milkySegments)) return msg
-    milkySegments.forEach(seg => {
-      msg.addSegment(UniversalMessageSegment.fromMilky(seg))
-    })
-    return msg
-  }
-
-  static fromICQQ(icqqSegments) {
-    const msg = new UniversalMessage()
-    if (!Array.isArray(icqqSegments)) return msg
-    icqqSegments.forEach(seg => {
-      msg.addSegment(UniversalMessageSegment.fromICQQ(seg))
-    })
-    return msg
   }
 
   static from(protocol, segments) {
-    switch (protocol.toLowerCase()) {
-      case "onebotv11":
-        return UniversalMessage.fromOnebotV11(segments)
-      case "milky":
-        return UniversalMessage.fromMilky(segments)
-      case "icqq":
-        return UniversalMessage.fromICQQ(segments)
-      default:
-        throw new Error(`不支持的协议类型: ${protocol}`)
-    }
+    const parser = getProtocolParser(protocol)
+    const list = Array.isArray(segments) ? segments : segments === undefined || segments === null ? [] : [segments]
+    return new UniversalMessage(list.map(item => parser(item)))
+  }
+
+  static fromOnebotV11(segments) {
+    return UniversalMessage.from("onebotv11", segments)
+  }
+
+  static fromMilky(segments) {
+    return UniversalMessage.from("milky", segments)
+  }
+
+  static fromICQQ(segments) {
+    return UniversalMessage.from("icqq", segments)
   }
 }
 
-export { UniversalSegmentType, UniversalMessageSegment, UniversalMessage }
+export {
+  UniversalSegmentType,
+  UniversalMessageSegment,
+  UniversalMessage,
+  normalizeUniversalSegmentType,
+  isUniversalSegmentType,
+}

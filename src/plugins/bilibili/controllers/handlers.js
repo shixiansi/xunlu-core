@@ -1,3 +1,6 @@
+import fs from "node:fs"
+import path from "node:path"
+
 import { segment } from "../../../Bot/segment.js"
 import Blogin from "../model/Blogin.js"
 import Bili from "../model/Bilili.js"
@@ -12,6 +15,7 @@ filemage.CreatDir("src/plugins/bilibili/data")
 filemage.CreatDir("src/plugins/bilibili/data/medallist/")
 filemage.CreatDir("src/plugins/bilibili/data/group")
 filemage.CreatDir("src/plugins/bilibili/resources/video/")
+filemage.CreatDir("src/plugins/bilibili/resources/dynamic-forward/")
 const dynamicType = {
   live: "直播",
   text: "文字",
@@ -20,6 +24,123 @@ const dynamicType = {
   forward: "转发",
   article: "专栏",
   raffle: "抽奖",
+}
+
+function getVideoCachePaths(bv) {
+  const basePath = path.join(filemage.RootPath, "src/plugins/bilibili/resources/video")
+  return {
+    basePath,
+    videoPath: path.join(basePath, `source_${bv}.mp4`),
+    audioPath: path.join(basePath, `source_${bv}.mp3`),
+    resultPath: path.join(basePath, `${bv}.mp4`),
+  }
+}
+
+async function composeVideoFile(videoPath, audioPath, resultPath) {
+  return await new Promise((resolve, reject) => {
+    ffmpeg.VideoComposite(
+      videoPath,
+      audioPath,
+      resultPath,
+      async () => resolve(resultPath),
+      async () => reject(new Error("视频合成失败")),
+    )
+  })
+}
+
+function cleanupVideoCache(paths = []) {
+  for (const filePath of paths) {
+    if (!filePath) continue
+    try {
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+    } catch (err) {
+      logger.warn?.(`[Bilibili] 清理视频缓存失败：${filePath}，${err?.message || err}`)
+    }
+  }
+}
+
+function cleanupTempFiles(paths = [], label = "缓存") {
+  for (const filePath of paths) {
+    if (!filePath) continue
+    try {
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+    } catch (err) {
+      logger.warn?.(`[Bilibili] 清理${label}失败，${filePath}，${err?.message || err}`)
+    }
+  }
+}
+
+function isMilkyRuntime(baseBot, ctx) {
+  const protocol = String(
+    ctx?.protocol ?? baseBot?.adapter ?? globalThis.Bot?.adapterType ?? globalThis.Bot?.protocol ?? "",
+  )
+    .trim()
+    .toLowerCase()
+  return protocol === "milky"
+}
+
+function getSegmentImageSource(segmentLike) {
+  if (!segmentLike || typeof segmentLike !== "object") return ""
+  return String(
+    segmentLike?.data?.url ??
+      segmentLike?.url ??
+      segmentLike?.data?.path ??
+      segmentLike?.path ??
+      segmentLike?.data?.file ??
+      segmentLike?.file ??
+      segmentLike?.data?.fileId ??
+      segmentLike?.fileId ??
+      "",
+  ).trim()
+}
+
+function getDynamicForwardCachePath(dynamicId, index, source = "") {
+  const cacheDir = "src/plugins/bilibili/resources/dynamic-forward"
+  let ext = ".jpg"
+  try {
+    const pathname = new URL(source).pathname
+    const nextExt = path.extname(pathname)
+    if (nextExt && nextExt.length <= 10) ext = nextExt
+  } catch {}
+
+  return `${cacheDir}/${dynamicId}_${Date.now()}_${index}${ext}`
+}
+
+async function prepareDynamicForwardImages(baseBot, ctx, dynamicId, msgList = []) {
+  if (!isMilkyRuntime(baseBot, ctx)) {
+    return { msgList, cleanupPaths: [] }
+  }
+
+  const prepared = []
+  const cleanupPaths = []
+  const list = Array.isArray(msgList) ? msgList : [msgList]
+
+  try {
+    for (let i = 0; i < list.length; i += 1) {
+      const item = list[i]
+      const source = getSegmentImageSource(item)
+      if (!/^https?:\/\//i.test(source)) {
+        prepared.push(item)
+        continue
+      }
+
+      const savePath = getDynamicForwardCachePath(dynamicId, i, source)
+      await download.downloadFile(source, savePath, {
+        headers: {
+          referer: "https://www.bilibili.com",
+        },
+      })
+
+      const fullPath = path.join(filemage.RootPath, savePath)
+      cleanupPaths.push(fullPath)
+      prepared.push(segment.image(fullPath))
+    }
+  } catch (err) {
+    cleanupTempFiles(cleanupPaths, "动态图片转发缓存")
+    throw err
+  }
+
+  return { msgList: prepared, cleanupPaths }
 }
 
 function writeBiliData(groupId, uid, data) {
@@ -54,6 +175,72 @@ function writeLiveData(groupId, uid, data) {
   let gdata = getBiliData(groupId) || {}
   gdata[uid].live = data
   writeBiliData(groupId, uid, gdata[uid])
+}
+
+function isNativeForwardPayload(payload) {
+  const list = Array.isArray(payload) ? payload : payload ? [payload] : []
+  return list.some(item => {
+    if (!item || typeof item !== "object") return false
+    if (item.type === "node") return true
+    return item.type === "forward" && Array.isArray(item?.data?.messages)
+  })
+}
+
+async function buildDynamicForwardNodes(ctx, msgList = []) {
+  const list = Array.isArray(msgList) ? msgList : [msgList]
+  const runtimeBot = globalThis.Bot || {}
+  const defaultId = Number(ctx?.user_id ?? runtimeBot?.uin ?? runtimeBot?.user_id ?? 0)
+  let nickname = String(runtimeBot?.nickname || "Bilibili动态").trim() || "Bilibili动态"
+
+  if (
+    ctx?.isGroup &&
+    ctx?.group_id &&
+    defaultId > 0 &&
+    typeof ctx?.getGroupMemberInfo === "function"
+  ) {
+    try {
+      const info = await ctx.getGroupMemberInfo(ctx.group_id, defaultId)
+      nickname = String(info?.card || info?.nickname || nickname).trim() || nickname
+    } catch (err) {
+      logger.warn?.(`[Bilibili] 获取转发昵称失败：${err?.message || err}`)
+    }
+  }
+
+  return list.filter(Boolean).map(message => ({
+    user_id: defaultId > 0 ? defaultId : 0,
+    uin: defaultId > 0 ? defaultId : 0,
+    nickname,
+    sender_name: nickname,
+    name: nickname,
+    message,
+  }))
+}
+
+async function makeDynamicImageForward(baseBot, ctx, groupId, msgList = [], desc = "") {
+  const targetGroupId = Number(groupId)
+  const forwardCtx = {
+    ...(ctx || {}),
+    isGroup: true,
+    group_id: Number.isFinite(targetGroupId) ? targetGroupId : groupId,
+  }
+  const normalizedList = await buildDynamicForwardNodes(forwardCtx, msgList)
+
+  if (baseBot && typeof baseBot.makeForwardMsg === "function") {
+    const forwardMsg = await baseBot.makeForwardMsg(forwardCtx, msgList, desc)
+    if (isNativeForwardPayload(forwardMsg)) return forwardMsg
+  }
+
+  if (ctx && typeof ctx.makeGroupForwardMsg === "function") {
+    const forwardMsg = await ctx.makeGroupForwardMsg(forwardCtx, msgList, desc)
+    if (isNativeForwardPayload(forwardMsg)) return forwardMsg
+  }
+
+  if (typeof globalThis.Bot?.makeGroupForwardMsg === "function") {
+    const forwardMsg = await globalThis.Bot.makeGroupForwardMsg(normalizedList, forwardCtx.group_id)
+    if (isNativeForwardPayload(forwardMsg)) return forwardMsg
+  }
+
+  throw new Error("[Bilibili] forward message API returned non-forward payload")
 }
 
 export function register(bot) {
@@ -252,14 +439,13 @@ export function register(bot) {
     ])
 
     const changeVideo = async (qn, bv, e) => {
-      let qnlist = [120, 116, 112, 80, 64, 32, 16]
-      const BasePath = filemage.RootPath + "src/plugins/bilibili/resources/video/"
-      let videoPath = BasePath + `source_${bv}.mp4`
-      let resultPath = BasePath + `${bv}.mp4`
-      let { videoUrl, audio } = await Bili.getQnVideo(qn, bv)
+      const { videoPath, audioPath, resultPath } = getVideoCachePaths(bv)
+      const { videoUrl, audio } = await Bili.getQnVideo(qn, bv)
+      if (!videoUrl || !audio) {
+        throw new Error("获取视频下载地址失败")
+      }
 
-      let audioPath = BasePath + `source_${bv}.mp3`
-      let bilibi = await download.downloadFile(
+      const videoOk = await download.downloadFile(
         videoUrl,
         `src/plugins/bilibili/resources/video/source_${bv}.mp4`,
         {
@@ -268,7 +454,7 @@ export function register(bot) {
           },
         },
       )
-      let ado = await download.downloadFile(
+      const audioOk = await download.downloadFile(
         audio,
         `src/plugins/bilibili/resources/video/source_${bv}.mp3`,
         {
@@ -277,14 +463,22 @@ export function register(bot) {
           },
         },
       )
-      if (bilibi && ado) {
-        return await ffmpeg.VideoComposite(videoPath, audioPath, resultPath, async () => {
-          return await ctx.reply(segment.video(resultPath))
-        })
+      if (!videoOk || !audioOk) return false
+
+      await composeVideoFile(videoPath, audioPath, resultPath)
+      const sendRes = await e.reply(segment.video(resultPath))
+      if (sendRes) {
+        cleanupVideoCache([videoPath, audioPath, resultPath])
       }
+      return sendRes
     }
 
-    changeVideo(qn, bv, ctx)
+    try {
+      await changeVideo(qn, bv, ctx)
+    } catch (err) {
+      logger.error?.(`[Bilibili] 视频解析发送失败：${err?.message || err}`)
+      return await ctx.reply(`视频发送失败：${err?.message || "未知错误"}`)
+    }
   })
 
   bot.registerCommand("^(|#)b站扫码$", async ctx => {
@@ -474,14 +668,30 @@ export function register(bot) {
             })
           }
           if (imglist.length > 0 && result.type != "专栏") {
-            await Bot.sendMessage(
-              { group_id: g },
-              await ctx.makeGroupForwardMsg(
-                { isGroup: true, group_id: Number(g), ...ctx },
-                imglist,
+            let forwardImgList = imglist
+            let cleanupPaths = []
+            try {
+              const prepared = await prepareDynamicForwardImages(bot, ctx, result.id, imglist)
+              forwardImgList = prepared.msgList
+              cleanupPaths = prepared.cleanupPaths
+
+              const forwardMsg = await makeDynamicImageForward(
+                bot,
+                ctx,
+                g,
+                forwardImgList,
                 "动态图片",
-              ),
-            )
+              )
+              await Bot.sendMessage(
+                { group_id: g },
+                forwardMsg,
+              )
+            } catch (err) {
+              logger.error?.(`[Bilibili] 动态图片转发失败，改为直接发送图片：${err?.message || err}`)
+              await Bot.sendMessage({ group_id: g }, forwardImgList)
+            } finally {
+              cleanupTempFiles(cleanupPaths, "动态图片转发缓存")
+            }
           }
 
           result = {

@@ -84,6 +84,15 @@
             </select>
           </label>
           <label>
+            主动指令总开关（proactive.command_enable）
+            <select id="g_proactive_command_enable">
+              <option value="true">true</option>
+              <option value="false">false</option>
+            </select>
+          </label>
+        </div>
+        <div class="row">
+          <label>
             默认允许主动发言（proactive.allow_default）
             <select id="g_proactive_allow_default">
               <option value="true">true</option>
@@ -121,6 +130,13 @@
               <option value="false">false</option>
             </select>
           </label>
+          <label>
+            本群主动指令开关（proactive_command_enabled）
+            <select id="c_proactive_command_enabled">
+              <option value="true">true</option>
+              <option value="false">false</option>
+            </select>
+          </label>
         </div>
         <div class="row">
           <label>
@@ -129,7 +145,7 @@
           </label>
           <label>
             说明
-            <input readonly value="群内指令：@bot 开启学习/关闭学习；@bot 不可以（回复机器人消息）" />
+            <input readonly value="群内指令：@bot 开启学习/关闭学习；@bot 开启主动发言/关闭主动发言；@bot 开启主动指令/关闭主动指令" />
           </label>
         </div>
         <div class="row">
@@ -223,4 +239,3 @@
     <script src="./static/app.js"></script>
   </body>
 </html>
-

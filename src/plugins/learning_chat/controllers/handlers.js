@@ -133,12 +133,12 @@ function isQqNtMediaUrl(value) {
 }
 
 function getImageCandidateUrl(data = {}) {
-  const candidates = [data.url, data.fileId, data.path, data.temp_url, data.uri]
+  const candidates = [data.file, data.url, data.fileId, data.path, data.temp_url, data.uri]
   return candidates.find(v => isHttpUrl(v)) || ""
 }
 
 function getOnebotDirectImageRef(data = {}) {
-  const candidates = [data.fileId, data.path, data.uri, data.url]
+  const candidates = [data.file, data.id, data.fileId, data.path, data.uri, data.url]
   for (const raw of candidates) {
     const text = String(raw || "").trim()
     if (!text) continue
@@ -615,6 +615,17 @@ function isBlockUsersCommand(ctx) {
   return /^(拉黑学习|学习拉黑)$/.test(msg)
 }
 
+function isProactiveControlCommand(ctx) {
+  if (!ctx?.atBot) return false
+  const msg = String(ctx?.msg || "").trim()
+  return /^(开启主动发言|关闭主动发言|开启主动指令|关闭主动指令)$/.test(msg)
+}
+
+function isListProactiveGroupsCommand(ctx) {
+  const msg = String(ctx?.msg || "").trim()
+  return /^#?查看主动发言群聊$/.test(msg)
+}
+
 function pickWeighted(items) {
   const list = Array.isArray(items) ? items : []
   const total = list.reduce((acc, it) => acc + Math.max(0, Number(it.weight) || 0), 0)
@@ -851,7 +862,8 @@ function parseMentionTargets(ctx) {
   const out = []
   for (const seg of segments) {
     if (!seg || seg.type !== UniversalSegmentType.MENTION) continue
-    const target = seg?.data?.target !== undefined ? String(seg.data.target) : ""
+    const target =
+      seg?.data?.qq !== undefined ? String(seg.data.qq) : seg?.data?.target !== undefined ? String(seg.data.target) : ""
     if (!target) continue
     if (selfId && target === selfId) continue
     out.push(target)
@@ -883,6 +895,32 @@ async function cmdBlockLearningUsers(ctx) {
   const next = Array.from(new Set([...current, ...targets]))
   await setGroupOverrides(gid, { block_users: next })
   return await ctx.reply(`已将 ${targets.length} 人加入本群学习黑名单`)
+}
+
+async function cmdToggleProactiveSetting(ctx) {
+  if (!ctx?.isGroup || !ctx?.group_id) return false
+  if (!ctx?.atBot) return false
+  if (!ctx?.isMaster) return await ctx.reply("仅主人可用")
+
+  const msg = String(ctx?.msg || "").trim()
+  if (msg === "开启主动发言") {
+    await setGroupOverrides(String(ctx.group_id), { proactive_enabled: true })
+    return await ctx.reply("本群已开启主动发言")
+  }
+  if (msg === "关闭主动发言") {
+    await setGroupOverrides(String(ctx.group_id), { proactive_enabled: false })
+    return await ctx.reply("本群已关闭主动发言")
+  }
+  if (msg === "开启主动指令") {
+    await setGroupOverrides(String(ctx.group_id), { proactive_command_enabled: true })
+    return await ctx.reply("本群已开启主动指令")
+  }
+  if (msg === "关闭主动指令") {
+    await setGroupOverrides(String(ctx.group_id), { proactive_command_enabled: false })
+    return await ctx.reply("本群已关闭主动指令")
+  }
+
+  return false
 }
 
 async function handleRepeat(ctx, groupCfg, msgInfo) {
@@ -1052,7 +1090,15 @@ function shouldIgnoreForLearning(ctx, groupCfg, msgInfo) {
   if (!ctx?.group_id) return true
   if (!msgInfo?.hash) return true
 
-  if (isToggleCommand(ctx) || isBanCommand(ctx) || isBlockUsersCommand(ctx)) return true
+  if (
+    isToggleCommand(ctx) ||
+    isBanCommand(ctx) ||
+    isBlockUsersCommand(ctx) ||
+    isProactiveControlCommand(ctx) ||
+    isListProactiveGroupsCommand(ctx)
+  ) {
+    return true
+  }
 
   const uid = String(ctx.user_id ?? "")
   if (uid && groupCfg.block_users.includes(uid)) return true
@@ -1095,6 +1141,64 @@ async function fetchLatestUserMessageRecord(groupId, userId) {
   } catch {
     return null
   }
+}
+
+export async function listEnabledProactiveGroups({ discoveredIds = null, extraGroupIds = [] } = {}) {
+  const cfg = getConfig()
+  const ids = new Set([
+    ...Object.keys(cfg?.groups || {}),
+    ...Array.from(heatByGroup.keys()),
+    ...((Array.isArray(extraGroupIds) ? extraGroupIds : []).map(id => String(id || "")).filter(Boolean)),
+  ])
+
+  if (Array.isArray(discoveredIds)) {
+    for (const gid of discoveredIds.map(id => String(id || "")).filter(Boolean)) ids.add(gid)
+  } else {
+    const more = await listGroupIdsFromMessageDbTables().catch(() => [])
+    for (const gid of more.map(id => String(id || "")).filter(Boolean)) ids.add(gid)
+  }
+
+  const items = []
+  for (const gid of Array.from(ids)) {
+    const effective = getEffectiveGroupConfig(gid)
+    if (!effective?.proactive_enabled) continue
+
+    const override =
+      cfg?.groups && typeof cfg.groups === "object" && cfg.groups[gid] && typeof cfg.groups[gid] === "object"
+        ? cfg.groups[gid]
+        : {}
+
+    items.push({
+      group_id: gid,
+      effective,
+      override,
+      global_proactive_enabled: Boolean(cfg?.proactive?.enable),
+      global_proactive_command_enabled: Boolean(cfg?.proactive?.command_enable),
+    })
+  }
+
+  items.sort((a, b) => String(a.group_id).localeCompare(String(b.group_id)))
+  return items
+}
+
+async function cmdListProactiveGroups(ctx) {
+  if (!ctx?.isMaster) return await ctx.reply("仅主人可用")
+
+  const cfg = getConfig()
+  const groups = await listEnabledProactiveGroups()
+  if (!groups.length) return await ctx.reply("当前没有开启主动发言的群聊")
+
+  const lines = ["主动发言已开启的群聊："]
+  if (!cfg?.proactive?.enable || !cfg?.proactive?.command_enable) {
+    lines.push("提示：群配置开启，但当前全局未生效")
+  }
+
+  for (const item of groups) {
+    const commandState = item?.effective?.proactive_command_enabled ? "开启" : "关闭"
+    lines.push(`群 ${item.group_id}：主动指令${commandState}`)
+  }
+
+  return await ctx.reply(lines.join("\n"))
 }
 
 function pickUserFavoriteCommand(rows = []) {
@@ -1143,7 +1247,7 @@ export async function runProactiveCommandTick(ctxLike, botApi) {
 
   for (const gid of Array.from(ids)) {
     const groupCfg = getEffectiveGroupConfig(gid)
-    if (!groupCfg?.proactive_enabled) continue
+    if (!groupCfg?.proactive_enabled || !groupCfg?.proactive_command_enabled) continue
 
     const heat = await ensureHeatForGroup(gid).catch(() => null)
     if (!heat || Number(heat?.messagesToday || 0) < Number(cfg?.proactive?.min_messages_today || 0)) continue
@@ -1589,6 +1693,29 @@ export function register(bot) {
     async ctx => {
       if (!ctx?.isGroup || !ctx?.atBot) return false
       return await cmdBanReply(ctx)
+    },
+  )
+
+  bot.registerCommand(
+    [
+      "^(开启主动发言|关闭主动发言|开启主动指令|关闭主动指令)$",
+      1000,
+      { example: "@bot 开启主动发言", desc: "开启/关闭本群主动发言或主动指令（主人）" },
+    ],
+    async ctx => {
+      if (!ctx?.isGroup || !ctx?.atBot) return false
+      return await cmdToggleProactiveSetting(ctx)
+    },
+  )
+
+  bot.registerCommand(
+    [
+      "^(|#)查看主动发言群聊$",
+      1000,
+      { example: ["#查看主动发言群聊"], desc: "查看已开启主动发言的群聊（主人）" },
+    ],
+    async ctx => {
+      return await cmdListProactiveGroups(ctx)
     },
   )
 

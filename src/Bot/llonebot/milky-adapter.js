@@ -731,6 +731,12 @@ class MilkyAdapter {
 
     const list = Array.isArray(forwardMsg) ? forwardMsg : forwardMsg ? [forwardMsg] : []
     const tempUrlCache = new Map()
+    const isDirectMediaUri = input => {
+      if (input === undefined || input === null) return false
+      const raw = String(input).trim()
+      if (!raw) return false
+      return /^(https?:\/\/|file:\/\/|base64:\/\/)/i.test(raw) || /^[a-zA-Z]:[\\/]/.test(raw)
+    }
 
     const toResourceId = seg => {
       if (!seg || typeof seg !== "object") return ""
@@ -755,6 +761,34 @@ class MilkyAdapter {
       const type = String(seg.type || "").toLowerCase()
       if (type !== "image") return this.dealMilkyMsg(seg)
 
+      const data = seg.data && typeof seg.data === "object" ? seg.data : {}
+      const directUriRaw =
+        data?.url ??
+        seg?.url ??
+        data?.uri ??
+        seg?.uri ??
+        data?.temp_url ??
+        seg?.temp_url ??
+        data?.tempUrl ??
+        seg?.tempUrl ??
+        data?.path ??
+        seg?.path ??
+        data?.file ??
+        seg?.file ??
+        ""
+      if (isDirectMediaUri(directUriRaw)) {
+        return this.dealMilkyMsg({
+          ...seg,
+          data: {
+            ...data,
+            url: directUriRaw,
+            uri: directUriRaw,
+            temp_url: directUriRaw,
+            tempUrl: directUriRaw,
+          },
+        })
+      }
+
       const resource_id = toResourceId(seg)
       if (!resource_id) return this.dealMilkyMsg(seg)
 
@@ -777,7 +811,6 @@ class MilkyAdapter {
 
       if (!url) return this.dealMilkyMsg(seg)
 
-      const data = seg.data && typeof seg.data === "object" ? seg.data : {}
       const patched = {
         ...seg,
         data: {

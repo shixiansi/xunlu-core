@@ -1,4 +1,15 @@
-import { getOrCreateGroup, getOrCreateUser, loadDb, normalizeId, saveDb } from "../model/store.js"
+import {
+  getEffectiveRepeatMuteEnabled,
+  getGlobalRepeatMuteEnabled,
+  getGroupRepeatMuteOverride,
+  getOrCreateGroup,
+  getOrCreateUser,
+  loadDb,
+  normalizeId,
+  saveDb,
+  setGlobalRepeatMuteEnabled,
+  setGroupRepeatMuteEnabled,
+} from "../model/store.js"
 import { setGroupMemberMute } from "../model/mute.js"
 import {
   getRuntimeBotGroupMessageStreak,
@@ -212,18 +223,20 @@ function signatureFromSegments(segments) {
 
     switch (type) {
       case "text": {
-        const content = String(data.content ?? "")
+        const content = String(data.text ?? data.content ?? "")
           .replace(/\s+/g, " ")
           .trim()
         if (content) parts.push(`t:${content}`)
         break
       }
-      case "mention": {
-        const target = data.target !== undefined ? String(data.target) : ""
+      case "mention":
+      case "at": {
+        const target = data.qq !== undefined ? String(data.qq) : data.target !== undefined ? String(data.target) : ""
         if (target) parts.push(`@:${target}`)
         break
       }
       case "mentionAll":
+      case "atAll":
         parts.push("@all")
         break
       case "face":
@@ -233,20 +246,21 @@ function signatureFromSegments(segments) {
         break
       }
       case "image": {
-        const milkySha1 = tryMilkyResourceSha1(data.fileId)
+        const mediaId = data.id ?? data.fileId
+        const milkySha1 = tryMilkyResourceSha1(mediaId)
         const key = milkySha1
           ? `milkysha1:${milkySha1}`
-          : normalizeMediaKey(data.fileId || data.url || data.path || "")
+          : normalizeMediaKey(data.file || data.url || data.path || mediaId || "")
         parts.push(key ? `img:${key}` : "img")
         break
       }
       case "file": {
-        const key = data.fileId || data.url || data.name || ""
+        const key = data.id || data.fileId || data.file || data.url || data.name || ""
         parts.push(key ? `file:${key}` : "file")
         break
       }
       case "reply": {
-        const key = data.msgId || data.seq || ""
+        const key = data.id || data.msgId || data.seq || ""
         parts.push(key ? `reply:${key}` : "reply")
         break
       }
@@ -339,9 +353,70 @@ function cuteBotRepeatText({ strike, durationSeconds = 0, muted = false }) {
   return `复读机器人消息：禁言 ${durationText}（今天第 ${strike} 次）`
 }
 
+function cuteBotRepeatNoMuteText({ strike }) {
+  const templates = {
+    1: [
+      "学我说话是吧，哼，这次先记下来。",
+      "不许模仿我说话啦，我要鼓起脸生气一下下了。",
+      "哼哼，怎么连我的话都要复读，先原谅你这一次。",
+    ],
+    2: [
+      "还学我说话，我脸都鼓起来了。",
+      "第二次学我说话啦，我真的要生气了。",
+      "再学我说话，我就要认真记仇啦。",
+    ],
+    3: [
+      "又来学我说话，我真的要气鼓鼓了。",
+      "第三次复读机器人台词，不可以这样哦。",
+      "哼，我说一句你学一句是吧？我现在很生气。",
+    ],
+    4: [
+      "还复读我，我现在超生气的。",
+      "第四次了，不可以再学我说话。",
+      "我真的生气啦，再这样我要记小本本了。",
+    ],
+  }
+
+  const cappedStrike = Math.min(BOT_REPEAT_MAX_STRIKES, Math.max(1, Number(strike) || 1))
+  const text = pickRandom(templates[cappedStrike])
+  return text
+    ? `${text}（今天第 ${strike} 次复读机器人消息）`
+    : `不可以复读机器人消息哦（今天第 ${strike} 次）`
+}
+
 function isBotSender(ctx, senderId) {
   const selfId = normalizeId(getBotSelfId(ctx))
   return Boolean(selfId) && selfId === normalizeId(senderId)
+}
+
+function formatOnOff(enabled) {
+  return enabled ? "开启" : "关闭"
+}
+
+function formatGroupOverrideLabel(override) {
+  if (typeof override !== "boolean") return "未设置（跟随全局）"
+  return override ? "开启" : "关闭"
+}
+
+function isMutePermissionError(errMsg) {
+  const text = String(errMsg || "").trim().toLowerCase()
+  if (!text) return false
+
+  const patterns = [
+    "权限",
+    "无权",
+    "没有权限",
+    "禁言权限",
+    "管理员",
+    "admin",
+    "owner",
+    "permission",
+    "not allowed",
+    "not permit",
+    "insufficient",
+    "forbidden",
+  ]
+  return patterns.some(pattern => text.includes(pattern))
 }
 
 function getTodayStrikeCount(user) {
@@ -385,17 +460,6 @@ function bumpBotRepeatStrike(user) {
   return { today, nextStrike }
 }
 
-function buildMuteFailureText(
-  errMsg,
-  { botMessage = false, strike = 1, durationSeconds = 0, adminState = null } = {},
-) {
-  const suffix = adminState === false ? " 当前检测结果显示 bot 可能没有禁言权限。" : ""
-  if (botMessage) {
-    return `${cuteBotRepeatText({ strike, durationSeconds, muted: true })} 不过这次禁言失败了：${errMsg || "未知错误"}${suffix}`
-  }
-  return `检测到复读，但禁言失败：${errMsg || "未知错误"}${suffix}`
-}
-
 async function replyMuteFailure(
   ctx,
   senderId,
@@ -406,6 +470,11 @@ async function replyMuteFailure(
     ? `${cuteBotRepeatText({ strike, durationSeconds, muted: true })} 不过这次禁言失败了：${errMsg || "未知错误"}`
     : `检测到复读，但禁言失败：${errMsg || "未知错误"}`
   return await ctx.reply(text, false, { at: senderId })
+}
+
+async function replyNoMutePermission(ctx, senderId, { botMessage = false, strike = 1 } = {}) {
+  if (!botMessage) return false
+  return await ctx.reply(cuteBotRepeatNoMuteText({ strike }), false, { at: senderId })
 }
 
 function shouldIgnoreForRepeat(ctx) {
@@ -472,6 +541,50 @@ async function cmdUnban(ctx) {
   return await ctx.reply("已解禁", false, { at: targetId })
 }
 
+async function cmdSettings(ctx) {
+  if (!ctx?.isMaster) return await ctx.reply("仅主人可用")
+
+  const db = loadDb()
+  const globalEnabled = getGlobalRepeatMuteEnabled(db)
+  const groupId = normalizeId(ctx?.group_id)
+  const group = groupId ? getOrCreateGroup(db, groupId) : null
+  const groupOverride = group ? getGroupRepeatMuteOverride(group) : null
+  const effectiveEnabled = groupId ? getEffectiveRepeatMuteEnabled(db, groupId) : globalEnabled
+
+  const lines = ["复读禁言设置"]
+  lines.push(`全局：${formatOnOff(globalEnabled)}`)
+  if (groupId) {
+    lines.push(`本群单独：${formatGroupOverrideLabel(groupOverride)}`)
+    lines.push(`当前生效：${formatOnOff(effectiveEnabled)}（群:${groupId}）`)
+    lines.push("指令：#复读禁言设置单独开启 / #复读禁言设置单独关闭")
+  } else {
+    lines.push("群单独开关请在对应群内使用")
+  }
+  lines.push("指令：#复读禁言设置全局开启 / #复读禁言设置全局关闭")
+  return await ctx.reply(lines.join("\n"))
+}
+
+async function cmdToggleGlobal(ctx, enabled) {
+  if (!ctx?.isMaster) return await ctx.reply("仅主人可用")
+  const db = loadDb()
+  setGlobalRepeatMuteEnabled(db, enabled)
+  saveDb(db)
+  return await ctx.reply(`复读禁言全局已${formatOnOff(Boolean(enabled))}`)
+}
+
+async function cmdToggleGroup(ctx, enabled) {
+  if (!ctx?.isMaster) return await ctx.reply("仅主人可用")
+  if (!ctx?.isGroup || !ctx?.group_id) return await ctx.reply("群单独开关请在目标群内使用")
+
+  const db = loadDb()
+  const group = getOrCreateGroup(db, ctx.group_id)
+  if (!group) return await ctx.reply("群数据初始化失败")
+
+  setGroupRepeatMuteEnabled(group, enabled)
+  saveDb(db)
+  return await ctx.reply(`本群复读禁言已${formatOnOff(Boolean(enabled))}`)
+}
+
 async function applyRepeatMute(
   ctx,
   { db, group, groupId, senderId, strike, today, botMessage = false } = {},
@@ -483,16 +596,38 @@ async function applyRepeatMute(
     return await ctx.reply(cuteBotRepeatText({ strike, muted: false }), false, { at: senderId })
   }
 
-  if (false && !(await resolveBotIsAdmin(ctx, groupId))) {
-    if (botMessage) {
-      saveDb(db)
-      return await ctx.reply(
-        `${cuteBotRepeatText({ strike, durationSeconds: duration, muted: true })} 可惜我现在没有禁言权限。`,
-        false,
-        { at: senderId },
-      )
+  const adminState = await resolveBotIsAdmin(ctx, groupId).catch(() => null)
+  if (adminState === false) {
+    saveDb(db)
+    return await replyNoMutePermission(ctx, senderId, { botMessage, strike })
+  }
+
+  let muteRes
+  let errMsg = ""
+  try {
+    muteRes = await setGroupMemberMute(ctx, {
+      groupId,
+      userId: senderId,
+      durationSeconds: duration,
+    })
+  } catch (err) {
+    errMsg = err?.message || "未知错误"
+  }
+
+  if (!errMsg && muteRes && muteRes.ok === false) {
+    errMsg = muteRes.error || "未知错误"
+  }
+
+  if (errMsg) {
+    saveDb(db)
+    if (adminState === false || isMutePermissionError(errMsg)) {
+      return await replyNoMutePermission(ctx, senderId, { botMessage, strike })
     }
-    return false
+    return await replyMuteFailure(ctx, senderId, errMsg, {
+      botMessage,
+      strike,
+      durationSeconds: duration,
+    })
   }
 
   if (!group.muted || typeof group.muted !== "object") group.muted = {}
@@ -505,29 +640,6 @@ async function applyRepeatMute(
     reason: botMessage ? "repeat_bot" : "repeat",
   }
   saveDb(db)
-
-  let muteRes
-  try {
-    muteRes = await setGroupMemberMute(ctx, {
-      groupId,
-      userId: senderId,
-      durationSeconds: duration,
-    })
-  } catch (err) {
-    return await replyMuteFailure(ctx, senderId, err?.message || "未知错误", {
-      botMessage,
-      strike,
-      durationSeconds: duration,
-    })
-  }
-
-  if (muteRes && muteRes.ok === false) {
-    return await replyMuteFailure(ctx, senderId, muteRes.error || "未知错误", {
-      botMessage,
-      strike,
-      durationSeconds: duration,
-    })
-  }
 
   const replyText = botMessage
     ? cuteBotRepeatText({ strike, durationSeconds: duration, muted: true })
@@ -563,6 +675,10 @@ async function handleRepeat(ctx) {
 
   if (botPrevList.some(item => item.sig === sig)) {
     const db = loadDb()
+    if (!getEffectiveRepeatMuteEnabled(db, groupId)) {
+      lastByGroup.set(groupId, current)
+      return false
+    }
     const group = getOrCreateGroup(db, groupId)
     if (!group) return false
     const user = getOrCreateUser(group, senderId)
@@ -591,6 +707,10 @@ async function handleRepeat(ctx) {
   }
 
   const db = loadDb()
+  if (!getEffectiveRepeatMuteEnabled(db, groupId)) {
+    lastByGroup.set(groupId, current)
+    return false
+  }
   const group = getOrCreateGroup(db, groupId)
   if (!group) return false
   const user = getOrCreateUser(group, senderId)
@@ -625,6 +745,37 @@ async function handleRepeat(ctx) {
 export function register(bot) {
   if (!bot || typeof bot.registerCommand !== "function") return
 
+  bot.registerCommand(
+    ["^(|#)复读禁言设置$", 900, { example: ["#复读禁言设置"], desc: "查看复读禁言开关（主人）" }],
+    async ctx => {
+      return await cmdSettings(ctx)
+    },
+  )
+
+  bot.registerCommand(
+    [
+      "^(|#)复读禁言设置全局(开启|关闭)$",
+      900,
+      { example: ["#复读禁言设置全局开启"], desc: "开启/关闭复读禁言全局开关（主人）" },
+    ],
+    async ctx => {
+      const enabled = /开启$/.test(String(ctx?.msg || ""))
+      return await cmdToggleGlobal(ctx, enabled)
+    },
+  )
+
+  bot.registerCommand(
+    [
+      "^(|#)复读禁言设置单独(开启|关闭)$",
+      900,
+      { example: ["#复读禁言设置单独关闭"], desc: "开启/关闭本群复读禁言（主人）" },
+    ],
+    async ctx => {
+      const enabled = /开启$/.test(String(ctx?.msg || ""))
+      return await cmdToggleGroup(ctx, enabled)
+    },
+  )
+
   bot.registerCommand(["^(解禁\\s*全部|全部解禁|解禁(\\s*\\d{4,13})?)$", 900], async ctx => {
     return await cmdUnban(ctx)
   })
@@ -641,4 +792,14 @@ export function register(bot) {
 
 export function onBotEvent(event) {
   return event
+}
+
+export const __test = {
+  async handleRepeat(ctx) {
+    return await handleRepeat(ctx)
+  },
+  resetState() {
+    lastByGroup.clear()
+    botAdminCache.clear()
+  },
 }

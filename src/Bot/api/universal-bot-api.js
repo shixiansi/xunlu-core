@@ -1,5 +1,11 @@
 import { coerceToUniversalMessage } from "../message/context.js"
 import { UniversalMessage } from "../message/universal-message.js"
+import {
+  extractMemberRoleFlags,
+  getMemberRoleFlagsWithFallback,
+  hasAdminRole,
+  hasOwnerRole,
+} from "../member-role-utils.js"
 import { rememberRuntimeLastGroupMessage } from "../runtime-last-message.js"
 
 function getRuntimeBotOrNull() {
@@ -17,6 +23,50 @@ function toInt(value) {
   if (v === "") return undefined
   const num = Number(v)
   return Number.isFinite(num) ? num : undefined
+}
+
+function getSelfIdFromTarget(ctx, runtimeBot) {
+  return (
+    toInt(ctx?.self_id) ??
+    toInt(ctx?.bot?.uin) ??
+    toInt(ctx?.bot?.self_id) ??
+    toInt(runtimeBot?.uin) ??
+    toInt(runtimeBot?.self_id) ??
+    toInt(runtimeBot?.user_id) ??
+    toInt(runtimeBot?.botQQ)
+  )
+}
+
+function getFastMemberRoleFlags(ctx, userId) {
+  if (!ctx || userId === undefined || userId === null) return null
+  const uid = toInt(userId)
+  if (uid === undefined) return null
+
+  const currentUserId = toInt(ctx?.user_id ?? ctx?.sender_id)
+  if (currentUserId === undefined || currentUserId !== uid) return null
+
+  return (
+    extractMemberRoleFlags(ctx?.member) ??
+    extractMemberRoleFlags(ctx?.group_member) ??
+    extractMemberRoleFlags(ctx?.sender) ??
+    extractMemberRoleFlags({
+      role: ctx?.isOwner ? "owner" : ctx?.isAdmin ? "admin" : "",
+      is_owner: ctx?.isOwner,
+      is_admin: ctx?.isAdmin,
+    })
+  )
+}
+
+function getFastBotRoleFlags(ctx) {
+  if (!ctx || typeof ctx !== "object") return null
+  return (
+    extractMemberRoleFlags(ctx?.botMember) ??
+    extractMemberRoleFlags({
+      role: ctx?.botRole,
+      is_owner: ctx?.botIsOwner,
+      is_admin: ctx?.botIsAdmin,
+    })
+  )
 }
 
 function resolveProtocol({ ctx, bot, runtimeBot, adapterHint } = {}) {
@@ -302,14 +352,18 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       if (userId === undefined) throw new Error("[getFriendInfo] requires user_id")
 
       if (protocol === "icqq") {
-        try {
-          const rawGetStranger =
-            runtimeBot?.__xunlu_raw_getStrangerInfo || runtimeBot?.getStrangerInfo || null
-          if (rawGetStranger) return await rawGetStranger.call(runtimeBot, userId)
-        } catch (err) {
-          console.warn("[getFriendInfo] icqq upstream failed:", err?.message || err)
-        }
-        return { user_id: userId, nickname: String(userId) }
+        const rawGetStranger =
+          runtimeBot?.__xunlu_raw_getStrangerInfo || runtimeBot?.getStrangerInfo || null
+        if (rawGetStranger) return await rawGetStranger.call(runtimeBot, userId)
+
+        const rawGetFriendInfo = getRawMethod(runtimeBot, "getFriendInfo", api.getFriendInfo)
+        if (!rawGetFriendInfo) throw new Error("[getFriendInfo] icqq API not available")
+
+        const res = await rawGetFriendInfo.call(runtimeBot, {
+          user_id: userId,
+          no_cache: Boolean(input.no_cache),
+        })
+        return res?.friend ?? res
       }
 
       const raw = getRawMethod(runtimeBot, "getFriendInfo", api.getFriendInfo)
@@ -352,7 +406,22 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
         }
       }
 
-      // icqq/yunzai: best-effort fallback to onebot action name if supported by upstream
+      // icqq: prefer native client API, fallback to yunzai/onebot-style send_like when available.
+      const rawSendLike = getRawMethod(runtimeBot, "sendLike", api.sendProfileLike)
+      if (rawSendLike) {
+        return await rawSendLike.call(runtimeBot, user_id, times)
+      }
+
+      const thumbTarget =
+        typeof runtimeBot?.pickFriend === "function"
+          ? runtimeBot.pickFriend(user_id)
+          : typeof runtimeBot?.pickUser === "function"
+            ? runtimeBot.pickUser(user_id)
+            : null
+      if (thumbTarget?.thumbUp) {
+        return await thumbTarget.thumbUp(times)
+      }
+
       try {
         return await api.sendApi.call(ctx ?? api, "send_like", { user_id, times })
       } catch (err) {
@@ -772,6 +841,9 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
         if (runtimeBot.pickFriend) {
           return await runtimeBot.pickFriend(toInt(t.user_id) ?? t.user_id).sendMsg(outSegments)
         }
+        if (runtimeBot.pickUser) {
+          return await runtimeBot.pickUser(toInt(t.user_id) ?? t.user_id).sendMsg(outSegments)
+        }
       }
 
       throw new Error("[sendMessage] API not available")
@@ -969,15 +1041,21 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       const runtimeBot = getRuntimeBotOrNull()
       const protocol = resolveProtocol({ ctx, bot, runtimeBot, adapterHint })
 
-      const gid = toInt(group_id ?? ctx?.group_id)
+      const groupInput =
+        group_id && typeof group_id === "object" && !Array.isArray(group_id) ? group_id : null
+      const gid = toInt(groupInput?.group_id ?? groupInput?.groupId ?? group_id ?? ctx?.group_id)
       if (gid === undefined) throw new Error("[getGroupMemberList] requires group_id")
+
+      let lastError = null
 
       // icqq: prefer native getMemberMap
       if (protocol === "icqq" && runtimeBot?.pickGroup) {
         try {
           const group = runtimeBot.pickGroup(gid)
           if (group?.getMemberMap) return await group.getMemberMap()
-        } catch {}
+        } catch (err) {
+          lastError = err
+        }
       }
 
       const rawGetGroupMemberList = getRawMethod(
@@ -993,17 +1071,20 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
               : await rawGetGroupMemberList.call(runtimeBot, { group_id: gid })
           return toMemberMap(res)
         } catch (err) {
+          lastError = err
           // some icqq implementations use object input
           try {
             const res2 = await rawGetGroupMemberList.call(runtimeBot, { group_id: gid })
             return toMemberMap(res2)
-          } catch {
-            console.warn("[getGroupMemberList] upstream failed:", err?.message || err)
+          } catch (fallbackErr) {
+            lastError = fallbackErr
+            console.warn("[getGroupMemberList] upstream failed:", fallbackErr?.message || fallbackErr)
           }
         }
       }
 
-      return new Map()
+      if (lastError) throw lastError
+      throw new Error("[getGroupMemberList] API not available")
     },
 
     async getGroupMemberInfo(group_id, user_id) {
@@ -1011,10 +1092,20 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       const runtimeBot = getRuntimeBotOrNull()
       const protocol = resolveProtocol({ ctx, bot, runtimeBot, adapterHint })
 
-      const gid = toInt(group_id ?? ctx?.group_id)
-      const uid = toInt(user_id ?? ctx?.user_id ?? ctx?.sender_id)
+      const groupInput =
+        group_id && typeof group_id === "object" && !Array.isArray(group_id) ? group_id : null
+      const gid = toInt(groupInput?.group_id ?? groupInput?.groupId ?? group_id ?? ctx?.group_id)
+      const uid = toInt(
+        groupInput?.user_id ??
+          groupInput?.userId ??
+          user_id ??
+          ctx?.user_id ??
+          ctx?.sender_id,
+      )
       if (gid === undefined || uid === undefined)
         throw new Error("[getGroupMemberInfo] requires group_id/user_id")
+
+      let lastError = null
 
       const rawGetGroupMemberInfo = getRawMethod(
         runtimeBot,
@@ -1029,19 +1120,79 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
               : await rawGetGroupMemberInfo.call(runtimeBot, { group_id: gid, user_id: uid })
           return res?.member ?? res
         } catch (err) {
+          lastError = err
           try {
             const res2 = await rawGetGroupMemberInfo.call(runtimeBot, {
               group_id: gid,
               user_id: uid,
             })
             return res2?.member ?? res2
-          } catch {
-            console.warn("[getGroupMemberInfo] upstream failed:", err?.message || err)
+          } catch (fallbackErr) {
+            lastError = fallbackErr
+            console.warn("[getGroupMemberInfo] upstream failed:", fallbackErr?.message || fallbackErr)
           }
         }
       }
 
-      return null
+      if (lastError) throw lastError
+      throw new Error("[getGroupMemberInfo] API not available")
+    },
+
+    async getGroupMemberRoleFlags(group_id, user_id) {
+      const ctx = this && typeof this === "object" ? this : null
+      const runtimeBot = getRuntimeBotOrNull()
+
+      const groupInput =
+        group_id && typeof group_id === "object" && !Array.isArray(group_id) ? group_id : null
+      const gid = toInt(groupInput?.group_id ?? groupInput?.groupId ?? group_id ?? ctx?.group_id)
+      const uid = toInt(
+        groupInput?.user_id ??
+          groupInput?.userId ??
+          user_id ??
+          ctx?.user_id ??
+          ctx?.sender_id,
+      )
+      if (gid === undefined || uid === undefined) return null
+
+      const fastFlags = getFastMemberRoleFlags(ctx, uid)
+      if (fastFlags) return fastFlags
+
+      return await getMemberRoleFlagsWithFallback(ctx || runtimeBot || {}, gid, uid)
+    },
+
+    async isGroupOwner(group_id, user_id) {
+      const flags = await api.getGroupMemberRoleFlags.call(this, group_id, user_id)
+      return hasOwnerRole(flags)
+    },
+
+    async isGroupAdmin(group_id, user_id) {
+      const flags = await api.getGroupMemberRoleFlags.call(this, group_id, user_id)
+      return hasAdminRole(flags)
+    },
+
+    async getBotGroupRoleFlags(group_id) {
+      const ctx = this && typeof this === "object" ? this : null
+      const runtimeBot = getRuntimeBotOrNull()
+      const groupInput =
+        group_id && typeof group_id === "object" && !Array.isArray(group_id) ? group_id : null
+      const gid = toInt(groupInput?.group_id ?? groupInput?.groupId ?? group_id ?? ctx?.group_id)
+      const selfId = getSelfIdFromTarget(ctx, runtimeBot)
+      if (gid === undefined || selfId === undefined) return null
+
+      const fastFlags = getFastBotRoleFlags(ctx)
+      if (fastFlags) return fastFlags
+
+      return await getMemberRoleFlagsWithFallback(ctx || runtimeBot || {}, gid, selfId)
+    },
+
+    async isBotGroupOwner(group_id) {
+      const flags = await api.getBotGroupRoleFlags.call(this, group_id)
+      return hasOwnerRole(flags)
+    },
+
+    async isBotGroupAdmin(group_id) {
+      const flags = await api.getBotGroupRoleFlags.call(this, group_id)
+      return hasAdminRole(flags)
     },
 
     async acceptGroupRequest(input = {}) {
@@ -1093,7 +1244,12 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       const sub_type = mapOnebotGroupRequestSubType(input)
       if (!flag) throw new Error("[acceptGroupRequest] icqq requires flag")
       if (runtimeBot?.setGroupAddRequest)
-        return await runtimeBot.setGroupAddRequest(flag, sub_type, true)
+        return await runtimeBot.setGroupAddRequest(
+          flag,
+          true,
+          input.reason !== undefined ? String(input.reason) : "",
+          input.block,
+        )
       if (runtimeBot?.sendApi) {
         return await runtimeBot.sendApi("set_group_add_request", {
           flag,
@@ -1154,7 +1310,12 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       const sub_type = mapOnebotGroupRequestSubType(input)
       if (!flag) throw new Error("[rejectGroupRequest] icqq requires flag")
       if (runtimeBot?.setGroupAddRequest)
-        return await runtimeBot.setGroupAddRequest(flag, sub_type, false, input.reason)
+        return await runtimeBot.setGroupAddRequest(
+          flag,
+          false,
+          input.reason !== undefined ? String(input.reason) : "",
+          input.block,
+        )
       if (runtimeBot?.sendApi) {
         return await runtimeBot.sendApi("set_group_add_request", {
           flag,

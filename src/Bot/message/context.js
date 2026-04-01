@@ -1,4 +1,15 @@
-import { UniversalMessage, UniversalMessageSegment, UniversalSegmentType } from "./universal-message.js"
+import {
+  UniversalMessage,
+  UniversalMessageSegment,
+  UniversalSegmentType,
+  getSegmentMediaFile,
+  getSegmentMentionTarget,
+  getSegmentReplyRef,
+  getSegmentText,
+} from "./universal-message.js"
+import { classifyMediaReference, resolveMediaReferenceFields } from "./media-reference.js"
+
+export { classifyMediaReference, resolveMediaReferenceFields } from "./media-reference.js"
 
 const URL_REGEXP =
   /(https?|http|ftp|file):\/\/[-A-Za-z0-9+&@#/%?=~_|!:,.;]+[-A-Za-z0-9+&@#/%=~_|]/g
@@ -17,18 +28,21 @@ function looksLikeUniversalSegment(type, data = {}) {
 
   switch (type) {
     case UniversalSegmentType.TEXT:
-      return data.content !== undefined && data.content !== null
+      return data.text !== undefined || data.content !== undefined
     case UniversalSegmentType.MENTION:
-      return data.target !== undefined && data.target !== null && String(data.target) !== ""
+      return (
+        (data.qq !== undefined && data.qq !== null && String(data.qq) !== "") ||
+        (data.target !== undefined && data.target !== null && String(data.target) !== "")
+      )
     case UniversalSegmentType.MENTION_ALL:
       return true
     case UniversalSegmentType.REPLY:
-      return data.msgId !== undefined || data.seq !== undefined
+      return data.id !== undefined || data.msgId !== undefined || data.seq !== undefined
     case UniversalSegmentType.IMAGE:
     case UniversalSegmentType.VOICE:
     case UniversalSegmentType.VIDEO:
     case UniversalSegmentType.FILE:
-      return Boolean(data.url || data.fileId || data.path)
+      return Boolean(data.file || data.url || data.fileId || data.path)
     case UniversalSegmentType.EMOJI:
       // 兼容：只有提供 id 才当作通用段，否则可能是 milky 的 face_id 等字段
       return data.id !== undefined && data.id !== null
@@ -37,107 +51,6 @@ function looksLikeUniversalSegment(type, data = {}) {
     default:
       return false
   }
-}
-
-function coerceFileLikeToBase64(value) {
-  if (value === undefined || value === null) return value
-
-  if (Buffer.isBuffer(value)) {
-    return `base64://${value.toString("base64")}`
-  }
-
-  if (value instanceof ArrayBuffer) {
-    return `base64://${Buffer.from(value).toString("base64")}`
-  }
-
-  // Uint8Array / TypedArray
-  if (ArrayBuffer.isView(value) && !(value instanceof DataView)) {
-    try {
-      const buf = Buffer.from(value.buffer, value.byteOffset, value.byteLength)
-      return `base64://${buf.toString("base64")}`
-    } catch {
-      return value
-    }
-  }
-
-  return value
-}
-
-function normalizeMediaReferenceValue(value) {
-  const coerced = coerceFileLikeToBase64(value)
-  if (coerced === undefined || coerced === null) return ""
-  return String(coerced).trim()
-}
-
-export function classifyMediaReference(value) {
-  const raw = normalizeMediaReferenceValue(value)
-  if (!raw) return { kind: "empty", value: "" }
-  if (/^base64:\/\//i.test(raw)) return { kind: "base64", value: raw }
-  if (/^data:[^,]+,/i.test(raw)) return { kind: "dataUri", value: raw }
-  if (/^(https?|ftp):\/\//i.test(raw)) return { kind: "url", value: raw }
-  if (/^file:\/\//i.test(raw)) return { kind: "fileUri", value: raw }
-  if (/^[a-zA-Z]:[\\/]/.test(raw) || raw.startsWith("\\\\") || raw.startsWith("/")) {
-    return { kind: "absolutePath", value: raw }
-  }
-  if (/^[.]{1,2}([\\/]|$)/.test(raw) || /[\\/]/.test(raw)) {
-    return { kind: "relativePath", value: raw }
-  }
-  if (/^[^\\/:*?"<>|\r\n]+\.[A-Za-z0-9]{1,12}$/.test(raw)) {
-    return { kind: "basename", value: raw }
-  }
-  return { kind: "opaqueId", value: raw }
-}
-
-export function resolveMediaReferenceFields(entries = []) {
-  const out = {
-    url: undefined,
-    path: undefined,
-    fileId: undefined,
-  }
-
-  const assign = (value, preferred = "auto") => {
-    const ref = classifyMediaReference(value)
-    if (!ref.value) return
-
-    if (["url", "fileUri", "base64", "dataUri"].includes(ref.kind)) {
-      if (!out.url) out.url = ref.value
-      return
-    }
-
-    if (["absolutePath", "relativePath", "basename"].includes(ref.kind)) {
-      if (preferred === "fileId" && ref.kind === "basename") {
-        if (!out.fileId) out.fileId = ref.value
-        return
-      }
-      if (!out.path) out.path = ref.value
-      return
-    }
-
-    if (preferred === "url") {
-      if (!out.url) out.url = ref.value
-      return
-    }
-    if (preferred === "path") {
-      if (!out.path) out.path = ref.value
-      return
-    }
-    if (!out.fileId) out.fileId = ref.value
-  }
-
-  for (const entry of Array.isArray(entries) ? entries : []) {
-    if (
-      entry &&
-      typeof entry === "object" &&
-      !Array.isArray(entry) &&
-      Object.prototype.hasOwnProperty.call(entry, "value")
-    ) {
-      assign(entry.value, entry.preferred)
-      continue
-    }
-    assign(entry)
-  }
-
-  return out
 }
 
 export function parseTextWithFaces(text) {
@@ -177,9 +90,9 @@ export function getReplyRefFromSegments(segments) {
   const replySeg = segments.find(seg => seg?.type === UniversalSegmentType.REPLY)
   if (!replySeg) return null
 
-  const msgId = replySeg?.data?.msgId ? String(replySeg.data.msgId) : undefined
-  const seq = replySeg?.data?.seq !== undefined ? toSafeNumber(replySeg.data.seq) : undefined
-
+  const ref = getSegmentReplyRef(replySeg)
+  const msgId = ref?.id
+  const seq = ref?.seq
   if (!msgId && seq === undefined) return null
   return { msgId, seq }
 }
@@ -205,7 +118,7 @@ export function applyDerivedFieldsFromUniversalSegments(ctx) {
 
   const text = ctx.message
     .filter(seg => seg?.type === UniversalSegmentType.TEXT)
-    .map(seg => seg?.data?.content ?? "")
+    .map(seg => getSegmentText(seg))
     .join("")
 
   // 兼容：把全角＃替换为#
@@ -216,7 +129,11 @@ export function applyDerivedFieldsFromUniversalSegments(ctx) {
 
   ctx.img = ctx.message
     .filter(seg => seg?.type === UniversalSegmentType.IMAGE)
-    .map(seg => seg?.data?.url)
+    .map(seg => {
+      if (seg?.data?.url) return seg.data.url
+      const file = getSegmentMediaFile(seg)
+      return classifyMediaReference(file).kind === "url" ? file : undefined
+    })
     .filter(Boolean)
 
   const selfId = ctx.self_id !== undefined && ctx.self_id !== null ? String(ctx.self_id) : ""
@@ -231,7 +148,7 @@ export function applyDerivedFieldsFromUniversalSegments(ctx) {
       continue
     }
     if (seg?.type !== UniversalSegmentType.MENTION) continue
-    const target = seg?.data?.target !== undefined ? String(seg.data.target) : ""
+    const target = getSegmentMentionTarget(seg)
     if (!target) continue
     if (selfId && target === selfId) ctx.atBot = true
     else ctx.at = target

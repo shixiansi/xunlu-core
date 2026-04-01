@@ -46,6 +46,57 @@ test("makeForwardMsg respects explicit sender identity fields", async () => {
   assert.equal(res.data[0].name, "target-user")
 })
 
+test("makeForwardMsg prefers takeover forward target over raw yunzai entity", async () => {
+  const bot = new BaseBot({ adapter: "milky" })
+  let takeoverCalls = 0
+  let rawCalls = 0
+
+  globalThis.Bot = {
+    uin: 99999,
+    nickname: "bot",
+    __xunlu_takeover_state: {
+      getGroup(groupId) {
+        assert.equal(groupId, 123)
+        return {
+          async makeForwardMsg(msg) {
+            takeoverCalls += 1
+            return [{ type: "forward", data: { messages: msg } }]
+          },
+        }
+      },
+    },
+    pickGroup() {
+      return {
+        async makeForwardMsg() {
+          rawCalls += 1
+          return { type: "node", data: [] }
+        },
+      }
+    },
+    async makeGroupForwardMsg() {
+      rawCalls += 1
+      return { type: "node", data: [] }
+    },
+  }
+
+  const ctx = {
+    isGroup: true,
+    group_id: 123,
+    user_id: 555,
+    sender: { card: "trigger", nickname: "trigger" },
+    async getGroupMemberInfo() {
+      return { card: "trigger", nickname: "trigger" }
+    },
+  }
+
+  const res = await bot.makeForwardMsg(ctx, [{ content: [{ type: "text", data: { text: "hello" } }] }])
+
+  assert.equal(takeoverCalls, 1)
+  assert.equal(rawCalls, 0)
+  assert.equal(res[0].type, "forward")
+  assert.ok(Array.isArray(res[0].data.messages))
+})
+
 test("makeGroupForwardMsgByUser builds identity without mutating ctx.user_id", async () => {
   const bot = new BaseBot({ adapter: "test" })
   globalThis.Bot = {

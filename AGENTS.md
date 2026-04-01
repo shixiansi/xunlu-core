@@ -16,7 +16,7 @@
 - 项目流程 / 运行 / 测试入口：本文件 `AGENTS.md`
 - 通用 API（`ctx` / `botApi` / 全局 `Bot`）：`md/api.md`
 - 插件编写（模板/最佳实践/如何测试）：`md/plugin-handbook-ai.md`
-- OneBotV11 vs Milky 原生 API 速查（参数差异）：`md/onebotv11-milky-api-quickref.md`
+- OneBotV11 / ICQQ / Milky 原生 API 速查（参数差异）：`md/onebotv11-milky-api-quickref.md`
 - 通用消息段速查：`md/message.md`
 - 目录树快照：`md/dir-tree.md`
 

@@ -225,6 +225,9 @@ function normalizeConfig(raw) {
     }
     if (g.learning_enabled !== undefined) g.learning_enabled = Boolean(g.learning_enabled)
     if (g.proactive_enabled !== undefined) g.proactive_enabled = Boolean(g.proactive_enabled)
+    if (g.proactive_command_enabled !== undefined) {
+      g.proactive_command_enabled = Boolean(g.proactive_command_enabled)
+    }
     if (g.reply_prob !== undefined) g.reply_prob = Math.max(0, Math.min(1, toNumber(g.reply_prob, d.learning.reply_prob)))
     if (g.block_words !== undefined) g.block_words = normalizeArray(g.block_words)
     if (g.block_users !== undefined) g.block_users = normalizeArray(g.block_users)
@@ -351,6 +354,9 @@ export function getEffectiveGroupConfig(groupId) {
   const proactiveEnabled =
     g.proactive_enabled !== undefined ? Boolean(g.proactive_enabled) : Boolean(cfg.proactive?.allow_default)
 
+  const proactiveCommandEnabled =
+    g.proactive_command_enabled !== undefined ? Boolean(g.proactive_command_enabled) : true
+
   const replyProb =
     g.reply_prob !== undefined ? Math.max(0, Math.min(1, toNumber(g.reply_prob, cfg.learning?.reply_prob))) : toNumber(cfg.learning?.reply_prob, 0.15)
 
@@ -368,6 +374,7 @@ export function getEffectiveGroupConfig(groupId) {
     group_id: gid,
     learning_enabled: learningEnabled,
     proactive_enabled: proactiveEnabled,
+    proactive_command_enabled: proactiveCommandEnabled,
     reply_prob: replyProb,
     block_words: Array.from(new Set(blockWords)),
     block_users: Array.from(new Set(blockUsers)),
@@ -385,6 +392,9 @@ export async function setGroupOverrides(groupId, patch = {}) {
 
   if (patch.learning_enabled !== undefined) g.learning_enabled = Boolean(patch.learning_enabled)
   if (patch.proactive_enabled !== undefined) g.proactive_enabled = Boolean(patch.proactive_enabled)
+  if (patch.proactive_command_enabled !== undefined) {
+    g.proactive_command_enabled = Boolean(patch.proactive_command_enabled)
+  }
   if (patch.reply_prob !== undefined) g.reply_prob = Math.max(0, Math.min(1, toNumber(patch.reply_prob, cfg.learning?.reply_prob ?? 0.15)))
   if (patch.block_words !== undefined) g.block_words = normalizeArray(patch.block_words)
   if (patch.block_users !== undefined) g.block_users = normalizeArray(patch.block_users)

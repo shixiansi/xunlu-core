@@ -3,16 +3,12 @@ import moment from "moment"
 import fs from "node:fs"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
-import { segment } from "../../../Bot/segment_bk.js"
+import { segment } from "../../../Bot/segment.js"
 import { coerceToUniversalMessage } from "../../../Bot/message/context.js"
 import Filemage from "../../../utils/Filemage.js"
 import MessageDB from "../../../db/MessageDB.js"
 import env from "../../../lib/env.js"
 import cfg from "../../../lib/config.js"
-import {
-  getMemberInfoWithFallback,
-  getNormalizedMemberRole,
-} from "../../../Bot/member-role-utils.js"
 import { applyRkeyToUrl, getSceneRkey } from "../../../utils/rkey.js"
 import {
   getBotNoticeConfig,
@@ -938,61 +934,20 @@ function parseDurationSeconds(input) {
   return n
 }
 
-function normalizeRole(role) {
-  const r = String(role || "").toLowerCase()
-  return r
-}
-
-function resolveSelfId(ctx) {
-  return (
-    toInt(ctx?.self_id) ??
-    toInt(ctx?.bot?.uin) ??
-    toInt(ctx?.bot?.self_id) ??
-    toInt(globalThis.Bot?.uin) ??
-    toInt(globalThis.Bot?.self_id) ??
-    undefined
-  )
-}
-
-function getMemberRole(info) {
-  return normalizeRole(getNormalizedMemberRole(info))
-}
-
-function isAdminRole(role) {
-  const r = normalizeRole(role)
-  return r === "owner" || r === "admin"
-}
-
-async function getMemberInfoSafe(ctx, groupId, userId) {
-  return await getMemberInfoWithFallback(ctx, groupId, userId)
-}
-
 async function checkUserAdminOrMaster(ctx) {
   if (ctx?.isMaster) return true
-  if (ctx?.isOwner || ctx?.isAdmin) return true
-  const gid = toInt(ctx?.group_id)
-  const uid = toInt(ctx?.user_id)
-  if (!gid || !uid) return false
-  const info = await getMemberInfoSafe(ctx, gid, uid)
-  return isAdminRole(getMemberRole(info))
+  if (typeof ctx?.isGroupAdmin === "function") return await ctx.isGroupAdmin()
+  return Boolean(ctx?.isOwner || ctx?.isAdmin)
 }
 
 async function checkBotAdmin(ctx) {
-  if (ctx?.botIsOwner || ctx?.botIsAdmin) return true
-  const gid = toInt(ctx?.group_id)
-  const sid = resolveSelfId(ctx)
-  if (!gid || !sid) return false
-  const info = await getMemberInfoSafe(ctx, gid, sid)
-  return isAdminRole(getMemberRole(info))
+  if (typeof ctx?.isBotGroupAdmin === "function") return await ctx.isBotGroupAdmin()
+  return Boolean(ctx?.botIsOwner || ctx?.botIsAdmin)
 }
 
 async function checkBotOwner(ctx) {
-  if (ctx?.botIsOwner) return true
-  const gid = toInt(ctx?.group_id)
-  const sid = resolveSelfId(ctx)
-  if (!gid || !sid) return false
-  const info = await getMemberInfoSafe(ctx, gid, sid)
-  return getMemberRole(info) === "owner"
+  if (typeof ctx?.isBotGroupOwner === "function") return await ctx.isBotGroupOwner()
+  return Boolean(ctx?.botIsOwner)
 }
 
 function formatOnOff(enabled) {

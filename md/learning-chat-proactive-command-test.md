@@ -29,6 +29,7 @@ node ./bin/xunlu-dev.js learning-chat proactive-test status --group <群号>
 - `learningChatDbExists`：`learning_chat.sqlite` 是否存在
 - `commandUsageDbExists`：`command_usage.sqlite` 是否存在
 - `group.effective.proactive_enabled`：目标群当前是否已允许主动发言
+- `group.effective.proactive_command_enabled`：目标群当前是否已允许主动指令
 
 ## 一键套用联调配置
 
@@ -49,6 +50,7 @@ node ./bin/xunlu-dev.js learning-chat proactive-test prepare --group <群号>
 - `proactive.command_max_daily_per_user = 5`
 - `proactive.command_whitelist = ["^帮助$"]`
 - 目标群 `proactive_enabled = true`
+- 目标群 `proactive_command_enabled = true`
 
 可选参数：
 
@@ -86,6 +88,13 @@ node ./bin/xunlu-dev.js learning-chat proactive-test prepare --group <群号> --
 指令统计
 ```
 
+如果目标群之前手动关闭过群级开关，也可以先在群里执行：
+
+```text
+@bot 开启主动发言
+@bot 开启主动指令
+```
+
 ## 恢复原配置
 
 联调完成后恢复备份：
@@ -107,6 +116,8 @@ node ./bin/xunlu-dev.js learning-chat proactive-test restore --backup temp/proac
 如果一直不触发，优先检查：
 
 - 目标群 `proactive_enabled` 是否为 `true`
+- 目标群 `proactive_command_enabled` 是否为 `true`
+- 全局 `proactive.command_enable` 是否为 `true`
 - 刚刚是否手动用了同一条命令
 - 是否命中了每日次数或冷却限制
 - 命令是否在当前白名单里

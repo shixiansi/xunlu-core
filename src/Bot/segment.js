@@ -4,7 +4,7 @@ import path from "path"
 import {
   UniversalMessage,
   UniversalMessageSegment,
-  UniversalSegmentType,
+  isUniversalSegmentType,
 } from "./message/universal-message.js"
 
 const msg = new UniversalMessage()
@@ -19,10 +19,25 @@ function toSegment(type, data) {
   // 深拷贝避免修改原数据
   const processedData = { ...data }
 
+  const shouldPreserveAsPath = value => {
+    if (typeof value !== "string") return false
+    return (
+      /^[a-zA-Z]:[\\/]/.test(value) ||
+      value.startsWith("\\\\") ||
+      value.startsWith("/") ||
+      value.startsWith("./") ||
+      value.startsWith("../") ||
+      value.startsWith("file://")
+    )
+  }
+
   // 保留原base64转换逻辑（核心不变）
   for (const i in processedData) {
     switch (typeof processedData[i]) {
       case "string":
+        if (i === "file" && !processedData.path && shouldPreserveAsPath(processedData[i])) {
+          processedData.path = processedData[i]
+        }
         // 处理file字段或file://开头的路径，转base64
         if (
           (i === "file" || processedData[i].match(/^file:\/\//)) &&
@@ -50,6 +65,20 @@ function toSegment(type, data) {
   return { type, data: processedData }
 }
 
+function unsupportedLegacySegment(methodName, type) {
+  throw new Error(
+    `[segment.${methodName}] ${type} is not supported by xunlu unified message format; use ctx.reply()/botApi.sendMessage() with supported segment types or protocol-specific APIs`,
+  )
+}
+
+function createUniversalSegment(type, data, methodName = type) {
+  const { data: processedData } = toSegment(type, data)
+  if (!isUniversalSegmentType(type)) {
+    unsupportedLegacySegment(methodName, type)
+  }
+  return new UniversalMessageSegment(type, processedData)
+}
+
 /**
  * 改造核心：将原segment类替换为基于通用消息段的实现
  * 保留原方法名、参数，仅底层调用UniversalMessageSegment
@@ -62,10 +91,7 @@ const segment = new (class Segment {
    * @returns {UniversalMessageSegment} 通用消息段实例
    */
   custom(type, data) {
-    const { data: processedData } = toSegment(type, data)
-    // 映射原类型到通用类型（核心兼容）
-    const universalType = this._mapToUniversalType(type)
-    return new UniversalMessageSegment(universalType, processedData)
+    return createUniversalSegment(type, data, "custom")
   }
 
   /**
@@ -76,11 +102,10 @@ const segment = new (class Segment {
     const { data } = toSegment("image", { file, name })
     // 原逻辑：无name则删除
     if (!data.name) delete data.name
-    // 适配通用消息段的字段（file → fileId/url）
     return UniversalMessageSegment.image({
-      fileId: data.file,
-      url: data.file, // base64内容同时赋值给url/fileId，兼容不同协议
-      name: data.name,
+      file: data.file,
+      ...(data.path ? { path: data.path } : {}),
+      ...(data.name ? { name: data.name } : {}),
     })
   }
 
@@ -100,11 +125,10 @@ const segment = new (class Segment {
    */
   record(file, name) {
     const { data } = toSegment("record", { file, name })
-    // 原record → 通用VOICE（record）类型
     return UniversalMessageSegment.record({
-      fileId: data.file,
-      url: data.file,
-      name: data.name,
+      file: data.file,
+      ...(data.path ? { path: data.path } : {}),
+      ...(data.name ? { name: data.name } : {}),
     })
   }
 
@@ -114,10 +138,9 @@ const segment = new (class Segment {
    */
   video(file) {
     const { data } = toSegment("video", { file })
-    // 适配通用消息段
     return UniversalMessageSegment.video({
-      fileId: data.file,
-      url: data.file,
+      file: data.file,
+      ...(data.path ? { path: data.path } : {}),
     })
   }
 
@@ -127,12 +150,10 @@ const segment = new (class Segment {
    */
   file(file, name) {
     const { data } = toSegment("file", { file, name })
-    // 适配通用文件消息段的字段
     return UniversalMessageSegment.file({
-      fileId: data.file,
-      url: data.file,
-      path: data.file, // 兼容本地路径
-      name: data.name,
+      file: data.file,
+      ...(data.path ? { path: data.path } : {}),
+      ...(data.name ? { name: data.name } : {}),
     })
   }
 
@@ -142,11 +163,10 @@ const segment = new (class Segment {
    */
   reply(id, text, qq, time, seq) {
     const { data } = toSegment("reply", { id, text, qq, time, seq })
-    // 原id → 通用msgId，原seq → 通用seq
     return UniversalMessageSegment.reply({
-      msgId: data.id,
-      seq: data.seq,
-      text: data.text, // 保留回复附带的文本
+      ...(data.id !== undefined ? { id: data.id } : {}),
+      ...(data.seq !== undefined ? { seq: data.seq } : {}),
+      ...(data.text !== undefined ? { text: data.text } : {}),
     })
   }
 
@@ -165,9 +185,7 @@ const segment = new (class Segment {
    * @returns {UniversalMessageSegment}
    */
   share(url, title, content, image) {
-    const { data } = toSegment("share", { url, title, content, image })
-    // 分享类型暂作为自定义类型（通用体系未定义，可扩展）
-    return this.custom("share", data)
+    unsupportedLegacySegment("share", "share")
   }
 
   /**
@@ -175,9 +193,7 @@ const segment = new (class Segment {
    * @returns {UniversalMessageSegment}
    */
   music(type, id, url, audio, title) {
-    const { data } = toSegment("music", { type, id, url, audio, title })
-    // 音乐类型暂作为自定义类型
-    return this.custom("music", data)
+    unsupportedLegacySegment("music", "music")
   }
 
   /**
@@ -185,9 +201,7 @@ const segment = new (class Segment {
    * @returns {UniversalMessageSegment}
    */
   poke(qq) {
-    const { data } = toSegment("poke", { qq })
-    // 戳一戳暂作为自定义类型
-    return this.custom("poke", data)
+    unsupportedLegacySegment("poke", "poke")
   }
 
   /**
@@ -195,9 +209,7 @@ const segment = new (class Segment {
    * @returns {UniversalMessageSegment}
    */
   gift(qq, id) {
-    const { data } = toSegment("gift", { qq, id })
-    // 礼物暂作为自定义类型
-    return this.custom("gift", data)
+    unsupportedLegacySegment("gift", "gift")
   }
 
   /**
@@ -215,13 +227,16 @@ const segment = new (class Segment {
       source,
       icon,
     })
-    // 卡片图片适配为通用image类型，补充尺寸字段
     return UniversalMessageSegment.image({
-      fileId: data.file,
-      url: data.file,
-      name: data.name,
-      width: data.maxwidth || data.minwidth,
-      height: data.maxheight || data.minheight,
+      file: data.file,
+      ...(data.path ? { path: data.path } : {}),
+      ...(data.name ? { name: data.name } : {}),
+      ...(data.maxwidth || data.minwidth
+        ? { width: Number(data.maxwidth || data.minwidth) }
+        : {}),
+      ...(data.maxheight || data.minheight
+        ? { height: Number(data.maxheight || data.minheight) }
+        : {}),
     })
   }
 
@@ -230,30 +245,7 @@ const segment = new (class Segment {
    * @returns {UniversalMessageSegment}
    */
   tts(text) {
-    const { data } = toSegment("tts", { text })
-    // TTS暂作为自定义类型（可扩展为通用TEXT类型）
-    return this.custom("tts", data)
-  }
-
-  /**
-   * 私有方法：原类型 → 通用类型映射（核心兼容）
-   * @param {string} originalType 原类型（如at/record/face）
-   * @returns {string} 通用类型
-   */
-  _mapToUniversalType(originalType) {
-    const typeMap = {
-      at: UniversalSegmentType.MENTION,
-      face: UniversalSegmentType.EMOJI,
-      image: UniversalSegmentType.IMAGE,
-      record: UniversalSegmentType.VOICE,
-      video: UniversalSegmentType.VIDEO,
-      file: UniversalSegmentType.FILE,
-      reply: UniversalSegmentType.REPLY,
-      text: UniversalSegmentType.TEXT,
-      forward: UniversalSegmentType.FORWARD,
-    }
-    // 未映射的类型返回原类型（自定义类型）
-    return typeMap[originalType] || originalType
+    unsupportedLegacySegment("tts", "tts")
   }
 })()
 

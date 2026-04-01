@@ -66,6 +66,7 @@ async function loadAll() {
   setBool("#g_repeat_enable", state.config.repeat.enable)
   setText("#g_repeat_threshold", state.config.repeat.threshold)
   setBool("#g_proactive_enable", state.config.proactive.enable)
+  setBool("#g_proactive_command_enable", state.config.proactive.command_enable)
   setBool("#g_proactive_allow_default", state.config.proactive.allow_default)
   setText("#g_block_words", (state.config.learning.block_words || []).join("\n"))
   setText("#g_block_users", (state.config.learning.block_users || []).join("\n"))
@@ -103,6 +104,7 @@ async function onGroupChange() {
   // group config
   setBool("#c_learning_enabled", Boolean(effective.learning_enabled))
   setBool("#c_proactive_enabled", Boolean(effective.proactive_enabled))
+  setBool("#c_proactive_command_enabled", Boolean(effective.proactive_command_enabled))
   setText("#c_reply_prob", override.reply_prob !== undefined ? override.reply_prob : "")
   setText("#c_block_words", (override.block_words || []).join("\n"))
   setText("#c_block_users", (override.block_users || []).join("\n"))
@@ -128,6 +130,7 @@ async function saveGlobal() {
     },
     proactive: {
       enable: boolVal("#g_proactive_enable"),
+      command_enable: boolVal("#g_proactive_command_enable"),
       allow_default: boolVal("#g_proactive_allow_default"),
     },
   }
@@ -147,6 +150,7 @@ async function saveGroup() {
   const patch = {
     learning_enabled: boolVal("#c_learning_enabled"),
     proactive_enabled: boolVal("#c_proactive_enabled"),
+    proactive_command_enabled: boolVal("#c_proactive_command_enabled"),
     block_words: linesToArray($("#c_block_words").value),
     block_users: linesToArray($("#c_block_users").value),
   }

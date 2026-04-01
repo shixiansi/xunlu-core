@@ -1221,14 +1221,27 @@ export default class BaseBot {
         seg =>
           (seg?.type === UniversalSegmentType.TEXT &&
             seg?.data &&
-            Object.prototype.hasOwnProperty.call(seg.data, "content")) ||
+            (Object.prototype.hasOwnProperty.call(seg.data, "text") ||
+              Object.prototype.hasOwnProperty.call(seg.data, "content"))) ||
           (seg?.type === UniversalSegmentType.MENTION &&
             seg?.data &&
-            Object.prototype.hasOwnProperty.call(seg.data, "target")) ||
+            (Object.prototype.hasOwnProperty.call(seg.data, "qq") ||
+              Object.prototype.hasOwnProperty.call(seg.data, "target"))) ||
           (seg?.type === UniversalSegmentType.REPLY &&
             seg?.data &&
-            (Object.prototype.hasOwnProperty.call(seg.data, "msgId") ||
-              Object.prototype.hasOwnProperty.call(seg.data, "seq"))),
+            (Object.prototype.hasOwnProperty.call(seg.data, "id") ||
+              Object.prototype.hasOwnProperty.call(seg.data, "msgId") ||
+              Object.prototype.hasOwnProperty.call(seg.data, "seq"))) ||
+          ((seg?.type === UniversalSegmentType.IMAGE ||
+            seg?.type === UniversalSegmentType.VOICE ||
+            seg?.type === UniversalSegmentType.VIDEO ||
+            seg?.type === UniversalSegmentType.FILE) &&
+            seg?.data &&
+            (Object.prototype.hasOwnProperty.call(seg.data, "file") ||
+              Object.prototype.hasOwnProperty.call(seg.data, "url") ||
+              Object.prototype.hasOwnProperty.call(seg.data, "fileId") ||
+              Object.prototype.hasOwnProperty.call(seg.data, "path") ||
+              Object.prototype.hasOwnProperty.call(seg.data, "id"))),
       )
 
     const rawLooksUniversal = looksLikeUniversalSegments(e.rawSegments)
@@ -1364,6 +1377,13 @@ export default class BaseBot {
     if (!Array.isArray(msg)) {
       msg = [msg]
     }
+    const runtimeBot = (() => {
+      try {
+        return Bot || globalThis.Bot || null
+      } catch {
+        return globalThis.Bot || null
+      }
+    })()
     const defaultId = e?.user_id ?? Bot?.uin
     let name = msgsscr ? e?.sender?.card || e?.sender?.nickname || e?.user_id : Bot.nickname
     let id = defaultId
@@ -1411,12 +1431,58 @@ export default class BaseBot {
 
     /** 制作转发内容 */
     try {
-      if (e?.group?.makeForwardMsg) {
+      const takeoverState = runtimeBot?.__xunlu_takeover_state
+      const takeoverForwardTarget = (() => {
+        if (!takeoverState || typeof takeoverState !== "object") return null
+
+        if (e?.isGroup && typeof takeoverState.getGroup === "function") {
+          return takeoverState.getGroup(e.group_id)
+        }
+
+        if (!e?.isGroup && typeof takeoverState.getUser === "function") {
+          return takeoverState.getUser(e.user_id)
+        }
+
+        return null
+      })()
+
+      if (typeof takeoverForwardTarget?.makeForwardMsg === "function") {
+        forwardMsg = await takeoverForwardTarget.makeForwardMsg(forwardMsg)
+      } else if (e?.group?.makeForwardMsg) {
         forwardMsg = await e.group.makeForwardMsg(forwardMsg)
       } else if (e?.friend?.makeForwardMsg) {
         forwardMsg = await e.friend.makeForwardMsg(forwardMsg)
+      } else if (e?.isGroup && typeof runtimeBot?.pickGroup === "function") {
+        const group = runtimeBot.pickGroup(e.group_id)
+        if (typeof group?.makeForwardMsg === "function") {
+          forwardMsg = await group.makeForwardMsg(forwardMsg)
+        } else if (typeof runtimeBot?.makeGroupForwardMsg === "function") {
+          forwardMsg = await runtimeBot.makeGroupForwardMsg(forwardMsg, e.group_id)
+        } else {
+          throw new Error("[makeForwardMsg] group forward API not available")
+        }
+      } else if (!e?.isGroup && typeof runtimeBot?.pickFriend === "function") {
+        const friend = runtimeBot.pickFriend(e.user_id)
+        if (typeof friend?.makeForwardMsg === "function") {
+          forwardMsg = await friend.makeForwardMsg(forwardMsg)
+        } else if (typeof runtimeBot?.makePrivateForwardMsg === "function") {
+          forwardMsg = await runtimeBot.makePrivateForwardMsg(forwardMsg, e.user_id)
+        } else {
+          throw new Error("[makeForwardMsg] private forward API not available")
+        }
+      } else if (!e?.isGroup && typeof runtimeBot?.pickUser === "function") {
+        const user = runtimeBot.pickUser(e.user_id)
+        if (typeof user?.makeForwardMsg === "function") {
+          forwardMsg = await user.makeForwardMsg(forwardMsg)
+        } else if (typeof runtimeBot?.makePrivateForwardMsg === "function") {
+          forwardMsg = await runtimeBot.makePrivateForwardMsg(forwardMsg, e.user_id)
+        } else {
+          throw new Error("[makeForwardMsg] private forward API not available")
+        }
+      } else if (typeof runtimeBot?.makeGroupForwardMsg === "function") {
+        forwardMsg = await runtimeBot.makeGroupForwardMsg(forwardMsg, e.group_id)
       } else {
-        forwardMsg = await Bot.makeGroupForwardMsg(forwardMsg, e.group_id)
+        throw new Error("[makeForwardMsg] makeForwardMsg not available")
       }
 
       if (dec) {
@@ -1436,6 +1502,7 @@ export default class BaseBot {
       }
     } catch (err) {
       logger.error(err)
+      throw err
     }
 
     return forwardMsg

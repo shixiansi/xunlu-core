@@ -141,6 +141,8 @@ function extractImageUrlsFromMessageDetail(detail) {
   for (const seg of segments) {
     if (!seg || typeof seg !== "object") continue
     const data = seg.data && typeof seg.data === "object" ? seg.data : {}
+    push(data.file)
+    push(data.id)
     push(data.url)
     push(data.temp_url)
     push(data.uri)
@@ -218,12 +220,12 @@ function defaultGetRuntimeBot() {
   }
 }
 
-function normalizePublicBundle(bundle) {
+function normalizePublicBundle(bundle, now = nowSec()) {
   const data = normalizeBundleState(bundle)
   return {
     group_rkey: data.group_rkey,
     private_rkey: data.private_rkey,
-    expired_time: computeBundleExpiry(data),
+    expired_time: computeBundleExpiry(data, now),
   }
 }
 
@@ -244,7 +246,7 @@ class RkeyService {
   }
 
   getSnapshot() {
-    return normalizePublicBundle(this.bundle)
+    return normalizePublicBundle(this.bundle, nowSec(this.now()))
   }
 
   isExpired() {

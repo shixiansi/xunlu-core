@@ -832,8 +832,15 @@ function patchYunzaiBot(bot, state, { loginInfo } = {}) {
   if (!bot.__xunlu_raw_pickGroup && typeof bot.pickGroup === "function") bot.__xunlu_raw_pickGroup = bot.pickGroup.bind(bot)
   if (!bot.__xunlu_raw_sendApi && typeof bot.sendApi === "function") bot.__xunlu_raw_sendApi = bot.sendApi.bind(bot)
   if (!bot.__xunlu_raw_isOnline && typeof bot.isOnline === "function") bot.__xunlu_raw_isOnline = bot.isOnline.bind(bot)
+  if (!bot.__xunlu_raw_sendMsg && typeof bot.sendMsg === "function") bot.__xunlu_raw_sendMsg = bot.sendMsg.bind(bot)
   if (!bot.__xunlu_raw_sendPrivateMsg && typeof bot.sendPrivateMsg === "function") bot.__xunlu_raw_sendPrivateMsg = bot.sendPrivateMsg.bind(bot)
   if (!bot.__xunlu_raw_sendGroupMsg && typeof bot.sendGroupMsg === "function") bot.__xunlu_raw_sendGroupMsg = bot.sendGroupMsg.bind(bot)
+  if (!bot.__xunlu_raw_makeGroupForwardMsg && typeof bot.makeGroupForwardMsg === "function") {
+    bot.__xunlu_raw_makeGroupForwardMsg = bot.makeGroupForwardMsg.bind(bot)
+  }
+  if (!bot.__xunlu_raw_makePrivateForwardMsg && typeof bot.makePrivateForwardMsg === "function") {
+    bot.__xunlu_raw_makePrivateForwardMsg = bot.makePrivateForwardMsg.bind(bot)
+  }
 
   // 基本身份信息
   const uin = toInt(loginInfo?.uin)
@@ -932,6 +939,24 @@ function patchYunzaiBot(bot, state, { loginInfo } = {}) {
     "pickGroup",
   ].forEach(name => bindAdapterMethod(name, { force: false }))
 
+  const makeForwardViaTakeover = async (scene, targetId, forwardMsg, raw = null) => {
+    const currentState = bot?.__xunlu_takeover_state || state
+    if (!currentState) {
+      if (typeof raw === "function") return await raw(forwardMsg, targetId)
+      throw new Error(`[takeover] ${scene} forward API not available`)
+    }
+
+    if (typeof currentState.adapter?.makeForwardMsg === "function") {
+      return await currentState.adapter.makeForwardMsg(forwardMsg)
+    }
+
+    if (typeof raw === "function") {
+      return await raw(forwardMsg, targetId)
+    }
+
+    throw new Error(`[takeover] adapter.makeForwardMsg not available for ${scene}`)
+  }
+
   // 兼容：部分云崽插件直接调用 bot.sendPrivateMsg / bot.sendGroupMsg
   if (typeof bot.sendPrivateMsg === "function" && !bot.sendPrivateMsg?.__xunlu_takeover_sendPrivateMsg) {
     const raw = bot.sendPrivateMsg
@@ -979,6 +1004,68 @@ function patchYunzaiBot(bot, state, { loginInfo } = {}) {
       wrapped.__xunlu_raw = raw
     } catch {}
     bot.sendGroupMsg = wrapped
+  }
+
+  if (typeof bot.sendMsg === "function" && !bot.sendMsg?.__xunlu_takeover_sendMsg) {
+    const raw = bot.sendMsg
+    const wrapped = async function sendMsgTakeover(target, message, ...args) {
+      const state = this?.__xunlu_takeover_state
+      if (!state) return await raw.call(this, target, message, ...args)
+
+      const groupId = toInt(target?.group_id ?? target?.groupId ?? target?.gid)
+      if (groupId !== undefined) {
+        return await state.sendTo({
+          scene: "group",
+          group_id: groupId,
+          message,
+        })
+      }
+
+      const userId = toInt(
+        typeof target === "string" || typeof target === "number"
+          ? target
+          : target?.user_id ?? target?.userId ?? target?.peer_id ?? target?.peerId ?? target?.uin,
+      )
+
+      if (userId !== undefined) {
+        return await state.sendTo({
+          scene: "private",
+          user_id: userId,
+          message,
+        })
+      }
+
+      return await raw.call(this, target, message, ...args)
+    }
+    try {
+      wrapped.__xunlu_takeover_sendMsg = true
+      wrapped.__xunlu_raw = raw
+    } catch {}
+    bot.sendMsg = wrapped
+  }
+
+  if (!bot.makeGroupForwardMsg?.__xunlu_takeover_makeGroupForwardMsg) {
+    const raw = typeof bot.makeGroupForwardMsg === "function" ? bot.makeGroupForwardMsg.bind(bot) : null
+    const wrapped = async function makeGroupForwardMsgTakeover(forwardMsg, group_id) {
+      return await makeForwardViaTakeover("group", group_id, forwardMsg, raw)
+    }
+    try {
+      wrapped.__xunlu_takeover_makeGroupForwardMsg = true
+      wrapped.__xunlu_raw = raw
+    } catch {}
+    bot.makeGroupForwardMsg = wrapped
+  }
+
+  if (!bot.makePrivateForwardMsg?.__xunlu_takeover_makePrivateForwardMsg) {
+    const raw = typeof bot.makePrivateForwardMsg === "function" ? bot.makePrivateForwardMsg.bind(bot) : null
+    const wrapped = async function makePrivateForwardMsgTakeover(forwardMsg, user_id) {
+      return await makeForwardViaTakeover("private", user_id, forwardMsg, raw)
+    }
+    try {
+      wrapped.__xunlu_takeover_makePrivateForwardMsg = true
+      wrapped.__xunlu_raw = raw
+    } catch {}
+    bot.makePrivateForwardMsg = wrapped
   }
 
   // takeover 视为在线（避免插件拒绝工作）

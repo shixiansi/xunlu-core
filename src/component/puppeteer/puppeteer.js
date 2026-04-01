@@ -2,9 +2,7 @@ import Renderer from "../../lib/renderer/Renderer.js"
 import os from "node:os"
 import lodash from "lodash"
 import puppeteer from "puppeteer"
-import { segment } from "../../Bot/segment_bk.js"
 import path from "path"
-import fs from "fs" // 新增：用于文件路径校验
 const _path = process.cwd()
 let mac = ""
 
