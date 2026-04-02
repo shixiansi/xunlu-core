@@ -171,6 +171,12 @@ class GroupMessageDB {
     console.log(`删除了${result}条过期消息`)
     return result
   }
+  async close() {
+    this.groupTables.clear()
+    if (typeof BaseModel?.close === "function") {
+      await BaseModel.close()
+    }
+  }
 }
 
 export default new GroupMessageDB()

@@ -16,6 +16,7 @@
 - 项目流程 / 运行 / 测试入口：本文件 `AGENTS.md`
 - 通用 API（`ctx` / `botApi` / 全局 `Bot`）：`md/api.md`
 - 插件编写（模板/最佳实践/如何测试）：`md/plugin-handbook-ai.md`
+- 测试基建（harness / CLI / node:test）：`md/testing-handbook-ai.md`
 - OneBotV11 / ICQQ / Milky 原生 API 速查（参数差异）：`md/onebotv11-milky-api-quickref.md`
 - 通用消息段速查：`md/message.md`
 - 目录树快照：`md/dir-tree.md`
@@ -113,24 +114,72 @@ node ./bin/xunlu-dev.js simulate "示例" --plugin example-plugin --protocol mil
 
 # 同一输入分别跑 milky + onebotv11（两次独立加载插件并输出两段结果）
 node ./bin/xunlu-dev.js simulate "示例" --plugin example-plugin --protocol both --scene group --group 123 --user 10001
+
+# 同一输入分别跑 milky + onebotv11 + icqq
+node ./bin/xunlu-dev.js simulate "示例" --plugin example-plugin --protocol all --scene group --group 123 --user 10001
 ```
 
 也支持用 `--raw-segments <json>` 直接覆盖入站段（便于测试 reply/image/at 等复杂输入）。
 
-#### 6.1.1 协议 mock（milky / onebotv11）
+4) 直接模拟非消息事件：
 
-对应实现：`src/dev/protocol-mock.js`（仅供 `xunlu-dev simulate` 使用，不影响 ControlServer `/send` 与真实运行）。
+```bash
+node ./bin/xunlu-dev.js simulate-event notice.group.increase --plugin group --protocol all --group 123 --user 10001 --operator 10002
+node ./bin/xunlu-dev.js simulate-event request.group.add --plugin group --protocol milky --group 123 --user 10001 --flag 456 --comment "申请入群"
+```
 
-- 挂载：同时注入到 `globalThis.Bot` 与 `ctx`（通过模拟器 `bindEvent` 注入），兼容插件使用 `Bot.*` / `ctx.*` / `botApi.*`
-- 校验：只做**必填字段存在 + 类型正确**；多余字段只记录 `warning`；未知 action/method 直接报错（避免“假通过”）
-- 假数据：始终返回成功结构（如 onebot `message_id`、milky `message_seq/time`），列表接口返回少量样例数据
-- 输出/退出码：
-  - `--protocol both`：非 `--json` 输出 `=== milky ===` / `=== onebotv11 ===` 两段；`--json` 输出 `{ ok, results: { milky, onebotv11 } }`
-  - 校验失败会产生 `errors`，并使 `xunlu-dev simulate` 退出码为 `1`（便于脚本化）
+5) 直接触发定时任务：
 
-#### 6.1.2 自动化 smoke（建议做法）
+```bash
+node ./bin/xunlu-dev.js simulate-task 0 --plugin other --protocol icqq-local
+```
 
-通用策略：为每个插件维护 1~N 条“触发文本”，用 `--protocol both` 跑一遍，依赖退出码判断成功/失败。
+#### 6.1.1 统一 harness / 严格协议 mock
+
+推荐总入口：`md/testing-handbook-ai.md`
+
+- harness：`src/dev/plugin-test-harness.js`
+  - `createPluginTestHarness({ plugins, protocol, selfId, mockMode, renderMode, schedulerMode })`
+  - 对外固定提供：`emitMessage()` / `emitEvent()` / `runTask()` / `flushTimeouts()` / `resetCaptures()`
+- 严格协议 mock：`src/dev/protocol-mock.js`
+  - 统一返回 `{ bot, warnings, errors, calls }`
+  - `calls` 统一结构为 `{ protocol, kind, name, params, target }`
+- fake 组件：
+  - fake scheduler 记录任务注册，可直接按索引触发
+  - fake timers 可用 `flushTimeouts()` 手动冲刷
+  - fake renderer 记录 `renderCalls`，并返回可继续 `ctx.reply()` 的图片段
+
+协议策略：
+
+- `--protocol icqq`：严格 mock
+- `--protocol icqq-local`：保留当前本地链路
+- `--protocol both`：`milky + onebotv11`
+- `--protocol all`：`milky + onebotv11 + icqq`
+
+输出与退出码：
+
+- 单协议和多协议都统一输出 `replies / apiCalls / renderCalls / warnings / errors / result`
+- `--json` 时 stdout 保证是纯 JSON；执行过程中的 `console.log/logger` 走 stderr
+- mock 校验失败或插件执行错误退出码为 `1`
+- 非法协议、非法事件名、非法 task index 退出码为 `2`
+
+#### 6.1.2 node:test 回归
+
+```bash
+npm test
+npm run test:unit
+npm run test:render
+```
+
+说明：
+
+- `npm test`：跑全部回归；真实 Chromium smoke 默认允许按环境变量跳过
+- `npm run test:unit`：跑 harness / 协议 / CLI / 代表性插件 smoke
+- `npm run test:render`：显式启用真实 Chromium smoke
+
+#### 6.1.3 自动化 smoke（建议做法）
+
+通用策略：为每个插件维护 1~N 条“触发文本”，至少用 `--protocol both` 跑一遍；依赖 ICQQ native 行为的插件，再补 `--protocol icqq` 或 `--protocol all`。
 
 PowerShell 示例（手工维护测试表）：
 
@@ -177,9 +226,9 @@ node ./bin/xunlubot.js restart
 - 插件入口：`src/plugins/<name>/index.js`（或 `src/plugins/<name>.js`）
 - 默认导出结构：`{ name, register(botApi), apiRoutes?(router), onBotEvent?(event) }`
 - handler 入参 `ctx` 的最终消息永远是：`ctx.message: UniversalMessageSegment[]`
-- 写插件优先参考：`md/plugin-handbook-ai.md`（模板/规范）与 `md/api.md`（ctx/botApi/Bot 能力）
+- 写插件优先参考：`md/plugin-handbook-ai.md`（模板/规范）、`md/api.md`（ctx/botApi/Bot 能力）与 `md/testing-handbook-ai.md`（测试入口）
 
-## 8) 已知问题/注意事项（截至 2026-03-26）
+## 8) 已知问题/注意事项（截至 2026-04-02）
 
 - `package.json` 的 `npm run init-db` 指向 `scripts/init-dbs.js`，但仓库未发现 `scripts/` 目录
 - 许多模块依赖全局 `logger`（由 `src/component/logger/log.js` 初始化）；独立调用模块时需注意先初始化日志

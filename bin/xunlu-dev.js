@@ -16,7 +16,9 @@ Usage:
   xunlu-dev --help
   xunlu-dev tree [--path <dir>] [--max-depth <n>] [--output <file>]
   xunlu-dev plugins [list]
-  xunlu-dev simulate <text...> --plugin <name>[,<name2>] [--protocol <milky|onebotv11|icqq|both>] [--scene group|private] [--group <id>] [--user <id>] [--raw-segments <json>] [--json] [--cache-bust]
+  xunlu-dev simulate <text...> --plugin <name>[,<name2>] [--protocol <milky|onebotv11|icqq|icqq-local|both|all>] [--scene group|private] [--group <id>] [--user <id>] [--raw-segments <json>] [--json] [--cache-bust]
+  xunlu-dev simulate-event <event> [text...] --plugin <name>[,<name2>] [--protocol <milky|onebotv11|icqq|icqq-local|both|all>] [--group <id>] [--user <id>] [--operator <id>] [--target <id>] [--flag <value>] [--comment <text>] [--protocol-payload <json>] [--extra <json>] [--json]
+  xunlu-dev simulate-task <index> --plugin <name>[,<name2>] [--protocol <milky|onebotv11|icqq|icqq-local|both|all>] [--group <id>] [--user <id>] [--ctx <json>] [--json]
   xunlu-dev learning-chat proactive-test status [--group <id>] [--json]
   xunlu-dev learning-chat proactive-test prepare [--group <id>] [--whitelist <regex>] [--backup <file>] [--json] [--force]
   xunlu-dev learning-chat proactive-test restore [--backup <file>] [--json] [--keep-backup]
@@ -529,8 +531,210 @@ function formatCheckReport(result) {
   return lines.join("\n")
 }
 
-async function main() {
-  const argv = process.argv.slice(2)
+class CliInputError extends Error {
+  constructor(message) {
+    super(message)
+    this.name = "CliInputError"
+    this.exitCode = 2
+  }
+}
+
+function formatConsoleArg(value) {
+  if (typeof value === "string") return value
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return String(value)
+  }
+}
+
+function redirectConsoleToStderr(enabled = false, stderr = process.stderr) {
+  if (!enabled) return () => {}
+  const names = ["log", "info", "warn", "error", "debug", "trace"]
+  const original = Object.fromEntries(names.map(name => [name, console[name]]))
+  for (const name of names) {
+    console[name] = (...args) => {
+      stderr.write(`${args.map(formatConsoleArg).join(" ")}\n`)
+    }
+  }
+  return () => {
+    for (const name of names) {
+      console[name] = original[name]
+    }
+  }
+}
+
+function parseJsonFlag(raw, label, { expectArray = false } = {}) {
+  if (raw === undefined || raw === null || raw === "") return undefined
+  try {
+    const parsed = JSON.parse(String(raw))
+    if (expectArray && !Array.isArray(parsed)) {
+      throw new Error(`${label} must be a JSON array`)
+    }
+    return parsed
+  } catch (error) {
+    throw new CliInputError(`[xunlu-dev] invalid ${label}: ${error?.message || String(error)}`)
+  }
+}
+
+function parseProtocolTargets(flag) {
+  const raw = String(flag || "milky").trim().toLowerCase()
+  const normalized = raw.includes("onebot") ? "onebotv11" : raw
+  switch (normalized) {
+    case "milky":
+      return [{ key: "milky", protocol: "milky", mockMode: "strict" }]
+    case "onebotv11":
+      return [{ key: "onebotv11", protocol: "onebotv11", mockMode: "strict" }]
+    case "icqq":
+      return [{ key: "icqq", protocol: "icqq", mockMode: "strict" }]
+    case "icqq-local":
+      return [{ key: "icqq-local", protocol: "icqq", mockMode: "local" }]
+    case "both":
+      return [
+        { key: "milky", protocol: "milky", mockMode: "strict" },
+        { key: "onebotv11", protocol: "onebotv11", mockMode: "strict" },
+      ]
+    case "all":
+      return [
+        { key: "milky", protocol: "milky", mockMode: "strict" },
+        { key: "onebotv11", protocol: "onebotv11", mockMode: "strict" },
+        { key: "icqq", protocol: "icqq", mockMode: "strict" },
+      ]
+    default:
+      throw new CliInputError(`[xunlu-dev] invalid --protocol: ${flag}`)
+  }
+}
+
+function validateEventNameInput(eventName) {
+  const normalized = String(eventName || "").trim().toLowerCase()
+  const parts = normalized.split(".").filter(Boolean)
+  if (parts.length < 3 || !["message", "notice", "request"].includes(parts[0])) {
+    throw new CliInputError(`[xunlu-dev] invalid event name: ${eventName}`)
+  }
+  return normalized
+}
+
+function createEmptyResult({ protocol, mockMode, event = "" } = {}) {
+  return {
+    ok: false,
+    event,
+    replies: [],
+    apiCalls: [],
+    renderCalls: [],
+    warnings: [],
+    errors: [],
+    result: undefined,
+    protocol,
+    adapterType: mockMode === "local" ? "Local" : "Mock",
+    mockMode,
+  }
+}
+
+async function cleanupRuntime() {
+  try {
+    const { default: cfg } = await import(
+      pathToFileURL(path.join(repoRoot, "src", "lib", "config.js")).href,
+    )
+    cfg?.cleanup?.()
+  } catch {}
+}
+
+function printSimulationResults({ targets, results, jsonOut, stdout = process.stdout }) {
+  if (jsonOut) {
+    if (targets.length === 1) {
+      const key = targets[0]?.key
+      stdout.write(`${JSON.stringify(results[key], null, 2)}\n`)
+      return
+    }
+    stdout.write(`${JSON.stringify({ ok: Object.values(results).every(item => item?.ok), results }, null, 2)}\n`)
+    return
+  }
+
+  if (targets.length === 1) {
+    const key = targets[0]?.key
+    console.log(JSON.stringify(results[key], null, 2))
+    return
+  }
+
+  for (const target of targets) {
+    console.log(`=== ${target.key} ===`)
+    console.log(JSON.stringify(results[target.key], null, 2))
+  }
+}
+
+function buildCommonTriggerInput(flags = {}) {
+  const payload = {}
+  const scene = flags.scene ? String(flags.scene) : undefined
+  const groupId = toInt(flags.group || flags.group_id)
+  const userId = toInt(flags.user || flags.user_id)
+  const operatorId = toInt(flags.operator || flags.operator_id)
+  const targetId = toInt(flags.target || flags.target_id)
+  const selfId = toInt(flags.self || flags.self_id) ?? 10000
+
+  if (scene) payload.scene = scene
+  if (groupId !== undefined) payload.group_id = groupId
+  if (userId !== undefined) payload.user_id = userId
+  if (operatorId !== undefined) payload.operator_id = operatorId
+  if (targetId !== undefined) payload.target_id = targetId
+  if (flags.flag !== undefined) payload.flag = flags.flag
+  if (flags.comment !== undefined) payload.comment = String(flags.comment)
+
+  return { payload, selfId }
+}
+
+async function runHarnessCommand({
+  pluginNames,
+  protocolFlag,
+  selfId,
+  cacheBust = false,
+  eventName = "",
+  executor,
+}) {
+  const targets = parseProtocolTargets(protocolFlag)
+  const { createPluginTestHarness } = await import(
+    pathToFileURL(path.join(repoRoot, "src", "dev", "plugin-test-harness.js")).href,
+  )
+
+  const results = {}
+  let exitCode = 0
+
+  for (const target of targets) {
+    let harness = null
+    try {
+      harness = await createPluginTestHarness({
+        plugins: pluginNames,
+        protocol: target.protocol,
+        selfId,
+        mockMode: target.mockMode,
+        cacheBust: cacheBust || targets.length > 1,
+      })
+      const res = await executor(harness, target)
+      results[target.key] = res
+      if (!res?.ok) exitCode = 1
+    } catch (error) {
+      if (error?.exitCode === 2) throw error
+      const res = createEmptyResult({
+        protocol: target.protocol,
+        mockMode: target.mockMode,
+        event: eventName,
+      })
+      res.errors = [error?.stack || error?.message || String(error)]
+      res.error = res.errors[0]
+      results[target.key] = res
+      exitCode = 1
+    } finally {
+      try {
+        await harness?.dispose?.()
+      } catch {}
+    }
+  }
+
+  return { exitCode, results, targets }
+}
+
+export async function main(argv = process.argv.slice(2), io = {}) {
+  const stdout = io?.stdout || process.stdout
+  const stderr = io?.stderr || process.stderr
   if (!argv.length || argv.includes("--help") || argv[0] === "help") {
     printHelp()
     return
@@ -539,201 +743,127 @@ async function main() {
   const cmd = argv[0]
   const rest = argv.slice(1)
 
-  if (cmd === "simulate") {
+  if (cmd === "simulate" || cmd === "simulate-event" || cmd === "simulate-task") {
     const { flags, positional } = parseArgs(rest)
-    const text = positional.join(" ").trim()
-    const pluginsRaw = flags.plugin || flags.plugins
-    const pluginNames = splitCsv(pluginsRaw)
-    const rawSegmentsJson = flags["raw-segments"] || flags.rawSegments
-
-    if (!text && !rawSegmentsJson) {
-      console.error("[xunlu-dev] simulate requires <text...> (or provide --raw-segments <json>)")
-      process.exitCode = 2
-      return
-    }
-    if (!pluginNames.length) {
-      console.error("[xunlu-dev] simulate requires --plugin <name>[,<name2>] (avoid loading all plugins)")
-      process.exitCode = 2
-      return
-    }
-
-    const protocolFlag = String(flags.protocol || "milky").toLowerCase()
-    const normalizedFlag = protocolFlag.includes("onebot") ? "onebotv11" : protocolFlag
-    const protocolsToRun =
-      normalizedFlag === "both" ? ["milky", "onebotv11"] : [normalizedFlag]
-    const scene = flags.scene ? String(flags.scene) : undefined
-    const groupId = toInt(flags.group || flags.group_id)
-    const userId = toInt(flags.user || flags.user_id)
-    const selfId = toInt(flags.self || flags.self_id) ?? 10000
     const jsonOut = Boolean(flags.json)
-    const cacheBust = Boolean(flags["cache-bust"] || flags.cacheBust) || protocolsToRun.length > 1
+    const restoreConsole = redirectConsoleToStderr(jsonOut, stderr)
 
-    ensureLoggerStub()
-    ensureBotStub({ selfId })
-
-    let exitCode = 0
     try {
-      const { default: BaseBot } = await import(
-        pathToFileURL(path.join(repoRoot, "src", "Bot", "index.js")).href,
-      )
-      const { simulateIncomingMessage } = await import(
-        pathToFileURL(path.join(repoRoot, "src", "Bot", "message", "cli-simulator.js")).href,
-      )
-      const { default: cfg } = await import(
-        pathToFileURL(path.join(repoRoot, "src", "lib", "config.js")).href,
-      )
-
-      const { createProtocolMock } = await import(
-        pathToFileURL(path.join(repoRoot, "src", "dev", "protocol-mock.js")).href,
-      )
-
-      const payload = {}
-      if (text) payload.text = text
-      if (scene) payload.scene = scene
-      if (groupId !== undefined) payload.group_id = groupId
-      if (userId !== undefined) payload.user_id = userId
-      if (flags.master === false) payload.asMaster = false
-
-      if (rawSegmentsJson) {
-        try {
-          const parsed = JSON.parse(String(rawSegmentsJson))
-          if (!Array.isArray(parsed)) {
-            throw new Error("raw segments must be a JSON array")
-          }
-          payload.rawSegments = parsed
-        } catch (err) {
-          console.error("[xunlu-dev] invalid --raw-segments JSON:", err?.message || String(err))
-          process.exit(2)
-        }
+      const pluginsRaw = flags.plugin || flags.plugins
+      const pluginNames = splitCsv(pluginsRaw)
+      if (!pluginNames.length) {
+        throw new CliInputError("[xunlu-dev] simulate commands require --plugin <name>[,<name2>]")
       }
 
-      const results = {}
-      for (const protoRaw of protocolsToRun) {
-        const protocol = String(protoRaw || "").toLowerCase()
-        const useMock = protocol === "milky" || protocol === "onebotv11"
+      const protocolFlag = String(flags.protocol || "milky").toLowerCase()
+      const cacheBust = Boolean(flags["cache-bust"] || flags.cacheBust)
+      const { payload: commonPayload, selfId } = buildCommonTriggerInput(flags)
 
-        let bindEvent = undefined
-        if (useMock) {
-          const mock = createProtocolMock({ protocol, selfId })
-          globalThis.Bot = mock.bot
-          bindEvent = mock.bot
+      ensureLoggerStub()
+
+      if (cmd === "simulate") {
+        const text = positional.join(" ").trim()
+        const rawSegments = parseJsonFlag(flags["raw-segments"] || flags.rawSegments, "--raw-segments", {
+          expectArray: true,
+        })
+        if (!text && !rawSegments) {
+          throw new CliInputError(
+            "[xunlu-dev] simulate requires <text...> or --raw-segments <json-array>",
+          )
         }
 
-        const bot = new BaseBot({ adapter: protocol })
-        if (bindEvent) bot.bindEvent = bindEvent
+        const payload = { ...commonPayload }
+        if (text) payload.text = text
+        if (rawSegments) payload.rawSegments = rawSegments
 
-        const plugins = []
-        for (const name of pluginNames) {
-          plugins.push(await importPluginByName(name, { cacheBust }))
-        }
-        for (const p of plugins) {
-          await bot.registerPlugin(p)
-        }
-        await bot.runMount()
-
-        try {
-          const res = await simulateIncomingMessage({
-            bot,
-            protocol,
-            adapterType: useMock ? "Mock" : "Local",
-            payload,
-            selfId,
-            ...(bindEvent ? { bindEvent } : {}),
-          })
-          results[protocol] = res
-
-          if (Array.isArray(res?.errors) && res.errors.length) {
-            exitCode = 1
-          }
-        } catch (err) {
-          const message = err?.stack || err?.message || String(err)
-          results[protocol] = {
-            ok: false,
-            protocol,
-            adapterType: useMock ? "Mock" : "Local",
-            error: message,
-            warnings: Array.isArray(bindEvent?.warnings) ? bindEvent.warnings : [],
-            errors: Array.isArray(bindEvent?.errors) ? bindEvent.errors : [],
-          }
-          exitCode = 1
-        }
+        const run = await runHarnessCommand({
+          pluginNames,
+          protocolFlag,
+          selfId,
+          cacheBust,
+          executor: async harness => await harness.emitMessage(payload),
+        })
+        printSimulationResults({ targets: run.targets, results: run.results, jsonOut, stdout })
+        process.exitCode = run.exitCode
+        return
       }
 
-      if (jsonOut) {
-        if (protocolsToRun.length > 1) {
-          console.log(JSON.stringify({ ok: exitCode === 0, results }, null, 2))
-        } else {
-          const onlyKey = String(protocolsToRun[0] || "").toLowerCase()
-          console.log(JSON.stringify(results[onlyKey], null, 2))
+      if (cmd === "simulate-event") {
+        const [eventName, ...textParts] = positional
+        if (!eventName) {
+          throw new CliInputError("[xunlu-dev] simulate-event requires <event>")
         }
-      } else {
-        const printRes = (label, res) => {
-          console.log(`=== ${label} ===`)
+        validateEventNameInput(eventName)
 
-          if (!res || res.ok === false) {
-            console.log(res?.error ? String(res.error) : "(failed)")
-          } else {
-            const replies = Array.isArray(res?.replies) ? res.replies : []
-            if (!replies.length) console.log("(no reply)")
-            else {
-              for (const r of replies) {
-                if (r?.text) console.log(r.text)
-                else console.log(JSON.stringify(r, null, 2))
-              }
-            }
-          }
-
-          const warns = Array.isArray(res?.warnings) ? res.warnings : []
-          for (const w of warns) console.log(`WARN ${w}`)
-
-          const errs = Array.isArray(res?.errors) ? res.errors : []
-          for (const e of errs) console.log(`ERROR ${e}`)
-        }
-
-        if (protocolsToRun.length > 1) {
-          for (const protoRaw of protocolsToRun) {
-            const key = String(protoRaw || "").toLowerCase()
-            printRes(key, results[key])
-          }
-        } else {
-          const key = String(protocolsToRun[0] || "").toLowerCase()
-          const res = results[key]
-          // keep old output shape for single protocol: do not print header
-          if (!res || res.ok === false) {
-            console.log(res?.error ? String(res.error) : "(failed)")
-          } else {
-            const replies = Array.isArray(res?.replies) ? res.replies : []
-            if (!replies.length) console.log("(no reply)")
-            else {
-              for (const r of replies) {
-                if (r?.text) console.log(r.text)
-                else console.log(JSON.stringify(r, null, 2))
-              }
-            }
-          }
-
-          const warns = Array.isArray(res?.warnings) ? res.warnings : []
-          for (const w of warns) console.log(`WARN ${w}`)
-
-          const errs = Array.isArray(res?.errors) ? res.errors : []
-          for (const e of errs) console.log(`ERROR ${e}`)
-        }
-      }
-
-      try {
-        cfg?.cleanup?.()
-      } catch {}
-      process.exit(exitCode)
-    } catch (err) {
-      console.error("[xunlu-dev] simulate error:", err?.stack || err?.message || String(err))
-      exitCode = 1
-      try {
-        const { default: cfg } = await import(
-          pathToFileURL(path.join(repoRoot, "src", "lib", "config.js")).href,
+        const protocolPayload = parseJsonFlag(
+          flags["protocol-payload"] || flags.protocolPayload,
+          "--protocol-payload",
         )
-        cfg?.cleanup?.()
-      } catch {}
-      process.exit(exitCode)
+        const extra = parseJsonFlag(flags.extra, "--extra")
+        const rawSegments = parseJsonFlag(flags["raw-segments"] || flags.rawSegments, "--raw-segments", {
+          expectArray: true,
+        })
+        const text = textParts.join(" ").trim()
+        const payload = {
+          ...commonPayload,
+          event: eventName,
+          ...(protocolPayload && typeof protocolPayload === "object" ? { protocolPayload } : {}),
+          ...(extra && typeof extra === "object" ? { extra } : {}),
+        }
+        if (text) payload.text = text
+        if (rawSegments) payload.rawSegments = rawSegments
+
+        const run = await runHarnessCommand({
+          pluginNames,
+          protocolFlag,
+          selfId,
+          cacheBust,
+          eventName,
+          executor: async harness => await harness.emitEvent(payload),
+        })
+        printSimulationResults({ targets: run.targets, results: run.results, jsonOut, stdout })
+        process.exitCode = run.exitCode
+        return
+      }
+
+      const indexRaw = positional[0]
+      const index = toInt(indexRaw)
+      if (!Number.isInteger(index) || index < 0) {
+        throw new CliInputError("[xunlu-dev] simulate-task requires a valid <index>")
+      }
+      const ctxLike = parseJsonFlag(flags.ctx, "--ctx") || {}
+      if (ctxLike !== null && typeof ctxLike !== "object") {
+        throw new CliInputError("[xunlu-dev] --ctx must be a JSON object")
+      }
+
+      const mergedCtx = {
+        ...commonPayload,
+        ...(ctxLike && typeof ctxLike === "object" ? ctxLike : {}),
+      }
+
+      const run = await runHarnessCommand({
+        pluginNames,
+        protocolFlag,
+        selfId,
+        cacheBust,
+        eventName: `task.${index}`,
+        executor: async harness => {
+          if (!harness?.bot?.scheduledTasks?.[index]) {
+            throw new CliInputError(`[xunlu-dev] task not found: ${index}`)
+          }
+          return await harness.runTask({ index, ctxLike: mergedCtx })
+        },
+      })
+      printSimulationResults({ targets: run.targets, results: run.results, jsonOut, stdout })
+      process.exitCode = run.exitCode
+      return
+    } catch (error) {
+      process.exitCode = error?.exitCode ?? 1
+      console.error(error?.message || String(error))
+      return
+    } finally {
+      await cleanupRuntime()
+      restoreConsole()
     }
   }
 
@@ -998,7 +1128,19 @@ Usage:
   process.exitCode = 2
 }
 
-main().catch(err => {
-  console.error("[xunlu-dev] error:", err)
-  process.exitCode = 1
-})
+function isDirectExecution() {
+  const entry = process.argv[1]
+  if (!entry) return false
+  try {
+    return pathToFileURL(path.resolve(entry)).href === import.meta.url
+  } catch {
+    return false
+  }
+}
+
+if (isDirectExecution()) {
+  main().catch(err => {
+    console.error("[xunlu-dev] error:", err)
+    process.exitCode = 1
+  })
+}

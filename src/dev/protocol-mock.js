@@ -226,22 +226,46 @@ function validateOnebotMessage({ protocol, action, message, warnings, path = "me
   message.forEach((seg, idx) => validateSeg(seg, `${path}[${idx}]`))
 }
 
+function snapshotCallValue(value) {
+  try {
+    return structuredClone(value)
+  } catch {
+    try {
+      return JSON.parse(JSON.stringify(value))
+    } catch {
+      return value
+    }
+  }
+}
+
+function pushRecordedCall(calls, protocol, kind, name, { params, target } = {}) {
+  calls.push({
+    protocol,
+    kind,
+    name,
+    ...(target === undefined ? {} : { target: snapshotCallValue(target) }),
+    ...(params === undefined ? {} : { params: snapshotCallValue(params) }),
+  })
+}
+
 /**
  * createProtocolMock({ protocol, selfId })
  *
- * - protocol: "milky" | "onebotv11"
+ * - protocol: "milky" | "onebotv11" | "icqq"
  * - selfId: number (optional)
  *
  * Returns:
  * - bot: object (assignable to globalThis.Bot)
  * - warnings: string[]
  * - errors: string[]
+ * - calls: Array<{ protocol, kind, name, params?, target? }>
  */
 export function createProtocolMock({ protocol, selfId = 10000 } = {}) {
   const p = String(protocol || "").toLowerCase()
-  const protocolName = p.includes("onebot") ? "onebotv11" : "milky"
+  const protocolName = p.includes("onebot") ? "onebotv11" : p.includes("icqq") ? "icqq" : "milky"
   const warnings = []
   const errors = []
+  const calls = []
 
   const uin = Number(selfId)
   const botUin = Number.isFinite(uin) && uin > 0 ? Math.floor(uin) : 10000
@@ -751,8 +775,102 @@ export function createProtocolMock({ protocol, selfId = 10000 } = {}) {
     },
   }
 
-  const handleApi = async (action, params = {}) => {
-    const normalized = protocolName === "milky" ? normalizeMilkyMethod(action) : normalizeOnebotAction(action)
+  const adapterType =
+    protocolName === "milky" ? "milky" : protocolName === "onebotv11" ? "onebot-v11" : "icqq"
+
+  function rememberError(err) {
+    const e = err instanceof Error ? err : new Error(String(err))
+    if (errors[errors.length - 1] !== e.message) errors.push(e.message)
+    return e
+  }
+
+  function requireInt(action, field, value) {
+    const num = typeof value === "string" || typeof value === "number" ? Number(value) : value
+    if (!isInt(num)) throw makeMockError(protocolName, action, `field "${field}" must be number`)
+    return num
+  }
+
+  function requireString(action, field, value) {
+    if (!isString(value) || !value.trim()) {
+      throw makeMockError(protocolName, action, `field "${field}" must be string`)
+    }
+    return String(value)
+  }
+
+  function makeReceipt() {
+    const seq = ++nextMessageSeq
+    return { seq, message_seq: seq, time: nowSec(), message_id: String(++nextMessageId) }
+  }
+
+  function recordCall(kind, name, details = {}) {
+    pushRecordedCall(calls, protocolName, kind, name, details)
+  }
+
+  function convertIcqqMessage(message) {
+    const rawList = Array.isArray(message) ? message : message ? [message] : []
+    const hasRawPassthrough = rawList.some(
+      item => item && typeof item === "object" && (item.type === "node" || item.type === "forward"),
+    )
+    if (hasRawPassthrough) return rawList
+    return coerceToUniversalMessage(message).convertTo("icqq")
+  }
+
+  function normalizeForwardEntries(messages = []) {
+    const list = Array.isArray(messages) ? messages : [messages]
+    return list
+      .filter(Boolean)
+      .map(item => {
+        const source = isPlainObject(item) ? item : { message: item }
+        const rawUserId = source.user_id ?? source.uin ?? source.id ?? botUin
+        const userId = (() => {
+          const value =
+            typeof rawUserId === "string" || typeof rawUserId === "number" ? Number(rawUserId) : rawUserId
+          return isInt(value) ? value : botUin
+        })()
+        const rawSenderName = source.sender_name ?? source.nickname ?? source.name
+        const senderName = String(rawSenderName ?? "").trim() || `Mock-${userId}`
+        return {
+          user_id: userId,
+          sender_name: senderName,
+          time: isInt(source.time) ? source.time : nowSec(),
+          content: source.message ?? source.content ?? item,
+        }
+      })
+  }
+
+  function buildMilkyForwardMessage(messages = []) {
+    return [
+      {
+        type: "forward",
+        data: {
+          messages: normalizeForwardEntries(messages).map(item => ({
+            user_id: item.user_id,
+            sender_name: item.sender_name,
+            time: item.time,
+            segments: coerceToUniversalMessage(item.content).convertTo("milky"),
+          })),
+        },
+      },
+    ]
+  }
+
+  function buildNodeForwardMessage(messages = [], protocol = "onebotv11") {
+    return normalizeForwardEntries(messages).map(item => ({
+      type: "node",
+      data: {
+        uin: item.user_id,
+        name: item.sender_name,
+        content:
+          protocol === "icqq"
+            ? convertIcqqMessage(item.content)
+            : coerceToUniversalMessage(item.content).convertTo("onebotv11"),
+      },
+    }))
+  }
+
+  const handleApi = async (action, params = {}, { kind = "callApi" } = {}) => {
+    const normalized =
+      protocolName === "milky" ? normalizeMilkyMethod(action) : normalizeOnebotAction(action)
     if (!normalized) throw makeMockError(protocolName, String(action), "missing action/method")
 
     const specs = protocolName === "milky" ? milkySpecs : onebotSpecs
@@ -772,50 +890,149 @@ export function createProtocolMock({ protocol, selfId = 10000 } = {}) {
       spec.validate(validated, { protocol: protocolName, action: normalized, warnings })
     }
 
+    recordCall(kind, normalized, { params: validated })
     return typeof spec.result === "function" ? spec.result(validated) : {}
+  }
+
+  function makeIcqqPeer(kind, id) {
+    const actionBase =
+      kind === "group" ? "pickGroup" : kind === "friend" ? "pickFriend" : "pickUser"
+    const target = kind === "group" ? { group_id: id } : { user_id: id }
+
+    return {
+      ...(kind === "group" ? { group_id: id } : { user_id: id }),
+
+      async sendMsg(message) {
+        recordCall("native", `${actionBase}.sendMsg`, {
+          params: { message: convertIcqqMessage(message) },
+          target,
+        })
+        return makeReceipt()
+      },
+
+      async makeForwardMsg(messages = []) {
+        recordCall("native", `${actionBase}.makeForwardMsg`, {
+          params: { messages: snapshotCallValue(messages) },
+          target,
+        })
+        return buildNodeForwardMessage(messages, "icqq")
+      },
+
+      async recallMsg(seq) {
+        const value = requireInt(`${actionBase}.recallMsg`, "seq", seq)
+        recordCall("native", `${actionBase}.recallMsg`, { params: { seq: value }, target })
+        return true
+      },
+
+      async thumbUp(times = 1) {
+        if (kind === "group") {
+          throw makeMockError(protocolName, `${actionBase}.thumbUp`, "group does not support thumbUp")
+        }
+        const count = Math.max(1, requireInt(`${actionBase}.thumbUp`, "times", times))
+        recordCall("native", `${actionBase}.thumbUp`, { params: { times: count }, target })
+        return {}
+      },
+
+      async setReaction(seq, emoji_id, type) {
+        if (kind !== "group") {
+          throw makeMockError(protocolName, `${actionBase}.setReaction`, "only group supports setReaction")
+        }
+        const message_seq = requireInt(`${actionBase}.setReaction`, "seq", seq)
+        const reaction = requireInt(`${actionBase}.setReaction`, "emoji_id", emoji_id)
+        recordCall("native", `${actionBase}.setReaction`, {
+          params: {
+            message_seq,
+            emoji_id: reaction,
+            ...(type === undefined ? {} : { type }),
+          },
+          target,
+        })
+        return {}
+      },
+
+      async muteMember(user_id, duration) {
+        if (kind !== "group") {
+          throw makeMockError(protocolName, `${actionBase}.muteMember`, "only group supports muteMember")
+        }
+        const memberId = requireInt(`${actionBase}.muteMember`, "user_id", user_id)
+        const seconds = Math.max(0, requireInt(`${actionBase}.muteMember`, "duration", duration))
+        recordCall("native", `${actionBase}.muteMember`, {
+          params: { user_id: memberId, duration: seconds },
+          target,
+        })
+        return true
+      },
+
+      async mute(user_id, duration) {
+        return await this.muteMember(user_id, duration)
+      },
+
+      async setMute(user_id, duration) {
+        return await this.muteMember(user_id, duration)
+      },
+
+      async getMemberMap() {
+        if (kind !== "group") {
+          throw makeMockError(protocolName, `${actionBase}.getMemberMap`, "only group supports getMemberMap")
+        }
+        recordCall("native", `${actionBase}.getMemberMap`, { target })
+        return new Map([
+          [10001, makeGroupMember(id, 10001)],
+          [10002, makeGroupMember(id, 10002)],
+          [botUin, makeGroupMember(id, botUin)],
+        ])
+      },
+    }
   }
 
   const bot = {
     uin: botUin,
+    user_id: botUin,
+    self_id: botUin,
     nickname,
-    adapterType: protocolName === "milky" ? "milky" : "onebot-v11",
+    adapterType,
     warnings,
     errors,
+    calls,
 
     async callApi(action, params = {}) {
       try {
-        return await handleApi(action, params)
+        return await handleApi(action, params, { kind: "callApi" })
       } catch (err) {
-        const e = err instanceof Error ? err : new Error(String(err))
-        if (errors[errors.length - 1] !== e.message) errors.push(e.message)
-        throw e
+        throw rememberError(err)
       }
     },
 
     async sendApi(action, params = {}) {
-      return await bot.callApi(action, params)
+      try {
+        return await handleApi(action, params, { kind: "sendApi" })
+      } catch (err) {
+        throw rememberError(err)
+      }
     },
 
     async sendMsg(target, message) {
       try {
-        // OneBot raw forward nodes passthrough: treat as forward API.
+        const rawList = Array.isArray(message) ? message : message ? [message] : []
+
         if (protocolName === "onebotv11") {
-          const rawList = Array.isArray(message) ? message : message ? [message] : []
           const hasNode = rawList.some(i => i && typeof i === "object" && i.type === "node")
           const isPrivate = typeof target === "string" || typeof target === "number"
           const gid = !isPrivate && target && typeof target === "object" ? target.group_id : undefined
           if (hasNode) {
             if (isPrivate) {
-              return await bot.callApi("send_private_forward_msg", { user_id: Number(target), messages: rawList })
+              return await bot.callApi("send_private_forward_msg", {
+                user_id: Number(target),
+                messages: rawList,
+              })
             }
             return await bot.callApi("send_group_forward_msg", { group_id: Number(gid), messages: rawList })
           }
         }
 
-        const universal = coerceToUniversalMessage(message)
-        const segments = universal.convertTo(protocolName)
-
         if (protocolName === "milky") {
+          const hasForward = rawList.some(i => i && typeof i === "object" && i.type === "forward")
+          const segments = hasForward ? rawList : coerceToUniversalMessage(message).convertTo("milky")
           const isPrivate = typeof target === "string" || typeof target === "number"
           if (isPrivate) {
             const res = await bot.callApi("send_private_message", {
@@ -830,17 +1047,28 @@ export function createProtocolMock({ protocol, selfId = 10000 } = {}) {
           return { seq: res.message_seq, message_seq: res.message_seq, time: res.time }
         }
 
-        // onebotv11
-        const isPrivate = typeof target === "string" || typeof target === "number"
-        if (isPrivate) {
-          return await bot.callApi("send_private_msg", { user_id: Number(target), message: segments })
+        if (protocolName === "onebotv11") {
+          const segments = coerceToUniversalMessage(message).convertTo("onebotv11")
+          const isPrivate = typeof target === "string" || typeof target === "number"
+          if (isPrivate) {
+            return await bot.callApi("send_private_msg", { user_id: Number(target), message: segments })
+          }
+          const group_id = Number(target?.group_id ?? target?.groupId)
+          return await bot.callApi("send_group_msg", { group_id, message: segments })
         }
-        const group_id = Number(target?.group_id ?? target?.groupId)
-        return await bot.callApi("send_group_msg", { group_id, message: segments })
+
+        const payload = { message: convertIcqqMessage(message) }
+        if (typeof target === "string" || typeof target === "number") {
+          const user_id = requireInt("sendMsg", "user_id", target)
+          recordCall("native", "sendMsg", { params: payload, target: { user_id } })
+          return makeReceipt()
+        }
+
+        const group_id = requireInt("sendMsg", "group_id", target?.group_id ?? target?.groupId)
+        recordCall("native", "sendMsg", { params: payload, target: { group_id } })
+        return makeReceipt()
       } catch (err) {
-        const e = err instanceof Error ? err : new Error(String(err))
-        errors.push(e.message)
-        throw e
+        throw rememberError(err)
       }
     },
 
@@ -849,10 +1077,100 @@ export function createProtocolMock({ protocol, selfId = 10000 } = {}) {
     },
 
     pickUser(user_id) {
-      return { sendMsg: async message => await bot.sendMsg(String(user_id), message) }
+      const uid = requireInt("pickUser", "user_id", user_id)
+      if (protocolName === "icqq") return makeIcqqPeer("user", uid)
+      return {
+        sendMsg: async message => await bot.sendMsg(String(uid), message),
+        makeForwardMsg: async messages => await bot.makePrivateForwardMsg(messages, uid),
+      }
     },
+
+    pickFriend(user_id) {
+      const uid = requireInt("pickFriend", "user_id", user_id)
+      if (protocolName === "icqq") return makeIcqqPeer("friend", uid)
+      return {
+        sendMsg: async message => await bot.sendMsg(String(uid), message),
+        makeForwardMsg: async messages => await bot.makePrivateForwardMsg(messages, uid),
+      }
+    },
+
     pickGroup(group_id) {
-      return { sendMsg: async message => await bot.sendMsg({ group_id }, message) }
+      const gid = requireInt("pickGroup", "group_id", group_id)
+      if (protocolName === "icqq") return makeIcqqPeer("group", gid)
+      return {
+        sendMsg: async message => await bot.sendMsg({ group_id: gid }, message),
+        makeForwardMsg: async messages => await bot.makeGroupForwardMsg(messages, gid),
+      }
+    },
+
+    async makeGroupForwardMsg(messages = [], group_id) {
+      const target =
+        group_id === undefined || group_id === null
+          ? undefined
+          : { group_id: requireInt("makeGroupForwardMsg", "group_id", group_id) }
+      recordCall("native", "makeGroupForwardMsg", {
+        params: { messages: snapshotCallValue(messages) },
+        ...(target ? { target } : {}),
+      })
+      return protocolName === "milky"
+        ? buildMilkyForwardMessage(messages)
+        : buildNodeForwardMessage(messages, protocolName === "icqq" ? "icqq" : "onebotv11")
+    },
+
+    async makePrivateForwardMsg(messages = [], user_id) {
+      const target =
+        user_id === undefined || user_id === null
+          ? undefined
+          : { user_id: requireInt("makePrivateForwardMsg", "user_id", user_id) }
+      recordCall("native", "makePrivateForwardMsg", {
+        params: { messages: snapshotCallValue(messages) },
+        ...(target ? { target } : {}),
+      })
+      return protocolName === "milky"
+        ? buildMilkyForwardMessage(messages)
+        : buildNodeForwardMessage(messages, protocolName === "icqq" ? "icqq" : "onebotv11")
+    },
+
+    async sendLike(user_id, times = 1) {
+      if (protocolName !== "icqq") {
+        throw makeMockError(protocolName, "sendLike", "only supported in icqq mock")
+      }
+      const uid = requireInt("sendLike", "user_id", user_id)
+      const count = Math.max(1, requireInt("sendLike", "times", times))
+      recordCall("native", "sendLike", { params: { user_id: uid, times: count } })
+      return {}
+    },
+
+    async setFriendAddRequest(flag, approve, remark, block) {
+      if (protocolName !== "icqq") {
+        throw makeMockError(protocolName, "setFriendAddRequest", "only supported in icqq mock")
+      }
+      const flagText = requireString("setFriendAddRequest", "flag", flag)
+      recordCall("native", "setFriendAddRequest", {
+        params: {
+          flag: flagText,
+          approve: approve === undefined ? true : Boolean(approve),
+          ...(remark === undefined ? {} : { remark: String(remark) }),
+          ...(block === undefined ? {} : { block: Boolean(block) }),
+        },
+      })
+      return {}
+    },
+
+    async setGroupAddRequest(flag, approve, reason, block) {
+      if (protocolName !== "icqq") {
+        throw makeMockError(protocolName, "setGroupAddRequest", "only supported in icqq mock")
+      }
+      const flagText = requireString("setGroupAddRequest", "flag", flag)
+      recordCall("native", "setGroupAddRequest", {
+        params: {
+          flag: flagText,
+          approve: approve === undefined ? true : Boolean(approve),
+          ...(reason === undefined ? {} : { reason: String(reason) }),
+          ...(block === undefined ? {} : { block: Boolean(block) }),
+        },
+      })
+      return {}
     },
 
     async getLoginInfo() {
@@ -881,27 +1199,93 @@ export function createProtocolMock({ protocol, selfId = 10000 } = {}) {
     },
 
     async getFriendList(input = {}) {
+      if (protocolName === "icqq") {
+        void input
+        recordCall("native", "getFriendList", { params: {} })
+        return new Map([[10001, makeFriend(10001)]])
+      }
       return await bot.callApi("get_friend_list", input)
     },
 
-    async getFriendInfo(input = {}) {
+    async getFriendInfo(input = {}, no_cache = false) {
       if (protocolName === "milky") return await bot.callApi("get_friend_info", input)
-      return await bot.callApi("get_stranger_info", input)
+      if (protocolName === "onebotv11") return await bot.callApi("get_stranger_info", input)
+
+      const user_id = requireInt(
+        "getFriendInfo",
+        "user_id",
+        isPlainObject(input) ? input.user_id ?? input.userId : input,
+      )
+      recordCall("native", "getFriendInfo", {
+        params: { user_id, no_cache: Boolean(isPlainObject(input) ? input.no_cache : no_cache) },
+      })
+      return makeFriend(user_id)
     },
 
     async getGroupList(input = {}) {
+      if (protocolName === "icqq") {
+        void input
+        recordCall("native", "getGroupList", { params: {} })
+        return new Map([[123, makeGroup(123)]])
+      }
       return await bot.callApi("get_group_list", input)
     },
 
-    async getGroupInfo(input = {}) {
+    async getGroupInfo(input = {}, no_cache = false) {
+      if (protocolName === "icqq") {
+        const group_id = requireInt(
+          "getGroupInfo",
+          "group_id",
+          isPlainObject(input) ? input.group_id ?? input.groupId : input,
+        )
+        recordCall("native", "getGroupInfo", {
+          params: { group_id, no_cache: Boolean(isPlainObject(input) ? input.no_cache : no_cache) },
+        })
+        return makeGroup(group_id)
+      }
       return await bot.callApi("get_group_info", input)
     },
 
-    async getGroupMemberList(input = {}) {
+    async getGroupMemberList(input = {}, no_cache = false) {
+      if (protocolName === "icqq") {
+        const group_id = requireInt(
+          "getGroupMemberList",
+          "group_id",
+          isPlainObject(input) ? input.group_id ?? input.groupId : input,
+        )
+        recordCall("native", "getGroupMemberList", {
+          params: { group_id, no_cache: Boolean(isPlainObject(input) ? input.no_cache : no_cache) },
+        })
+        return new Map([
+          [10001, makeGroupMember(group_id, 10001)],
+          [10002, makeGroupMember(group_id, 10002)],
+          [botUin, makeGroupMember(group_id, botUin)],
+        ])
+      }
       return await bot.callApi("get_group_member_list", input)
     },
 
-    async getGroupMemberInfo(input = {}) {
+    async getGroupMemberInfo(input = {}, maybeUserId, no_cache = false) {
+      if (protocolName === "icqq") {
+        const group_id = requireInt(
+          "getGroupMemberInfo",
+          "group_id",
+          isPlainObject(input) ? input.group_id ?? input.groupId : input,
+        )
+        const user_id = requireInt(
+          "getGroupMemberInfo",
+          "user_id",
+          isPlainObject(input) ? input.user_id ?? input.userId : maybeUserId,
+        )
+        recordCall("native", "getGroupMemberInfo", {
+          params: {
+            group_id,
+            user_id,
+            no_cache: Boolean(isPlainObject(input) ? input.no_cache : no_cache),
+          },
+        })
+        return makeGroupMember(group_id, user_id)
+      }
       return await bot.callApi("get_group_member_info", input)
     },
 
@@ -917,55 +1301,211 @@ export function createProtocolMock({ protocol, selfId = 10000 } = {}) {
       return await bot.getFriendInfo(input)
     },
 
-    async getStrangerInfo(input = {}) {
-      if (protocolName !== "onebotv11") {
-        throw makeMockError(protocolName, "get_stranger_info", "only supported in onebotv11 mock")
+    async getStrangerInfo(input = {}, no_cache = false) {
+      if (protocolName === "onebotv11") return await bot.callApi("get_stranger_info", input)
+      if (protocolName !== "icqq") {
+        throw makeMockError(protocolName, "get_stranger_info", "only supported in onebotv11/icqq mock")
       }
-      return await bot.callApi("get_stranger_info", input)
+      const user_id = requireInt(
+        "getStrangerInfo",
+        "user_id",
+        isPlainObject(input) ? input.user_id ?? input.userId : input,
+      )
+      recordCall("native", "getStrangerInfo", {
+        params: { user_id, no_cache: Boolean(isPlainObject(input) ? input.no_cache : no_cache) },
+      })
+      return { user_id, nickname: `User-${user_id}`, sex: "unknown", age: 0 }
     },
 
-    async setGroupName(input = {}) {
+    async setGroupName(input = {}, maybeName) {
+      if (protocolName === "icqq") {
+        const group_id = requireInt(
+          "setGroupName",
+          "group_id",
+          isPlainObject(input) ? input.group_id ?? input.groupId : input,
+        )
+        const group_name = requireString(
+          "setGroupName",
+          "group_name",
+          isPlainObject(input) ? input.group_name ?? input.groupName : maybeName,
+        )
+        recordCall("native", "setGroupName", { params: { group_id, group_name } })
+        return {}
+      }
       return await bot.callApi("set_group_name", input)
     },
 
     async setGroupMemberCard(input = {}) {
       if (protocolName === "milky") return await bot.callApi("set_group_member_card", input)
+      if (protocolName === "icqq") {
+        const group_id = requireInt("setGroupCard", "group_id", input.group_id ?? input.groupId)
+        const user_id = requireInt("setGroupCard", "user_id", input.user_id ?? input.userId)
+        const card = requireString("setGroupCard", "card", input.card)
+        recordCall("native", "setGroupCard", { params: { group_id, user_id, card } })
+        return {}
+      }
       return await bot.callApi("set_group_card", input)
     },
 
     async setGroupMemberAdmin(input = {}) {
       if (protocolName === "milky") return await bot.callApi("set_group_member_admin", input)
+      if (protocolName === "icqq") {
+        const group_id = requireInt("setGroupAdmin", "group_id", input.group_id ?? input.groupId)
+        const user_id = requireInt("setGroupAdmin", "user_id", input.user_id ?? input.userId)
+        recordCall("native", "setGroupAdmin", {
+          params: { group_id, user_id, enable: Boolean(input.enable) },
+        })
+        return {}
+      }
       return await bot.callApi("set_group_admin", input)
     },
 
     async setGroupMemberSpecialTitle(input = {}) {
       if (protocolName === "milky") return await bot.callApi("set_group_member_special_title", input)
+      if (protocolName === "icqq") {
+        const group_id = requireInt(
+          "setGroupSpecialTitle",
+          "group_id",
+          input.group_id ?? input.groupId,
+        )
+        const user_id = requireInt(
+          "setGroupSpecialTitle",
+          "user_id",
+          input.user_id ?? input.userId,
+        )
+        const special_title = requireString(
+          "setGroupSpecialTitle",
+          "special_title",
+          input.special_title ?? input.specialTitle,
+        )
+        recordCall("native", "setGroupSpecialTitle", {
+          params: {
+            group_id,
+            user_id,
+            special_title,
+            ...(input.duration === undefined ? {} : { duration: Number(input.duration) }),
+          },
+        })
+        return {}
+      }
       return await bot.callApi("set_group_special_title", input)
     },
 
     async setGroupMemberMute(input = {}) {
       if (protocolName === "milky") return await bot.callApi("set_group_member_mute", input)
+      if (protocolName === "icqq") {
+        const group_id = requireInt(
+          "setGroupMemberMute",
+          "group_id",
+          input.group_id ?? input.groupId,
+        )
+        const user_id = requireInt("setGroupMemberMute", "user_id", input.user_id ?? input.userId)
+        const duration = Math.max(
+          0,
+          requireInt("setGroupMemberMute", "duration", input.duration ?? input.durationSeconds ?? 0),
+        )
+        return await bot.pickGroup(group_id).muteMember(user_id, duration)
+      }
       return await bot.callApi("set_group_ban", input)
     },
 
     async setGroupWholeMute(input = {}) {
       if (protocolName === "milky") return await bot.callApi("set_group_whole_mute", input)
+      if (protocolName === "icqq") {
+        const group_id = requireInt("setGroupWholeBan", "group_id", input.group_id ?? input.groupId)
+        recordCall("native", "setGroupWholeBan", {
+          params: { group_id, enable: Boolean(input.enable) },
+        })
+        return {}
+      }
       return await bot.callApi("set_group_whole_ban", input)
     },
 
     async kickGroupMember(input = {}) {
       if (protocolName === "milky") return await bot.callApi("kick_group_member", input)
+      if (protocolName === "icqq") {
+        const group_id = requireInt("setGroupKick", "group_id", input.group_id ?? input.groupId)
+        const user_id = requireInt("setGroupKick", "user_id", input.user_id ?? input.userId)
+        recordCall("native", "setGroupKick", {
+          params: {
+            group_id,
+            user_id,
+            reject_add_request: Boolean(input.reject_add_request),
+            ...(input.message === undefined ? {} : { message: String(input.message) }),
+          },
+        })
+        return {}
+      }
       return await bot.callApi("set_group_kick", input)
     },
 
     async quitGroup(input = {}) {
       if (protocolName === "milky") return await bot.callApi("quit_group", input)
+      if (protocolName === "icqq") {
+        const group_id = requireInt("setGroupLeave", "group_id", input.group_id ?? input.groupId)
+        recordCall("native", "setGroupLeave", { params: { group_id } })
+        return {}
+      }
       return await bot.callApi("set_group_leave", input)
     },
 
     async sendGroupMessageReaction(input = {}) {
-      if (protocolName === "milky") return await bot.callApi("send_group_message_reaction", input)
-      return await bot.callApi("set_msg_emoji_like", input)
+      if (protocolName === "milky") {
+        const group_id = requireInt(
+          "sendGroupMessageReaction",
+          "group_id",
+          input.group_id ?? input.peer_id ?? input.groupId ?? input.peerId,
+        )
+        const message_seq = requireInt(
+          "sendGroupMessageReaction",
+          "message_seq",
+          input.message_seq ?? input.seq ?? input.messageSeq,
+        )
+        const reactionRaw = input.reaction ?? input.emoji_id ?? input.emojiId ?? input.id
+        if (reactionRaw === undefined || reactionRaw === null || String(reactionRaw).trim() === "") {
+          throw makeMockError(protocolName, "sendGroupMessageReaction", 'field "reaction" must be string')
+        }
+        const reaction = String(reactionRaw)
+        return await bot.callApi("send_group_message_reaction", {
+          ...input,
+          group_id,
+          message_seq,
+          reaction,
+        })
+      }
+      if (protocolName === "icqq") {
+        const group_id = requireInt(
+          "sendGroupMessageReaction",
+          "group_id",
+          input.group_id ?? input.peer_id ?? input.groupId ?? input.peerId,
+        )
+        const message_seq = requireInt(
+          "sendGroupMessageReaction",
+          "message_seq",
+          input.message_seq ?? input.seq ?? input.messageSeq,
+        )
+        const reaction = requireInt(
+          "sendGroupMessageReaction",
+          "reaction",
+          input.reaction ?? input.emoji_id ?? input.emojiId ?? input.id,
+        )
+        return await bot.pickGroup(group_id).setReaction(message_seq, reaction, input.type)
+      }
+      const message_id = requireInt(
+        "sendGroupMessageReaction",
+        "message_id",
+        input.message_id ?? input.messageId ?? input.message_seq ?? input.seq ?? input.messageSeq,
+      )
+      const emoji_id = requireInt(
+        "sendGroupMessageReaction",
+        "emoji_id",
+        input.reaction ?? input.emoji_id ?? input.emojiId ?? input.id,
+      )
+      return await bot.callApi("set_msg_emoji_like", {
+        ...input,
+        message_id,
+        emoji_id,
+      })
     },
 
     async recallMessage(input = {}) {
@@ -982,6 +1522,23 @@ export function createProtocolMock({ protocol, selfId = 10000 } = {}) {
 
         if (isGroup) return await bot.callApi("recall_group_message", { group_id: Number(peerId), message_seq })
         return await bot.callApi("recall_private_message", { user_id: Number(peerId), message_seq })
+      }
+
+      if (protocolName === "icqq") {
+        const seq = requireInt(
+          "recallMessage",
+          "message_seq",
+          input.message_seq ?? input.messageSeq ?? input.seq,
+        )
+        const isGroup = Boolean(
+          input.isGroup ?? input.group_id ?? input.groupId ?? this?.group_id ?? (this?.message_scene === "group"),
+        )
+        const peerId = isGroup
+          ? requireInt("recallMessage", "group_id", input.group_id ?? input.peer_id ?? this?.group_id)
+          : requireInt("recallMessage", "user_id", input.user_id ?? input.peer_id ?? this?.user_id)
+        return isGroup
+          ? await bot.pickGroup(peerId).recallMsg(seq)
+          : await bot.pickUser(peerId).recallMsg(seq)
       }
 
       const message_id =
@@ -1043,6 +1600,28 @@ export function createProtocolMock({ protocol, selfId = 10000 } = {}) {
         }
       }
 
+      if (protocolName === "icqq") {
+        const seq =
+          typeof idOrSeq === "string" || typeof idOrSeq === "number" ? Number(idOrSeq) : idOrSeq
+        recordCall("native", "getMsg", { params: { idOrSeq: seq } })
+        const rawSegments = [{ type: "text", data: { text: "[mock msg]" } }]
+
+        let universalMessage
+        try {
+          universalMessage = UniversalMessage.from("icqq", rawSegments)
+        } catch {}
+
+        return {
+          protocol: "icqq",
+          adapterType: "Mock",
+          seq,
+          message_seq: seq,
+          segments: rawSegments,
+          rawSegments,
+          ...(universalMessage ? { universalMessage, message: universalMessage.segments } : {}),
+        }
+      }
+
       const res = await bot.callApi("get_msg", { message_id: idOrSeq })
       const rawSegments =
         res?.message?.message ?? res?.message ?? res?.segments ?? res?.data?.message ?? res?.data?.segments
@@ -1065,6 +1644,9 @@ export function createProtocolMock({ protocol, selfId = 10000 } = {}) {
 
     async acceptFriendRequest(input = {}) {
       if (protocolName === "milky") return await bot.callApi("accept_friend_request", input)
+      if (protocolName === "icqq") {
+        return await bot.setFriendAddRequest(input.flag, true, input.remark ?? input.reason, input.block)
+      }
       const flag = input.flag
       const remark = input.remark ?? input.reason
       return await bot.callApi("set_friend_add_request", { flag, approve: true, ...(remark !== undefined ? { remark } : {}) })
@@ -1072,6 +1654,9 @@ export function createProtocolMock({ protocol, selfId = 10000 } = {}) {
 
     async rejectFriendRequest(input = {}) {
       if (protocolName === "milky") return await bot.callApi("reject_friend_request", input)
+      if (protocolName === "icqq") {
+        return await bot.setFriendAddRequest(input.flag, false, input.remark ?? input.reason, input.block)
+      }
       const flag = input.flag
       const remark = input.remark ?? input.reason
       return await bot.callApi("set_friend_add_request", { flag, approve: false, ...(remark !== undefined ? { remark } : {}) })
@@ -1079,6 +1664,9 @@ export function createProtocolMock({ protocol, selfId = 10000 } = {}) {
 
     async acceptGroupRequest(input = {}) {
       if (protocolName === "milky") return await bot.callApi("accept_group_request", input)
+      if (protocolName === "icqq") {
+        return await bot.setGroupAddRequest(input.flag, true, input.reason, input.block)
+      }
       const flag = input.flag
       const sub_type = input.sub_type ?? input.subType
       const reason = input.reason
@@ -1087,12 +1675,23 @@ export function createProtocolMock({ protocol, selfId = 10000 } = {}) {
 
     async rejectGroupRequest(input = {}) {
       if (protocolName === "milky") return await bot.callApi("reject_group_request", input)
+      if (protocolName === "icqq") {
+        return await bot.setGroupAddRequest(input.flag, false, input.reason, input.block)
+      }
       const flag = input.flag
       const sub_type = input.sub_type ?? input.subType
       const reason = input.reason
       return await bot.callApi("set_group_add_request", { flag, sub_type, approve: false, ...(reason !== undefined ? { reason } : {}) })
     },
+
+    async sendProfileLike(input = {}) {
+      if (protocolName === "milky") return await bot.callApi("send_profile_like", input)
+      if (protocolName === "onebotv11") return await bot.callApi("send_like", input)
+      const user_id = requireInt("sendProfileLike", "user_id", input.user_id)
+      const times = Math.max(1, requireInt("sendProfileLike", "times", input.times ?? input.count ?? 1))
+      return await bot.sendLike(user_id, times)
+    },
   }
 
-  return { bot, warnings, errors }
+  return { bot, warnings, errors, calls }
 }

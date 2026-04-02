@@ -19,10 +19,13 @@
 
 ## xunlu-dev simulate 协议说明
 
-- `xunlu-dev simulate --protocol milky|onebotv11` 会启用 in-process mock：不真发 QQ，只做必填字段和类型校验，并返回成功假数据。
-- `xunlu-dev simulate --protocol icqq` 可以走本地事件链路，但当前不会启用 `src/dev/protocol-mock.js` 那套严格 API 校验。
-- `--protocol both` 目前表示依次跑 `milky` 和 `onebotv11` 两次；如果想单独看 `icqq`，请显式写 `--protocol icqq`。
-- `--protocol both --json` 输出形如 `{ ok, results: { milky, onebotv11 } }`；非 `--json` 输出会按 `=== milky ===`、`=== onebotv11 ===` 分段打印。
+- `xunlu-dev simulate`、`simulate-event`、`simulate-task` 现在共用同一套测试执行器与严格协议 mock。
+- `--protocol milky|onebotv11|icqq` 会启用 in-process strict mock：不真发 QQ，只做必填字段和类型校验，并返回成功假数据。
+- `--protocol icqq-local` 才表示保留当前本地事件链路；适合对照旧行为。
+- `--protocol both` 表示依次跑 `milky + onebotv11`；`--protocol all` 表示依次跑 `milky + onebotv11 + icqq`。
+- `--json` 时 stdout 是纯 JSON；单协议和多协议都统一包含 `replies / apiCalls / renderCalls / warnings / errors / result`。
+- 严格 mock 的 `calls` 结构统一为 `{ protocol, kind, name, params, target }`，适合 CLI、harness 和 `node:test` 共用断言。
+- 更完整的测试说明见 `md/testing-handbook-ai.md`。
 
 ## 0) 总览（差异一眼看懂）
 

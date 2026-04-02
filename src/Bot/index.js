@@ -322,7 +322,25 @@ async function enrichGroupRoleFlags(e) {
 
 export default class BaseBot {
   constructor(config) {
-    this.adapter = config.adapter
+    const options = config && typeof config === "object" ? config : {}
+    this.adapter = options.adapter
+    this.scheduler =
+      options.scheduler && typeof options.scheduler.scheduleJob === "function"
+        ? options.scheduler
+        : schedule
+    this.timers = {
+      setTimeout:
+        typeof options?.timers?.setTimeout === "function"
+          ? options.timers.setTimeout.bind(options.timers)
+          : setTimeout,
+      clearTimeout:
+        typeof options?.timers?.clearTimeout === "function"
+          ? options.timers.clearTimeout.bind(options.timers)
+          : clearTimeout,
+    }
+    this.renderer =
+      options.renderer && typeof options.renderer.render === "function" ? options.renderer : Render
+    this.scheduledTasks = []
     this.plugins = {}
     this.groupReply = {}
     this.privateReply = {}
@@ -358,7 +376,7 @@ export default class BaseBot {
 
   async renderImg(name, data, options = {}) {
     const tpl = options?.tpl || options?.template || name
-    return await Render.render(
+    return await this.renderer.render(
       name,
       `/html/${name}/${tpl}.html`,
       {
@@ -433,10 +451,23 @@ export default class BaseBot {
 
   collectTimerTasks() {
     return (interval, task) => {
-      const job = schedule.scheduleJob(interval, () => {
-        task({
-          ...this.bindEvent,
+      const runTask = async (ctxLike = {}) => {
+        const extra = ctxLike && typeof ctxLike === "object" ? ctxLike : {}
+        return await task({
+          ...(this.bindEvent && typeof this.bindEvent === "object" ? this.bindEvent : {}),
+          ...extra,
         })
+      }
+
+      const job = this.scheduler.scheduleJob(interval, () => {
+        void runTask().catch(err => logger.error("[setTask] task failed:", err))
+      })
+      this.scheduledTasks.push({
+        index: this.scheduledTasks.length,
+        interval,
+        task,
+        runner: runTask,
+        job,
       })
       return job
     }
@@ -847,7 +878,7 @@ export default class BaseBot {
   setupTimeout(isPrivate, contextKey, userId, endMsg, ctx) {
     if (endMsg) return null
 
-    return setTimeout(() => {
+    return this.timers.setTimeout(() => {
       this.clearContext(isPrivate, contextKey, userId)
       if (ctx) {
         ctx.reply("时间超时，已取消。", true).catch(logger.error)
@@ -941,6 +972,9 @@ export default class BaseBot {
           return res
         } catch (err) {
           logger.error("处理命令时出错:", err)
+          if (e?.__xunluThrowCommandError) {
+            throw err
+          }
         }
       }
     }
@@ -988,7 +1022,7 @@ export default class BaseBot {
       let res = await context.cfnc(e)
       // 清除超时计时器，因为用户已响应
       if (context.timer) {
-        clearTimeout(context.timer)
+        this.timers.clearTimeout(context.timer)
         context.timer = null
       }
       return res
@@ -1031,7 +1065,7 @@ export default class BaseBot {
     storage[contextKey][userId] = storage[contextKey][userId].filter(context => {
       const shouldRemove = isPersistent ? context.endMsg : !context.endMsg
       if (shouldRemove && context.timer) {
-        clearTimeout(context.timer)
+        this.timers.clearTimeout(context.timer)
       }
       return !shouldRemove
     })
@@ -1045,7 +1079,7 @@ export default class BaseBot {
     for (let i = contexts.length - 1; i >= 0; i--) {
       if (!contexts[i].endMsg) {
         if (contexts[i].timer) {
-          clearTimeout(contexts[i].timer)
+          this.timers.clearTimeout(contexts[i].timer)
         }
         contexts.splice(i, 1)
         break
@@ -1073,7 +1107,7 @@ export default class BaseBot {
 
       // forward/raw 消息直接透传，避免被误转换（例如 onebot 的 node 转发）
       const rawList = Array.isArray(msg) ? msg : msg ? [msg] : []
-      const hasRawNode = rawList.some(i => i?.type === "node")
+      const hasRawNode = rawList.some(i => i?.type === "node" || i?.type === "forward")
 
       if (!hasRawNode) {
         if (typeof msg === "string") {
@@ -1132,7 +1166,7 @@ export default class BaseBot {
       }
 
       if (!e.isGuild && recallMsg > 0 && (msgRes?.seq || msgRes?.message_id)) {
-        setTimeout(() => {
+        this.timers.setTimeout(() => {
           void Promise.resolve()
             .then(() =>
               e.recallMessage?.({
@@ -1349,6 +1383,8 @@ export default class BaseBot {
         "getGroupMemberList",
         "getGroupMemberInfo",
         "setGroupMemberMute",
+        "makeGroupForwardMsg",
+        "makeGroupForwardMsgByUser",
         "pickUser",
       ],
     })

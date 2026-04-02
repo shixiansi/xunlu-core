@@ -268,13 +268,34 @@ async function hasRecentManualUsage({ groupId, userId, reg, sinceMs = 0 } = {}) 
   return Number(count || 0) > 0
 }
 
-export { getDateParts, getDbPath, getHourlyFavoriteCommands, hasRecentManualUsage, initDb, listUsage, normalizeCommand, recordUsage }
+async function close() {
+  CommandUsageLog = null
+  indexesEnsured = false
+  const db = sequelize
+  sequelize = null
+  if (db && typeof db.close === "function") {
+    await db.close().catch(() => {})
+  }
+}
+
+export {
+  close,
+  getDateParts,
+  getDbPath,
+  getHourlyFavoriteCommands,
+  hasRecentManualUsage,
+  initDb,
+  listUsage,
+  normalizeCommand,
+  recordUsage,
+}
 
 function getDbPath() {
   return DB_PATH
 }
 
 export default {
+  close,
   getDbPath,
   initDb,
   recordUsage,

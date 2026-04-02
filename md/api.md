@@ -7,7 +7,7 @@
 - **发消息**：优先用 `ctx.reply()` / `botApi.sendMessage()`（会自动按协议转换消息段）
 - **跨协议能力**：优先用本文件列出的“通用 QQBot API”（`getGroupInfo/recallMessage/...`）
 - **原生协议 API**：仅在必须时再用 `ctx.sendApi()/ctx.callApi()`（参数差异见 `md/onebotv11-milky-api-quickref.md`）
-- **离线测试**：`xunlu-dev simulate --protocol milky|onebotv11|both` 会启用协议 mock 做“必填+类型”校验并返回假数据（见 `AGENTS.md`）
+- **离线测试**：`xunlu-dev simulate|simulate-event|simulate-task` 与 `createPluginTestHarness(...)` 共用同一套测试链路；协议与退出码规则见 `md/testing-handbook-ai.md`
 
 本文档描述：
 
@@ -120,6 +120,7 @@ export default {
 - `listCommands()` 和 `invokeCommandByText()` 依赖 `BaseBot` 实例，适合做帮助系统、调度任务、指令回放
 - `makeGroupForwardMsgByUser()` 会自动补齐转发节点里的 `nickname / sender_name / user_id`，避免插件手写身份映射
 - `sendApi()` 与 `callApi()` 在 xunlu-core 中语义等价，都会走当前适配器的原生 API；仅在通用 API 不足时再使用
+- 在 harness / CLI 模拟里，`renderImg()`、`makeGroupForwardMsg()` 和 `ctx.reply()` 仍走通用封装；可直接断言 `renderCalls` 与 `apiCalls`
 
 #### `renderImg(name, data, options?)`
 使用 **HTML 模板渲染 → Chromium 截图** 生成图片消息，返回值可直接 `ctx.reply()` 发送。
@@ -181,7 +182,7 @@ else await ctx.reply("渲染失败")
 - `await ctx.reply(msg, quote=false, { recallMsg?: number, at?: string })`
   - `msg` 支持：`string | UniversalMessage | UniversalMessageSegment | UniversalMessageSegment[] | 原生段数组`
   - `quote=true`：自动引用当前消息（会尽量在三协议下找到 msgId/seq）
-  - `recallMsg`：多少秒后撤回（若协议支持）
+  - `recallMsg`：多少秒后撤回（若协议支持）；在测试 harness 里可配合 `flushTimeouts()` 直接触发
 - `await ctx.getMessage(ref)`：按 `{ msgId?, seq? }` 获取消息（跨协议统一）
 - `await ctx.getReplyMessage()`：获取被回复的那条消息（基于 `reply` 段）
 - `await ctx.sendApi(action, params?)` / `await ctx.callApi(action, params?)`：调用原生协议 API
@@ -374,6 +375,11 @@ const forward = await ctx.makeGroupForwardMsg(ctx, [
 
 await ctx.reply(forward)
 ```
+
+测试补充：
+
+- 严格 mock 与 CLI 模拟会保留 raw forward/node 透传，不会把转发节点误降级成纯文本
+- 如需验证三端映射差异，优先断言 harness 返回的 `apiCalls`
 
 ### A.9 getLoginInfo()
 

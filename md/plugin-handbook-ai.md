@@ -10,7 +10,7 @@
 
 1. 先复制最小模板：`export default { name, register() {} }`
 2. 命令 handler 里优先 `return await ctx.reply(...)`
-3. 离线测试优先用 `xunlu-dev simulate --protocol both`
+3. 离线测试优先用 `xunlu-dev simulate --protocol both`；依赖 ICQQ native 行为时补 `--protocol icqq`
 4. 只有需要 HTTP 时再实现 `apiRoutes(router)`
 5. 涉及管理员 / 群主判断时，优先用 `ctx.isGroupAdmin()` / `ctx.isBotGroupOwner()` 这类通用 helper
 
@@ -217,11 +217,16 @@ node ./bin/xunlu-dev.js plugins list
 ```bash
 node ./bin/xunlu-dev.js simulate "你好" --plugin hello --protocol milky --scene private --user 10001
 node ./bin/xunlu-dev.js simulate "钓鱼" --plugin diaoyu --protocol both --scene group --group 123 --user 10001
+node ./bin/xunlu-dev.js simulate-event notice.group.increase --plugin group --protocol all --group 123 --user 10001 --operator 10002
+node ./bin/xunlu-dev.js simulate-task 0 --plugin other --protocol icqq-local
 ```
 
 说明：
+- `--protocol icqq` 现在走严格 mock；`--protocol icqq-local` 才是本地链路
 - `--protocol both` 会分别跑 `milky + onebotv11`
-- simulate 环境会 stub 一部分能力，重点用于检查命令链路与参数格式
+- `--protocol all` 会分别跑 `milky + onebotv11 + icqq`
+- `simulate` / `simulate-event` / `simulate-task` 都会返回统一结果字段：`replies / apiCalls / renderCalls / warnings / errors / result`
+- `--json` 时 stdout 是纯 JSON，适合脚本直接 `JSON.parse`
 - 涉及截图时，要保证失败后仍有文本输出
 
 ### 9.3 轻量自检
@@ -229,6 +234,20 @@ node ./bin/xunlu-dev.js simulate "钓鱼" --plugin diaoyu --protocol both --scen
 ```bash
 node ./bin/xunlu-dev.js dev check
 ```
+
+### 9.4 回归测试
+
+```bash
+npm test
+npm run test:unit
+npm run test:render
+```
+
+说明：
+- 自动化默认使用 Node 内建 `node:test`
+- 推荐把“稳定、可重复”的行为写进 fixture 插件或 harness 断言，不要依赖仓库现有 `data/` 状态
+- 真实 Chromium smoke 单独放到 `test:render`
+- 更完整的 harness / CLI 说明见 `md/testing-handbook-ai.md`
 
 ---
 
@@ -261,4 +280,5 @@ node ./bin/xunlubot.js restart
 - [ ] 关键命令都 `return await ctx.reply(...)`
 - [ ] 截图 / 网络依赖都提供文本降级
 - [ ] 至少跑一次 `xunlu-dev simulate ... --protocol both`
+- [ ] 如有 `notice/request/task` 逻辑，至少补一次 `simulate-event` 或 `simulate-task`
 - [ ] 如有外部资源，补 `ATTRIBUTION` 或生成脚本

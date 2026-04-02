@@ -19,9 +19,11 @@
     "xunlu-dev": "node ./bin/xunlu-dev.js",
     "xunlubot": "node ./bin/xunlubot.js",
     "bot:restart": "node ./bin/xunlubot.js restart",
-    "test:learning-chat-proactive-command": "node --test test/learning-chat-proactive-command.test.js",
     "dev:tree": "node ./bin/xunlu-dev.js dev tree",
-    "dev:check": "node ./bin/xunlu-dev.js dev check"
+    "dev:check": "node ./bin/xunlu-dev.js dev check",
+    "test": "node --experimental-test-isolation=none --test test/plugin-test-harness.test.js test/protocol-api.test.js test/real-plugins-smoke.test.js test/xunlu-dev.test.js test/render-smoke.test.js",
+    "test:unit": "node --experimental-test-isolation=none --test test/plugin-test-harness.test.js test/protocol-api.test.js test/real-plugins-smoke.test.js test/xunlu-dev.test.js",
+    "test:render": "set XUNLU_RUN_RENDER_TESTS=1 && node --experimental-test-isolation=none --test test/render-smoke.test.js"
   },
   "dependencies": {
     "@napi-rs/canvas": "^0.1.88",

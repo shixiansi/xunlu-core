@@ -38,6 +38,13 @@ class BaseDB {
     await BaseModel.sync();
     return BaseModel;
   }
+
+  async close() {
+    const app = this.app;
+    this.app = null;
+    if (!app || typeof app.close !== "function") return;
+    await app.close().catch(() => {});
+  }
 }
 
 const { Types } = BaseDB;
