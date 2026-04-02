@@ -77,6 +77,33 @@ test("group plugin handles request and notice simulation without crashing", asyn
   })
 })
 
+test("group recall notice notifies masters after enabling the switch", async () => {
+  const groupId = 987654321
+
+  for (const protocol of ["milky", "onebotv11", "icqq"]) {
+    await withHarness({ plugins: ["group"], protocol }, async harness => {
+      const toggleRes = await harness.emitMessage({
+        scene: "group",
+        text: "#荨鹿通知设置群撤回开启",
+        group_id: groupId,
+        user_id: masterId,
+      })
+      assert.equal(toggleRes.ok, true)
+
+      harness.resetCaptures()
+
+      const recallRes = await harness.emitEvent({
+        event: "notice.group.recall",
+        group_id: groupId,
+        user_id: 10001,
+        operator_id: 10002,
+      })
+      assert.equal(recallRes.ok, true)
+      assert.ok(recallRes.replies.length >= 1)
+    })
+  }
+})
+
 test("other plugin smoke covers forward, recall, and scheduled task", async () => {
   for (const protocol of ["milky", "onebotv11", "icqq"]) {
     await withHarness({ plugins: ["other", pixivFixture], protocol }, async harness => {

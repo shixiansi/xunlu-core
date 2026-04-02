@@ -5,6 +5,7 @@ import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { segment } from "../../../Bot/segment.js"
 import { coerceToUniversalMessage } from "../../../Bot/message/context.js"
+import { getMemberInfoWithFallback } from "../../../Bot/member-role-utils.js"
 import Filemage from "../../../utils/Filemage.js"
 import MessageDB from "../../../db/MessageDB.js"
 import env from "../../../lib/env.js"
@@ -354,6 +355,10 @@ function getQqAvatarUrl(userId, size = 100) {
   if (!uid) return ""
   const s = Math.max(40, Math.floor(Number(size) || 100))
   return `https://q1.qlogo.cn/g?b=qq&nk=${uid}&s=${s}`
+}
+
+async function getMemberInfoSafe(ctx, groupId, userId) {
+  return await getMemberInfoWithFallback(ctx, groupId, userId)
 }
 
 function makeNoticeTextSegment(content) {

@@ -70,47 +70,7 @@ async function patchImageSegmentsWithRkey(segments) {
   if (!list.length) return list
 
   const rkeySuffix = String((await getSceneRkey("group"))?.value || "").trim()
-  if (!rkeySuffix) return list
-
-  let changed = false
-  const out = list.map(seg => {
-    if (!seg || seg.type !== UniversalSegmentType.IMAGE) return seg
-    const data = seg.data && typeof seg.data === "object" ? seg.data : {}
-    const next = { ...seg, data: { ...data } }
-
-    if (typeof next.data.url === "string") {
-      const patched = applyRkeyToUrl(next.data.url, rkeySuffix)
-      if (patched && patched !== next.data.url) {
-        next.data.url = patched
-        changed = true
-      }
-    }
-    if (typeof next.data.temp_url === "string" && /^https?:\/\//.test(next.data.temp_url)) {
-      const patched = applyRkeyToUrl(next.data.temp_url, rkeySuffix)
-      if (patched && patched !== next.data.temp_url) {
-        next.data.url = patched
-        changed = true
-      }
-    }
-    if (typeof next.data.fileId === "string" && /^https?:\/\//.test(next.data.fileId)) {
-      const patched = applyRkeyToUrl(next.data.fileId, rkeySuffix)
-      if (patched && patched !== next.data.fileId) {
-        next.data.fileId = patched
-        changed = true
-      }
-    }
-    if (typeof next.data.path === "string" && /^https?:\/\//.test(next.data.path)) {
-      const patched = applyRkeyToUrl(next.data.path, rkeySuffix)
-      if (patched && patched !== next.data.path) {
-        next.data.path = patched
-        changed = true
-      }
-    }
-
-    return next
-  })
-
-  return changed ? out : list
+  return patchImageSegmentsWithRkeyValue(list, rkeySuffix)
 }
 
 function resolveOutboundProtocol(ctx) {
@@ -133,8 +93,46 @@ function isQqNtMediaUrl(value) {
 }
 
 function getImageCandidateUrl(data = {}) {
-  const candidates = [data.file, data.url, data.fileId, data.path, data.temp_url, data.uri]
+  const candidates = [data.url, data.file, data.temp_url, data.fileId, data.path, data.uri]
   return candidates.find(v => isHttpUrl(v)) || ""
+}
+
+export function patchImageSegmentsWithRkeyValue(segments, rkeySuffix = "") {
+  const list = Array.isArray(segments) ? segments : []
+  const suffix = String(rkeySuffix || "").trim()
+  if (!list.length || !suffix) return list
+
+  let changed = false
+  const out = list.map(seg => {
+    if (!seg || seg.type !== UniversalSegmentType.IMAGE) return seg
+    const data = seg.data && typeof seg.data === "object" ? seg.data : {}
+    const next = { ...seg, data: { ...data } }
+
+    const patchHttpField = (key, { mirrorToUrl = true } = {}) => {
+      if (typeof next.data[key] !== "string" || !/^https?:\/\//.test(next.data[key])) return
+      const patched = applyRkeyToUrl(next.data[key], suffix)
+      if (!patched) return
+      if (patched !== next.data[key]) {
+        next.data[key] = patched
+        changed = true
+      }
+      if (mirrorToUrl && patched !== next.data.url) {
+        next.data.url = patched
+        changed = true
+      }
+    }
+
+    patchHttpField("url", { mirrorToUrl: false })
+    patchHttpField("temp_url")
+    patchHttpField("file")
+    patchHttpField("fileId")
+    patchHttpField("path")
+    patchHttpField("uri")
+
+    return next
+  })
+
+  return changed ? out : list
 }
 
 function getOnebotDirectImageRef(data = {}) {
@@ -195,18 +193,76 @@ async function downloadImageAsBase64(url, { timeoutMs = 8000 } = {}) {
   }
 }
 
-async function prepareOutboundLearningSegments(segments, { protocol = "" } = {}) {
+export async function prepareOutboundLearningSegments(
+  segments,
+  { protocol = "", rkeySuffix = undefined, downloadImage = downloadImageAsBase64 } = {},
+) {
   const list = Array.isArray(segments) ? segments : []
   if (!list.length) return list
 
   const protocolName = resolveOutboundProtocol({ protocol })
+  let resolvedRkeySuffix = rkeySuffix === undefined ? undefined : String(rkeySuffix || "").trim()
+  let rkeyLoaded = resolvedRkeySuffix !== undefined
+  const ensureRkeySuffix = async () => {
+    if (!rkeyLoaded) {
+      rkeyLoaded = true
+      resolvedRkeySuffix = String((await getSceneRkey("group"))?.value || "").trim()
+    }
+    return resolvedRkeySuffix || ""
+  }
   if (!isOnebotLikeProtocol(protocolName)) {
-    return await patchImageSegmentsWithRkey(list).catch(() => list)
+    let changed = false
+    let working = list
+
+    if (list.some(seg => isQqNtMediaUrl(getImageCandidateUrl(seg?.data || {})))) {
+      const suffix = await ensureRkeySuffix()
+      const patched = patchImageSegmentsWithRkeyValue(list, suffix)
+      if (patched !== list) {
+        working = patched
+        changed = true
+      }
+    }
+
+    const out = await Promise.all(
+      working.map(async seg => {
+        if (!seg || seg.type !== UniversalSegmentType.IMAGE) return seg
+        const data = seg.data && typeof seg.data === "object" ? { ...seg.data } : {}
+        const candidateUrl = getImageCandidateUrl(data)
+        if (!isQqNtMediaUrl(candidateUrl)) return seg
+
+        try {
+          const base64 = typeof downloadImage === "function" ? await downloadImage(candidateUrl) : ""
+          if (!base64) throw new Error("empty image body")
+          changed = true
+          delete data.temp_url
+          if (isHttpUrl(data.fileId)) delete data.fileId
+          if (isHttpUrl(data.path)) delete data.path
+          if (isHttpUrl(data.uri)) delete data.uri
+          return {
+            ...seg,
+            data: {
+              ...data,
+              url: base64,
+            },
+          }
+        } catch {
+          if (data.url === candidateUrl) return seg
+          changed = true
+          return {
+            ...seg,
+            data: {
+              ...data,
+              url: candidateUrl,
+            },
+          }
+        }
+      }),
+    )
+
+    return changed ? out : working
   }
 
   let changed = false
-  let rkeySuffix = ""
-  let rkeyLoaded = false
   const out = await Promise.all(
     list.map(async seg => {
       if (!seg || seg.type !== UniversalSegmentType.IMAGE) return seg
@@ -225,13 +281,10 @@ async function prepareOutboundLearningSegments(segments, { protocol = "" } = {})
       if (originalUrl) {
         let outboundUrl = originalUrl
         if (isQqNtMediaUrl(originalUrl)) {
-          if (!rkeyLoaded) {
-            rkeyLoaded = true
-            rkeySuffix = String((await getSceneRkey("group")).value || "").trim()
-          }
-          outboundUrl = rkeySuffix ? applyRkeyToUrl(originalUrl, rkeySuffix) : originalUrl
+          const suffix = await ensureRkeySuffix()
+          outboundUrl = suffix ? applyRkeyToUrl(originalUrl, suffix) : originalUrl
           try {
-            const base64 = await downloadImageAsBase64(outboundUrl)
+            const base64 = typeof downloadImage === "function" ? await downloadImage(outboundUrl) : ""
             if (!base64) throw new Error("empty image body")
             changed = true
             delete data.temp_url
@@ -318,17 +371,12 @@ async function prepareOutboundLearningSegments(segments, { protocol = "" } = {})
           data: { content: String(data.summary || "[图片]") },
         }
       }
-      if (!rkeyLoaded) {
-        rkeyLoaded = true
-        rkeySuffix = String((await getSceneRkey("group")).value || "").trim()
-      }
-      const candidateUrl = rkeySuffix
-        ? applyRkeyToUrl(getImageCandidateUrl(data), rkeySuffix)
-        : getImageCandidateUrl(data)
+      const suffix = await ensureRkeySuffix()
+      const candidateUrl = suffix ? applyRkeyToUrl(getImageCandidateUrl(data), suffix) : getImageCandidateUrl(data)
       if (!isQqNtMediaUrl(candidateUrl)) return seg
 
       try {
-        const base64 = await downloadImageAsBase64(candidateUrl)
+        const base64 = typeof downloadImage === "function" ? await downloadImage(candidateUrl) : ""
         if (!base64) throw new Error("empty image body")
         changed = true
         delete data.temp_url
@@ -381,6 +429,24 @@ async function prepareOutboundLearningSegments(segments, { protocol = "" } = {})
   )
 
   return changed ? out : list
+}
+
+export async function sendLearningSegments(
+  gid,
+  segments,
+  { send, protocol = "", rkeySuffix = undefined, downloadImage = downloadImageAsBase64 } = {},
+) {
+  const sendFn = send || globalThis.Bot?.sendMessage
+  if (typeof sendFn !== "function") return false
+
+  const outbound = await prepareOutboundLearningSegments(segments, {
+    protocol,
+    rkeySuffix,
+    downloadImage,
+  }).catch(() => segments)
+  await sendFn({ group_id: Number(gid) || gid }, outbound)
+  markBotSpoke(gid)
+  return true
 }
 
 function getBotSelfId() {
@@ -1483,17 +1549,6 @@ export async function proactiveTick(ctxLike, botApi = null) {
     return ""
   }
 
-  const sendSegments = async (gid, segments) => {
-    const send = ctxLike?.sendMessage || globalThis.Bot?.sendMessage
-    if (typeof send !== "function") return false
-    const outbound = await prepareOutboundLearningSegments(segments, {
-      protocol: ctxLike?.protocol || runtimeProtocolHint,
-    }).catch(() => segments)
-    await send({ group_id: Number(gid) || gid }, outbound)
-    markBotSpoke(gid)
-    return true
-  }
-
   const runProactiveForGroup = async gid => {
     const groupCfg = getEffectiveGroupConfig(gid)
     const bans = await getBanSet(gid)
@@ -1535,11 +1590,12 @@ export async function proactiveTick(ctxLike, botApi = null) {
         break
       }
 
-      let segments = rawSegments
       // 处理 QQNT 图片 rkey（避免历史图片直链过期）
-      segments = await patchImageSegmentsWithRkey(segments).catch(() => segments)
 
-      const ok = await sendSegments(gid, rawSegments).catch(() => false)
+      const ok = await sendLearningSegments(gid, rawSegments, {
+        send: ctxLike?.sendMessage || globalThis.Bot?.sendMessage,
+        protocol: ctxLike?.protocol || runtimeProtocolHint,
+      }).catch(() => false)
       if (!ok) break
 
       sent += 1

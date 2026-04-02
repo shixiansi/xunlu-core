@@ -4,6 +4,10 @@ import test from "node:test"
 import { fileURLToPath } from "node:url"
 
 import { createPluginTestHarness } from "../src/dev/plugin-test-harness.js"
+import {
+  patchImageSegmentsWithRkeyValue,
+  sendLearningSegments,
+} from "../src/plugins/learning_chat/controllers/handlers.js"
 import { createProtocolMock } from "../src/dev/protocol-mock.js"
 import { installTestRuntime } from "./helpers/test-runtime.js"
 
@@ -193,4 +197,55 @@ test("quote segments map correctly across protocols", async () => {
       await harness.dispose()
     }
   }
+})
+
+test("learning_chat refreshes rkey for image segments stored in data.file", () => {
+  const original =
+    "https://multimedia.nt.qq.com.cn/download?appid=1407&fileid=abc123&spec=0&rkey=old-token"
+  const segments = [{ type: "image", data: { file: original, id: "abc123.jpg" } }]
+
+  const patched = patchImageSegmentsWithRkeyValue(segments, "&rkey=new-token")
+
+  assert.notEqual(patched, segments)
+  assert.equal(
+    patched[0]?.data?.file,
+    "https://multimedia.nt.qq.com.cn/download?appid=1407&fileid=abc123&spec=0&rkey=new-token",
+  )
+  assert.equal(patched[0]?.data?.url, patched[0]?.data?.file)
+})
+
+test("learning_chat proactive sends prepared milky image segments", async () => {
+  const original =
+    "https://multimedia.nt.qq.com.cn/download?appid=1407&fileid=abc123&spec=0&rkey=old-token"
+  let seenTarget = null
+  let seenMessage = null
+
+  const ok = await sendLearningSegments(
+    213311278,
+    [{ type: "image", data: { file: original, id: "abc123.jpg" } }],
+    {
+      protocol: "milky",
+      rkeySuffix: "&rkey=fresh-token",
+      downloadImage: async url => {
+        assert.equal(
+          url,
+          "https://multimedia.nt.qq.com.cn/download?appid=1407&fileid=abc123&spec=0&rkey=fresh-token",
+        )
+        return `base64://${Buffer.from("mock-image", "utf8").toString("base64")}`
+      },
+      send: async (target, message) => {
+        seenTarget = target
+        seenMessage = message
+      },
+    },
+  )
+
+  assert.equal(ok, true)
+  assert.deepEqual(seenTarget, { group_id: 213311278 })
+  assert.equal(seenMessage?.[0]?.type, "image")
+  assert.match(String(seenMessage?.[0]?.data?.url || ""), /^base64:\/\//)
+  assert.equal(
+    seenMessage?.[0]?.data?.file,
+    "https://multimedia.nt.qq.com.cn/download?appid=1407&fileid=abc123&spec=0&rkey=fresh-token",
+  )
 })
