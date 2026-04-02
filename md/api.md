@@ -78,9 +78,11 @@ export default {
 以下方法会被注入到 `botApi`（也会在 `ctx` / 全局 `Bot` 上可用，语义一致）：
 
 - `botApi.getBot(): any`：返回运行时全局 `Bot`（可能为 `null`）
+- `botApi.sendApi(action, params?)` / `botApi.callApi(action, params?)`：透传原生协议 API
 - `botApi.getLoginInfo() => { user_id, nickname }`
 - `botApi.getFriendList() => Map<user_id, friend>`
 - `botApi.getFriendInfo({ user_id, no_cache? })`（保留 `getUserInfo`，两者语义尽量一致）
+- `botApi.sendProfileLike({ user_id, times })`
 - `botApi.getGroupList() => Map<group_id, group>`
 - `botApi.getGroupInfo({ group_id, no_cache? })`
 - `botApi.setGroupName({ group_id, group_name })`
@@ -91,19 +93,33 @@ export default {
 - `botApi.kickGroupMember({ group_id, user_id, reject_add_request? })`
 - `botApi.quitGroup({ group_id, is_dismiss? })`
 - `botApi.acceptFriendRequest(input)` / `botApi.rejectFriendRequest(input)`
+- `botApi.pickUser(user_id)` / `botApi.pickGroup(group_id)`
 - `botApi.sendMessage(target, message)`
 - `botApi.recallMessage(params)`
 - `botApi.sendGroupMessageReaction(params)`
-- `botApi.sendProfileLike({ user_id, times })`
 - `botApi.getUserInfo({ user_id, no_cache? })`
 - `botApi.getGroupMemberList(group_id) => Map<user_id, member>`
 - `botApi.getGroupMemberInfo(group_id, user_id)`
+- `botApi.getGroupMemberRoleFlags(group_id?, user_id?)`
+- `botApi.isGroupOwner(group_id?, user_id?)` / `botApi.isGroupAdmin(group_id?, user_id?)`
+- `botApi.getBotGroupRoleFlags(group_id?)`
+- `botApi.isBotGroupOwner(group_id?)` / `botApi.isBotGroupAdmin(group_id?)`
 - `botApi.acceptGroupRequest(input)` / `botApi.rejectGroupRequest(input)`
 - `botApi.setGroupMemberMute({ group_id, user_id, duration })`
-- `botApi.pickUser(user_id)` / `botApi.pickGroup(group_id)`
+- `botApi.listCommands(options?)`
+- `botApi.invokeCommandByText(rawCommand, options?)`
 - `botApi.renderImg(name, data, options?)`
 - `botApi.makeGroupForwardMsg(ctx, msgList, desc?, msgsscr?)`
+- `botApi.makeGroupForwardMsgByUser(ctx, targetUserId, msgList, desc?)`
+- `ctx.makeGroupForwardMsgByUser(targetUserId, msgList, desc?)`
 - `botApi.getGroupChatHistory(group_id, date?)`
+
+补充说明：
+
+- 权限判断优先用 `isGroupAdmin / isGroupOwner / isBotGroupAdmin / isBotGroupOwner` 这组 helper；只有在你确实需要拿到角色原始标记时，再用 `getGroupMemberRoleFlags / getBotGroupRoleFlags`
+- `listCommands()` 和 `invokeCommandByText()` 依赖 `BaseBot` 实例，适合做帮助系统、调度任务、指令回放
+- `makeGroupForwardMsgByUser()` 会自动补齐转发节点里的 `nickname / sender_name / user_id`，避免插件手写身份映射
+- `sendApi()` 与 `callApi()` 在 xunlu-core 中语义等价，都会走当前适配器的原生 API；仅在通用 API 不足时再使用
 
 #### `renderImg(name, data, options?)`
 使用 **HTML 模板渲染 → Chromium 截图** 生成图片消息，返回值可直接 `ctx.reply()` 发送。
@@ -168,6 +184,11 @@ else await ctx.reply("渲染失败")
   - `recallMsg`：多少秒后撤回（若协议支持）
 - `await ctx.getMessage(ref)`：按 `{ msgId?, seq? }` 获取消息（跨协议统一）
 - `await ctx.getReplyMessage()`：获取被回复的那条消息（基于 `reply` 段）
+- `await ctx.sendApi(action, params?)` / `await ctx.callApi(action, params?)`：调用原生协议 API
+- `await ctx.isGroupOwner(group_id?, user_id?)` / `await ctx.isGroupAdmin(group_id?, user_id?)`
+- `await ctx.isBotGroupOwner(group_id?)` / `await ctx.isBotGroupAdmin(group_id?)`
+- `ctx.listCommands(options?)` / `await ctx.invokeCommandByText(rawCommand, options?)`
+- `await ctx.makeGroupForwardMsgByUser(targetUserId, msgList, desc?)`
 
 **通用 QQBot API（同 botApi）：**
 
