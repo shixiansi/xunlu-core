@@ -16,6 +16,7 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const repoRoot = path.resolve(__dirname, "..")
 const fixturePlugin = path.resolve(repoRoot, "test", "fixtures", "plugins", "harness-fixture", "index.js")
+const learningChatPlugin = path.resolve(repoRoot, "src", "plugins", "learning_chat", "index.js")
 
 installTestRuntime(test)
 
@@ -265,4 +266,36 @@ test("derived fields recognize raw milky mention aliases for atBot commands", ()
   assert.equal(ctx.msg, "ping")
   assert.equal(ctx.atBot, true)
   assert.equal(ctx.at, "")
+})
+
+test("takeover milky raw segments stay authoritative for at-bot commands", async () => {
+  const harness = await createPluginTestHarness({ plugins: [learningChatPlugin], protocol: "milky", selfId: 2548285036 })
+  try {
+    const res = await harness.emitMessage({
+      scene: "group",
+      group_id: 629661253,
+      user_id: 1765629830,
+      text: "开启学习",
+      rawSegments: [
+        { type: "mention", data: { user_id: 2548285036, name: "bot" } },
+        { type: "text", data: { text: " 开启学习" } },
+      ],
+      extra: {
+        message: [
+          { type: "at", qq: "2548285036" },
+          { type: "text", text: " 开启学习" },
+        ],
+        __xunluTakeover: true,
+        __commandUsageSource: "yunzai-takeover",
+      },
+    })
+
+    assert.equal(res.ok, true)
+    assert.equal(res.replies.length, 1)
+    assert.equal(res.replies[0]?.text, "本群已开启学习")
+    const sendCall = res.apiCalls.find(call => call?.name === "send_group_message")
+    assert.ok(sendCall)
+  } finally {
+    await harness.dispose()
+  }
 })

@@ -1249,18 +1249,17 @@ export default class BaseBot {
     }
 
     // 优先：用 rawSegments 按协议构造 universalMessage（支持 takeover 场景：message 为 icqq 段，但 segments/rawSegments 为 onebot/milky 段）
-    const looksLikeUniversalSegments = segments =>
-      Array.isArray(segments) &&
-      segments.some(
-        seg =>
-          (seg?.type === UniversalSegmentType.TEXT &&
-            seg?.data &&
-            (Object.prototype.hasOwnProperty.call(seg.data, "text") ||
-              Object.prototype.hasOwnProperty.call(seg.data, "content"))) ||
+    const looksLikeUniversalSegment = seg =>
+      Boolean(
+        (seg?.type === UniversalSegmentType.TEXT &&
+          seg?.data &&
+          (Object.prototype.hasOwnProperty.call(seg.data, "text") ||
+            Object.prototype.hasOwnProperty.call(seg.data, "content"))) ||
           (seg?.type === UniversalSegmentType.MENTION &&
             seg?.data &&
             (Object.prototype.hasOwnProperty.call(seg.data, "qq") ||
               Object.prototype.hasOwnProperty.call(seg.data, "target"))) ||
+          (seg?.type === UniversalSegmentType.MENTION_ALL && seg?.data && typeof seg.data === "object") ||
           (seg?.type === UniversalSegmentType.REPLY &&
             seg?.data &&
             (Object.prototype.hasOwnProperty.call(seg.data, "id") ||
@@ -1277,6 +1276,9 @@ export default class BaseBot {
               Object.prototype.hasOwnProperty.call(seg.data, "path") ||
               Object.prototype.hasOwnProperty.call(seg.data, "id"))),
       )
+
+    const looksLikeUniversalSegments = segments =>
+      Array.isArray(segments) && segments.length > 0 && segments.every(seg => looksLikeUniversalSegment(seg))
 
     const rawLooksUniversal = looksLikeUniversalSegments(e.rawSegments)
     if (!e.universalMessage && Array.isArray(e.rawSegments) && e.protocol && !rawLooksUniversal) {
