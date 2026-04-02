@@ -8,6 +8,7 @@ import {
   yesterdayKey,
 } from "../model/store.js"
 import { BAIT, BAIT_META, findFishByName, getFishById, rollCatch } from "../model/fishing.js"
+import { getSignRewards } from "../model/config.js"
 import { findShopItem, MAX_ROD_LEVEL, rodUpgradeCost, SHOP_ITEMS } from "../model/shop.js"
 
 function sumFishCount(fishMap) {
@@ -445,9 +446,10 @@ export function register(bot) {
       const prevStreak = Number(user.sign?.streak ?? 0)
       const nextStreak = last === yday ? Math.max(1, Math.floor(prevStreak) + 1) : 1
 
-      const coins = 120 + nextStreak * 15
-      const bait = 3 + Math.floor(nextStreak / 3)
-      const adv = nextStreak % 7 === 0 ? 1 : 0
+      const rewards = getSignRewards(nextStreak)
+      const coins = rewards.coins
+      const bait = rewards.bait
+      const adv = rewards.adv
 
       user.sign.lastDate = today
       user.sign.streak = nextStreak

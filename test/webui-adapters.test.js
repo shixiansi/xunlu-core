@@ -25,7 +25,12 @@ function createTempWorkspace({ masters = ["10001"] } = {}) {
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "xunlu-webui-adapter-"))
   tempDirs.add(workspace)
 
-  fs.mkdirSync(path.join(workspace, "config", "default_config"), { recursive: true })
+  const sourceDefaultConfigDir = path.join(repoRoot, "config", "default_config")
+  const targetDefaultConfigDir = path.join(workspace, "config", "default_config")
+
+  fs.mkdirSync(targetDefaultConfigDir, { recursive: true })
+  fs.cpSync(sourceDefaultConfigDir, targetDefaultConfigDir, { recursive: true })
+
   fs.writeFileSync(
     path.join(workspace, "package.json"),
     JSON.stringify(
@@ -44,7 +49,7 @@ function createTempWorkspace({ masters = ["10001"] } = {}) {
     .join("\n")
 
   fs.writeFileSync(
-    path.join(workspace, "config", "default_config", "bot.config.yaml"),
+    path.join(targetDefaultConfigDir, "bot.config.yaml"),
     `masterQQ:\n${masterLines}\n`,
     "utf8",
   )
@@ -394,4 +399,230 @@ test("chuo webui adapter toggles the shared config file", async () => {
   assert.equal(result.before.values.settings.enabled, true)
   assert.equal(result.after.values.settings.enabled, false)
   assert.equal(result.stored.enabled, false)
+})
+
+test("ai webui adapter persists caimiao settings", async () => {
+  const workspace = createTempWorkspace()
+  const result = await runWorkspaceScript(
+    workspace,
+    `
+          const configModule = await import(${JSON.stringify(toModuleUrl("src/lib/config.js"))})
+          const { default: provider } = await import(${JSON.stringify(toModuleUrl("src/plugins/ai/webui/index.js"))})
+
+          const before = await provider.getValues()
+          const after = await provider.updateValues({
+            values: {
+              caimiao: {
+                "x-token": "token-123",
+                proxy: "http://127.0.0.1:7890",
+              },
+            },
+          })
+          const stored = configModule.default.getConfig("ai")
+
+          return {
+            before,
+            after,
+            stored,
+          }
+`,
+  )
+
+  assert.equal(result.before.values.caimiao["x-token"], "")
+  assert.equal(result.before.values.caimiao.proxy, "")
+  assert.equal(result.after.values.caimiao["x-token"], "token-123")
+  assert.equal(result.after.values.caimiao.proxy, "http://127.0.0.1:7890")
+  assert.equal(result.stored.caimiao["x-token"], "token-123")
+  assert.equal(result.stored.caimiao.proxy, "http://127.0.0.1:7890")
+})
+
+test("set webui adapter persists bot base configuration", async () => {
+  const workspace = createTempWorkspace({ masters: ["10001"] })
+  const result = await runWorkspaceScript(
+    workspace,
+    `
+          const configModule = await import(${JSON.stringify(toModuleUrl("src/lib/config.js"))})
+          const { default: provider } = await import(${JSON.stringify(toModuleUrl("src/plugins/set/webui/index.js"))})
+
+          const before = await provider.getValues()
+          const after = await provider.updateValues({
+            values: {
+              runtime: {
+                adapter: "icqq",
+                authority: "bot.example.com",
+                basePath: ":3011",
+                accessToken: "token-abc",
+                image_display: false,
+                suffix_text: "[face:123]",
+                useTLS: true,
+                useSSE: true,
+                icqq_bridge_enable: true,
+              },
+              control: {
+                enabled: false,
+                port: 4099,
+                token: "ctl-token",
+                default_scene: "private",
+                default_group_id: "12345",
+                default_user_id: "20002",
+              },
+              webui: {
+                enabled: false,
+                host: "0.0.0.0",
+                port: 3100,
+              },
+              admin: {
+                masterQQ: ["10001", "20002", "10001"],
+                log_level: "warn",
+              },
+            },
+          })
+          const stored = configModule.default.getConfig("bot")
+
+          return {
+            before,
+            after,
+            stored,
+          }
+`,
+  )
+
+  assert.equal(result.before.values.runtime.adapter, "milky")
+  assert.equal(result.before.values.runtime.image_display, true)
+  assert.equal(result.after.values.runtime.adapter, "icqq")
+  assert.equal(result.after.values.runtime.authority, "bot.example.com")
+  assert.equal(result.after.values.runtime.image_display, false)
+  assert.equal(result.after.values.runtime.suffix_text, "[face:123]")
+  assert.equal(result.after.values.control.enabled, false)
+  assert.equal(result.after.values.control.port, 4099)
+  assert.equal(result.after.values.webui.host, "0.0.0.0")
+  assert.equal(result.after.values.webui.port, 3100)
+  assert.deepEqual(result.after.values.admin.masterQQ, ["10001", "20002"])
+  assert.equal(result.after.values.admin.log_level, "warn")
+  assert.equal(result.stored.adapter, "icqq")
+  assert.equal(result.stored.authority, "bot.example.com")
+  assert.equal(result.stored.image_display, false)
+  assert.equal(result.stored.suffix_text, "[face:123]")
+  assert.equal(result.stored.ctl_enable, false)
+  assert.equal(result.stored.ctl_port, 4099)
+  assert.equal(result.stored.webui_enable, false)
+  assert.equal(result.stored.webui_host, "0.0.0.0")
+  assert.equal(result.stored.webui_port, 3100)
+  assert.deepEqual(result.stored.masterQQ, ["10001", "20002"])
+  assert.equal(result.stored.log_level, "warn")
+})
+
+test("qun-daily webui adapter persists report settings", async () => {
+  const workspace = createTempWorkspace()
+  const result = await runWorkspaceScript(
+    workspace,
+    `
+          const configModule = await import(${JSON.stringify(toModuleUrl("src/plugins/qun-daily/model/config.js"))})
+          const { default: provider } = await import(${JSON.stringify(toModuleUrl("src/plugins/qun-daily/webui/index.js"))})
+
+          const before = await provider.getValues()
+          const after = await provider.updateValues({
+            values: {
+              push: {
+                enabled: false,
+                cron: "0 30 6 * * *",
+                include_stats: true,
+                include_words: false,
+                include_commands: true,
+              },
+              command_defaults: {
+                stats_days: 7,
+                words_days: 30,
+                command_days: 3,
+              },
+            },
+          })
+          const stored = configModule.getQunDailyConfig()
+
+          return {
+            before,
+            after,
+            stored,
+            statsDays: configModule.getDefaultRangeDays("stats"),
+            wordsDays: configModule.getDefaultRangeDays("words"),
+            commandDays: configModule.getDefaultRangeDays("commands"),
+          }
+`,
+  )
+
+  assert.equal(result.before.values.push.enabled, true)
+  assert.equal(result.before.values.push.cron, "0 5 0 * * *")
+  assert.equal(result.after.values.push.enabled, false)
+  assert.equal(result.after.values.push.cron, "0 30 6 * * *")
+  assert.equal(result.after.values.push.include_words, false)
+  assert.equal(result.after.values.command_defaults.stats_days, 7)
+  assert.equal(result.after.values.command_defaults.words_days, 30)
+  assert.equal(result.after.values.command_defaults.command_days, 3)
+  assert.equal(result.stored.push.enabled, false)
+  assert.equal(result.stored.push.cron, "0 30 6 * * *")
+  assert.equal(result.stored.push.include_words, false)
+  assert.equal(result.statsDays, 7)
+  assert.equal(result.wordsDays, 30)
+  assert.equal(result.commandDays, 3)
+})
+
+test("diaoyu webui adapter persists gameplay config and updates derived defaults", async () => {
+  const workspace = createTempWorkspace()
+  const result = await runWorkspaceScript(
+    workspace,
+    `
+          const configModule = await import(${JSON.stringify(toModuleUrl("src/plugins/diaoyu/model/config.js"))})
+          const storeModule = await import(${JSON.stringify(toModuleUrl("src/plugins/diaoyu/model/store.js"))})
+          const { default: provider } = await import(${JSON.stringify(toModuleUrl("src/plugins/diaoyu/webui/index.js"))})
+
+          const before = await provider.getValues()
+          const after = await provider.updateValues({
+            values: {
+              bootstrap: {
+                starting_coins: 500,
+                starting_rod_level: 3,
+                starting_bait: 8,
+                starting_advanced_bait: 2,
+              },
+              sign: {
+                base_coins: 200,
+                streak_bonus_coins: 25,
+                base_bait: 4,
+                bait_bonus_every_streak: 5,
+                advanced_bait_every_streak: 10,
+              },
+            },
+          })
+          const stored = configModule.getDiaoyuConfig()
+          const rewards = configModule.getSignRewards(10)
+          const db = storeModule.loadDb()
+          const user = storeModule.getOrCreateUser(db, "20002")
+
+          return {
+            before,
+            after,
+            stored,
+            rewards,
+            user,
+          }
+`,
+  )
+
+  assert.equal(result.before.values.bootstrap.starting_coins, 200)
+  assert.equal(result.before.values.sign.base_coins, 120)
+  assert.equal(result.after.values.bootstrap.starting_coins, 500)
+  assert.equal(result.after.values.bootstrap.starting_rod_level, 3)
+  assert.equal(result.after.values.bootstrap.starting_bait, 8)
+  assert.equal(result.after.values.bootstrap.starting_advanced_bait, 2)
+  assert.equal(result.after.values.sign.base_coins, 200)
+  assert.equal(result.after.values.sign.streak_bonus_coins, 25)
+  assert.equal(result.stored.bootstrap.starting_coins, 500)
+  assert.equal(result.stored.sign.base_coins, 200)
+  assert.equal(result.rewards.coins, 450)
+  assert.equal(result.rewards.bait, 6)
+  assert.equal(result.rewards.adv, 1)
+  assert.equal(result.user.coins, 500)
+  assert.equal(result.user.rodLevel, 3)
+  assert.equal(result.user.items.bait, 8)
+  assert.equal(result.user.items.bait_adv, 2)
 })

@@ -1,0 +1,12 @@
+bootstrap:
+  starting_coins: 200
+  starting_rod_level: 1
+  starting_bait: 5
+  starting_advanced_bait: 0
+
+sign:
+  base_coins: 120
+  streak_bonus_coins: 15
+  base_bait: 3
+  bait_bonus_every_streak: 3
+  advanced_bait_every_streak: 7

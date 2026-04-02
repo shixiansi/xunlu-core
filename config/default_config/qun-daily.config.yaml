@@ -1,0 +1,11 @@
+push:
+  enabled: true
+  cron: "0 5 0 * * *"
+  include_stats: true
+  include_words: true
+  include_commands: true
+
+command_defaults:
+  stats_days: 1
+  words_days: 1
+  command_days: 1

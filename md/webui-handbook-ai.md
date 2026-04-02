@@ -154,6 +154,10 @@ src/plugins/<plugin-name>/resources/webui/
 - `src/plugins/scheduler/webui/index.js`
 - `src/plugins/other/webui/index.js`
 - `src/plugins/chuo/webui/index.js`
+- `src/plugins/ai/webui/index.js`
+- `src/plugins/set/webui/index.js`
+- `src/plugins/qun-daily/webui/index.js`
+- `src/plugins/diaoyu/webui/index.js`
 
 这些文件分别演示了：
 
@@ -161,3 +165,5 @@ src/plugins/<plugin-name>/resources/webui/
 - 简单全局开关 + 三态继承
 - 多作用域（global / bot / group / user）的共享管理
 - JSON 配置编辑（`scheduler.tasks`）
+- 直接复用现有 YAML 配置（`ai` / `bot`）
+- 新增插件专属默认配置并同步驱动运行逻辑（`qun-daily` / `diaoyu`）

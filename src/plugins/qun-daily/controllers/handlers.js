@@ -4,6 +4,7 @@ import {
   getOrBuildDailyGroupStats,
   getStatsKings,
 } from "../model/stats.js"
+import { getDefaultRangeDays, getQunDailyConfig } from "../model/config.js"
 import { getPreviousDateKey, toDateKey } from "../model/store.js"
 import { buildWordCloudList } from "../model/words.js"
 
@@ -23,13 +24,13 @@ function formatDateTime(value) {
   )}:${pad(date.getMinutes())}`
 }
 
-function parseDaysFromText(text) {
+function parseDaysFromText(text, fallbackDays = 1) {
   const raw = String(text || "").trim()
-  if (!raw) return 1
+  if (!raw) return Math.max(1, Math.floor(Number(fallbackDays) || 1))
   if (/(3天)$/.test(raw)) return 3
   if (/(7天)$/.test(raw)) return 7
   if (/(30天)$/.test(raw)) return 30
-  return 1
+  return Math.max(1, Math.floor(Number(fallbackDays) || 1))
 }
 
 function getStatsTitle(days) {
@@ -310,6 +311,9 @@ async function handleCommandCommand(ctx, days) {
 }
 
 async function runDailyPush(bot, ctxLike) {
+  const config = getQunDailyConfig()
+  if (!config.push.enabled) return false
+
   const runtime = ctxLike && typeof ctxLike === "object" ? ctxLike : bot
   let groupMap = new Map()
 
@@ -334,29 +338,36 @@ async function runDailyPush(bot, ctxLike) {
       rangeStats.topImages = decorateParticipantsWithMembers(rangeStats.topImages, memberMap)
       const kings = getStatsKings(rangeStats, memberMap)
 
-      await sendRender(
-        bot,
-        groupId,
-        "stats",
-        buildStatsRenderData(rangeStats, kings),
-        makeStatsFallback(rangeStats, kings),
-      ).catch(err => console.warn("[qun-daily] send stats failed:", err?.message || err))
+      if (config.push.include_stats) {
+        await sendRender(
+          bot,
+          groupId,
+          "stats",
+          buildStatsRenderData(rangeStats, kings),
+          makeStatsFallback(rangeStats, kings),
+        ).catch(err => console.warn("[qun-daily] send stats failed:", err?.message || err))
+      }
 
-      await sendRender(
-        bot,
-        groupId,
-        "words",
-        buildWordsRenderData(rangeStats),
-        makeWordsFallback(rangeStats),
-      ).catch(err => console.warn("[qun-daily] send words failed:", err?.message || err))
+      if (config.push.include_words) {
+        await sendRender(
+          bot,
+          groupId,
+          "words",
+          buildWordsRenderData(rangeStats),
+          makeWordsFallback(rangeStats),
+        ).catch(err => console.warn("[qun-daily] send words failed:", err?.message || err))
+      }
 
-      await sendRender(
-        bot,
-        groupId,
-        "command",
-        buildCommandRenderData(rangeStats, memberMap),
-        makeCommandFallback(buildCommandRenderData(rangeStats, memberMap)),
-      ).catch(err => console.warn("[qun-daily] send command stats failed:", err?.message || err))
+      if (config.push.include_commands) {
+        const commandRenderData = buildCommandRenderData(rangeStats, memberMap)
+        await sendRender(
+          bot,
+          groupId,
+          "command",
+          commandRenderData,
+          makeCommandFallback(commandRenderData),
+        ).catch(err => console.warn("[qun-daily] send command stats failed:", err?.message || err))
+      }
     } catch (err) {
       console.error(
         `[qun-daily] daily push failed for group ${groupId}:`,
@@ -375,7 +386,10 @@ export function register(bot) {
       { example: ["水群统计", "水群统计 7天"], desc: "查看群消息活跃榜、表情榜与潜水榜" },
     ],
     async ctx => {
-      const days = parseDaysFromText(String(ctx?.msg || "").match(MANUAL_RANGE_REGEXP)?.[0] || "")
+      const days = parseDaysFromText(
+        String(ctx?.msg || "").match(MANUAL_RANGE_REGEXP)?.[0] || "",
+        getDefaultRangeDays("stats"),
+      )
       return await handleStatsCommand(ctx, days)
     },
   )
@@ -386,7 +400,10 @@ export function register(bot) {
       { example: ["词频统计", "词频统计 30天"], desc: "查看群聊高频词排行" },
     ],
     async ctx => {
-      const days = parseDaysFromText(String(ctx?.msg || "").match(MANUAL_RANGE_REGEXP)?.[0] || "")
+      const days = parseDaysFromText(
+        String(ctx?.msg || "").match(MANUAL_RANGE_REGEXP)?.[0] || "",
+        getDefaultRangeDays("words"),
+      )
       return await handleWordsCommand(ctx, days)
     },
   )
@@ -397,13 +414,17 @@ export function register(bot) {
       { example: ["指令统计", "指令统计 7天", "指令统计 @某人"], desc: "查看群成员指令使用统计" },
     ],
     async ctx => {
-      const days = parseDaysFromText(String(ctx?.msg || "").match(MANUAL_RANGE_REGEXP)?.[0] || "")
+      const days = parseDaysFromText(
+        String(ctx?.msg || "").match(MANUAL_RANGE_REGEXP)?.[0] || "",
+        getDefaultRangeDays("commands"),
+      )
       return await handleCommandCommand(ctx, days)
     },
   )
 
   if (typeof bot.setTask === "function") {
-    bot.setTask("0 5 0 * * *", async ctxLike => {
+    const config = getQunDailyConfig()
+    bot.setTask(config.push.cron, async ctxLike => {
       await runDailyPush(bot, ctxLike)
     })
   }

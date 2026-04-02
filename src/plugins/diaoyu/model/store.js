@@ -2,6 +2,7 @@ import fs from "node:fs"
 import path from "node:path"
 
 import env from "../../../lib/env.js"
+import { getNewUserDefaults } from "./config.js"
 
 const DATA_DIR = path.resolve(env.RootPath, "data")
 const DB_PATH = path.join(DATA_DIR, "diaoyu.json")
@@ -64,12 +65,13 @@ export function getOrCreateUser(db, uid) {
   if (!userId) return null
 
   if (!db.users[userId]) {
+    const defaults = getNewUserDefaults()
     db.users[userId] = {
-      coins: 200,
-      rodLevel: 1,
+      coins: defaults.coins,
+      rodLevel: defaults.rodLevel,
       items: {
-        bait: 5,
-        bait_adv: 0,
+        bait: defaults.items.bait,
+        bait_adv: defaults.items.bait_adv,
       },
       fish: {},
       sign: {
@@ -102,4 +104,3 @@ export function touchUser(user) {
   if (!user) return
   user.updatedAt = nowTs()
 }
-
