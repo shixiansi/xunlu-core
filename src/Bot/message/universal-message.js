@@ -604,8 +604,29 @@ export function getSegmentText(segment) {
 }
 
 export function getSegmentMentionTarget(segment) {
-  if (!segment || segment.type !== UniversalSegmentType.MENTION) return ""
-  return String(segment?.data?.qq ?? segment?.data?.target ?? "")
+  if (!segment) return ""
+
+  const rawType = String(segment?.type || "").trim()
+  const normalizedType = UNIVERSAL_TYPE_ALIASES[rawType] || rawType
+  if (normalizedType !== UniversalSegmentType.MENTION) return ""
+
+  return String(
+    pickFirstValue(
+      [
+        segment?.data?.qq,
+        segment?.data?.target,
+        segment?.data?.user_id,
+        segment?.data?.uid,
+        segment?.data?.id,
+        segment?.qq,
+        segment?.target,
+        segment?.user_id,
+        segment?.uid,
+        segment?.id,
+      ],
+      value => toOptionalString(value, { trim: true }),
+    ) || "",
+  )
 }
 
 export function getSegmentReplyRef(segment) {

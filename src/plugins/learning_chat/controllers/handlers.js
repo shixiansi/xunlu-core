@@ -1,7 +1,11 @@
 import MessageDB from "../../../db/MessageDB.js"
 import CommandUsageDB from "../../../db/CommandUsageDB.js"
-import { UniversalSegmentType } from "../../../Bot/message/universal-message.js"
-import { UniversalMessageSegment } from "../../../Bot/message/universal-message.js"
+import {
+  UniversalSegmentType,
+  UniversalMessageSegment,
+  getSegmentMentionTarget,
+  normalizeUniversalSegmentType,
+} from "../../../Bot/message/universal-message.js"
 import { classifyMediaReference } from "../../../Bot/message/context.js"
 import { BaseModel } from "../../../db/base/BaseModel.js"
 import { Op } from "sequelize"
@@ -55,6 +59,17 @@ function toInt(value) {
 function toNumber(value, fallback) {
   const n = Number(value)
   return Number.isFinite(n) ? n : fallback
+}
+
+function normalizeMessageSegmentType(type) {
+  const rawType = String(type || "").trim()
+  if (!rawType) return rawType
+
+  try {
+    return normalizeUniversalSegmentType(rawType)
+  } catch {
+    return rawType
+  }
 }
 
 function withTimeout(promise, timeoutMs, timeoutValue = null) {
@@ -927,9 +942,8 @@ function parseMentionTargets(ctx) {
 
   const out = []
   for (const seg of segments) {
-    if (!seg || seg.type !== UniversalSegmentType.MENTION) continue
-    const target =
-      seg?.data?.qq !== undefined ? String(seg.data.qq) : seg?.data?.target !== undefined ? String(seg.data.target) : ""
+    if (!seg || normalizeMessageSegmentType(seg?.type) !== UniversalSegmentType.MENTION) continue
+    const target = getSegmentMentionTarget(seg)
     if (!target) continue
     if (selfId && target === selfId) continue
     out.push(target)

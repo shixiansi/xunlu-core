@@ -6,6 +6,7 @@ import {
   getSegmentMentionTarget,
   getSegmentReplyRef,
   getSegmentText,
+  normalizeUniversalSegmentType,
 } from "./universal-message.js"
 import { classifyMediaReference, resolveMediaReferenceFields } from "./media-reference.js"
 
@@ -21,6 +22,17 @@ function toSafeNumber(value) {
 
 function isUniversalType(type) {
   return Object.values(UniversalSegmentType).includes(type)
+}
+
+function normalizeDerivedSegmentType(type) {
+  const rawType = String(type || "").trim()
+  if (!rawType) return rawType
+
+  try {
+    return normalizeUniversalSegmentType(rawType)
+  } catch {
+    return rawType
+  }
 }
 
 function looksLikeUniversalSegment(type, data = {}) {
@@ -117,7 +129,9 @@ export function applyDerivedFieldsFromUniversalSegments(ctx) {
   if (!Array.isArray(ctx.message)) return ctx
 
   const text = ctx.message
-    .filter(seg => seg?.type === UniversalSegmentType.TEXT)
+    .filter(seg => {
+      return normalizeDerivedSegmentType(seg?.type) === UniversalSegmentType.TEXT
+    })
     .map(seg => getSegmentText(seg))
     .join("")
 
@@ -128,7 +142,7 @@ export function applyDerivedFieldsFromUniversalSegments(ctx) {
   ctx.url = url
 
   ctx.img = ctx.message
-    .filter(seg => seg?.type === UniversalSegmentType.IMAGE)
+    .filter(seg => normalizeDerivedSegmentType(seg?.type) === UniversalSegmentType.IMAGE)
     .map(seg => {
       if (seg?.data?.url) return seg.data.url
       const file = getSegmentMediaFile(seg)
@@ -143,11 +157,13 @@ export function applyDerivedFieldsFromUniversalSegments(ctx) {
   ctx.atAll = false
 
   for (const seg of ctx.message) {
-    if (seg?.type === UniversalSegmentType.MENTION_ALL) {
+    const type = normalizeDerivedSegmentType(seg?.type)
+
+    if (type === UniversalSegmentType.MENTION_ALL) {
       ctx.atAll = true
       continue
     }
-    if (seg?.type !== UniversalSegmentType.MENTION) continue
+    if (type !== UniversalSegmentType.MENTION) continue
     const target = getSegmentMentionTarget(seg)
     if (!target) continue
     if (selfId && target === selfId) ctx.atBot = true

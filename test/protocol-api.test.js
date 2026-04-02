@@ -8,6 +8,7 @@ import {
   patchImageSegmentsWithRkeyValue,
   sendLearningSegments,
 } from "../src/plugins/learning_chat/controllers/handlers.js"
+import { applyDerivedFieldsFromUniversalSegments } from "../src/Bot/message/context.js"
 import { createProtocolMock } from "../src/dev/protocol-mock.js"
 import { installTestRuntime } from "./helpers/test-runtime.js"
 
@@ -248,4 +249,20 @@ test("learning_chat proactive sends prepared milky image segments", async () => 
     seenMessage?.[0]?.data?.file,
     "https://multimedia.nt.qq.com.cn/download?appid=1407&fileid=abc123&spec=0&rkey=fresh-token",
   )
+})
+
+test("derived fields recognize raw milky mention aliases for atBot commands", () => {
+  const ctx = {
+    self_id: 2548285036,
+    message: [
+      { type: "mention", data: { user_id: 2548285036, name: "bot" } },
+      { type: "text", data: { text: " ping" } },
+    ],
+  }
+
+  applyDerivedFieldsFromUniversalSegments(ctx)
+
+  assert.equal(ctx.msg, "ping")
+  assert.equal(ctx.atBot, true)
+  assert.equal(ctx.at, "")
 })
