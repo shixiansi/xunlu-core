@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>xunlu-core WebUI 登录</title>
+    <link rel="stylesheet" href="/webui/static/style.css" />
+    <script type="module" src="/webui/static/app.js" defer></script>
+  </head>
+  <body class="login-page" data-page="login">
+    <div class="shell-bg shell-bg-a"></div>
+    <div class="shell-bg shell-bg-b"></div>
+    <main class="login-shell">
+      <section class="login-card">
+        <p class="eyebrow">xunlu-core</p>
+        <h1 id="loginTitle">统一插件 WebUI</h1>
+        <p class="muted">默认账号密码写入在 `data/webui/config.yaml`。首次登录后建议立即修改用户名或密码，并轮换 token secret。</p>
+
+        <form id="loginForm" class="login-form">
+          <label class="field">
+            <span>用户名</span>
+            <input id="loginUsername" name="username" type="text" autocomplete="username" />
+          </label>
+          <label class="field">
+            <span>密码</span>
+            <input id="loginPassword" name="password" type="password" autocomplete="current-password" />
+          </label>
+          <button type="submit">登录</button>
+        </form>
+
+        <div id="loginToast" class="toast"></div>
+      </section>
+    </main>
+  </body>
+</html>

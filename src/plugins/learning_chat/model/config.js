@@ -390,12 +390,22 @@ export async function setGroupOverrides(groupId, patch = {}) {
 
   const g = cfg.groups[gid]
 
-  if (patch.learning_enabled !== undefined) g.learning_enabled = Boolean(patch.learning_enabled)
-  if (patch.proactive_enabled !== undefined) g.proactive_enabled = Boolean(patch.proactive_enabled)
-  if (patch.proactive_command_enabled !== undefined) {
-    g.proactive_command_enabled = Boolean(patch.proactive_command_enabled)
+  if (patch.learning_enabled !== undefined) {
+    if (patch.learning_enabled === null) delete g.learning_enabled
+    else g.learning_enabled = Boolean(patch.learning_enabled)
   }
-  if (patch.reply_prob !== undefined) g.reply_prob = Math.max(0, Math.min(1, toNumber(patch.reply_prob, cfg.learning?.reply_prob ?? 0.15)))
+  if (patch.proactive_enabled !== undefined) {
+    if (patch.proactive_enabled === null) delete g.proactive_enabled
+    else g.proactive_enabled = Boolean(patch.proactive_enabled)
+  }
+  if (patch.proactive_command_enabled !== undefined) {
+    if (patch.proactive_command_enabled === null) delete g.proactive_command_enabled
+    else g.proactive_command_enabled = Boolean(patch.proactive_command_enabled)
+  }
+  if (patch.reply_prob !== undefined) {
+    if (patch.reply_prob === null) delete g.reply_prob
+    else g.reply_prob = Math.max(0, Math.min(1, toNumber(patch.reply_prob, cfg.learning?.reply_prob ?? 0.15)))
+  }
   if (patch.block_words !== undefined) g.block_words = normalizeArray(patch.block_words)
   if (patch.block_users !== undefined) g.block_users = normalizeArray(patch.block_users)
 

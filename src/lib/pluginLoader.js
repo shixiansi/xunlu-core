@@ -41,7 +41,12 @@ export async function loadPlugins(dir, options = {}) {
       loadedTargets.add(baseUrl);
       const implementation = mod.default || mod;
       const name = implementation.name || path.basename(target, ".js");
-      const plugin = { name, implementation };
+      const plugin = {
+        name,
+        implementation,
+        entryPath: target,
+        rootDir: stat.isDirectory() ? full : path.dirname(target),
+      };
       if (typeof implementation.onBotEvent === "function")
         plugin.onBotEvent = implementation.onBotEvent;
       plugins.push(plugin);

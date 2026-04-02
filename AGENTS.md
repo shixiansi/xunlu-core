@@ -17,6 +17,7 @@
 - 通用 API（`ctx` / `botApi` / 全局 `Bot`）：`md/api.md`
 - 插件编写（模板/最佳实践/如何测试）：`md/plugin-handbook-ai.md`
 - 测试基建（harness / CLI / node:test）：`md/testing-handbook-ai.md`
+- 共享 WebUI 接入协议：`md/webui-handbook-ai.md`
 - OneBotV11 / ICQQ / Milky 原生 API 速查（参数差异）：`md/onebotv11-milky-api-quickref.md`
 - 通用消息段速查：`md/message.md`
 - 目录树快照：`md/dir-tree.md`
