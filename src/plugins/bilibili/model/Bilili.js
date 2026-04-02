@@ -27,6 +27,20 @@ class Bilibili {
     return await getCookie()
   }
 
+  extractErrorCode(error, fallbackCode = "500") {
+    const message = error?.message || String(error || "")
+    const matchedCode = message.match(/\[errcode:(-?\d+)\]/)?.[1]
+    return matchedCode || fallbackCode
+  }
+
+  buildErrorResult(error, fallbackCode = "500") {
+    const errorCode = this.extractErrorCode(error, fallbackCode)
+    return {
+      code: errorCode,
+      message: getErrorMessage(errorCode) || error?.message || getErrorMessage(fallbackCode),
+    }
+  }
+
   async buildApiUrl(apiName, params = {}, extraParams = {}) {
     const queryParams = new URLSearchParams({ ...params, ...extraParams })
     return `${Bapi(apiName, params)}?${queryParams.toString()}&${await getWbi()}`
@@ -48,17 +62,14 @@ class Bilibili {
       }
 
       const data = await response.json()
-      if (data.code) {
+      if (data.code !== undefined && data.code !== 0) {
         throw new Error(`API 错误: [errcode:${data.code}]`)
       }
 
       return data
     } catch (error) {
       console.error("[ERROR] 网络请求失败:", error.message)
-      const facePattern = /\[errcode:(\d+)\]/g
-      const errorCode = facePattern.exec(error.message)[1] || "500"
-      const errorMessage = getErrorMessage(errorCode)
-      return { code: errorCode, message: errorMessage }
+      return this.buildErrorResult(error)
     }
   }
 
@@ -148,10 +159,7 @@ class Bilibili {
       return dynamic
     } catch (error) {
       console.error("[ERROR] 获取动态失败:", error.message)
-      const facePattern = /\[errcode:(\d+)\]/g
-      const errorCode = facePattern.exec(error.message)[1] || "500"
-      const errorMessage = getErrorMessage(errorCode)
-      return { code: errorCode, message: errorMessage }
+      return this.buildErrorResult(error)
     }
   }
 
@@ -168,10 +176,7 @@ class Bilibili {
       return dynamic
     } catch (error) {
       console.error("[ERROR] 获取置顶动态失败:", error.message)
-      const facePattern = /\[errcode:(\d+)\]/g
-      const errorCode = facePattern.exec(error.message)[1] || "500"
-      const errorMessage = getErrorMessage(errorCode)
-      return { code: errorCode, message: errorMessage }
+      return this.buildErrorResult(error)
     }
   }
 
@@ -188,10 +193,7 @@ class Bilibili {
       return dynamic
     } catch (error) {
       console.error("[ERROR] 获取最新动态失败:", error.message)
-      const facePattern = /\[errcode:(\d+)\]/g
-      const errorCode = facePattern.exec(error.message)[1] || "500"
-      const errorMessage = getErrorMessage(errorCode)
-      return { code: errorCode, message: errorMessage }
+      return this.buildErrorResult(error)
     }
   }
 
@@ -205,10 +207,7 @@ class Bilibili {
       return dynamic
     } catch (error) {
       console.error("[ERROR] 获取第一条动态失败:", error.message)
-      const facePattern = /\[errcode:(\d+)\]/g
-      const errorCode = facePattern.exec(error.message)[1] || "500"
-      const errorMessage = getErrorMessage(errorCode)
-      return { code: errorCode, message: errorMessage }
+      return this.buildErrorResult(error)
     }
   }
 
@@ -245,17 +244,14 @@ class Bilibili {
       return sortedDynamicList[0]
     } catch (error) {
       console.error("[ERROR] 获取指定类型动态失败:", error.message)
-      const facePattern = /\[errcode:(\d+)\]/g
-      const errorCode = facePattern.exec(error.message)[1] || "500"
-      const errorMessage = getErrorMessage(errorCode)
-      return { code: errorCode, message: errorMessage }
+      return this.buildErrorResult(error)
     }
   }
 
   // 处理动态数据
   dealDynamicData(data) {
     const { desc, major } = data.modules.module_dynamic
-    const type = this.dynamicType[data.type]
+    let type = this.dynamicType[data.type]
     let text = "",
       imglist = [],
       video = null,
@@ -531,10 +527,7 @@ class Bilibili {
       return { numResults: data.numResults, result }
     } catch (error) {
       console.error("[ERROR] 搜索视频失败:", error.message)
-      const facePattern = /\[errcode:(\d+)\]/g
-      const errorCode = facePattern.exec(error.message)[1] || "500"
-      const errorMessage = getErrorMessage(errorCode)
-      return { code: errorCode, message: errorMessage }
+      return this.buildErrorResult(error)
     }
   }
 
@@ -546,10 +539,7 @@ class Bilibili {
       return this.parseVideoInfoData(data)
     } catch (error) {
       console.error("[ERROR] 获取视频信息失败:", error.message)
-      const facePattern = /\[errcode:(\d+)\]/g
-      const errorCode = facePattern.exec(error.message)[1] || "500"
-      const errorMessage = getErrorMessage(errorCode)
-      return { code: errorCode, message: errorMessage }
+      return this.buildErrorResult(error)
     }
   }
 
@@ -572,10 +562,7 @@ class Bilibili {
       return { ...videoInfo, videos: data?.dash?.video, audios: data?.dash?.audio, tags }
     } catch (error) {
       console.error("[ERROR] 获取视频低质量播放地址失败:", error.message)
-      const facePattern = /\[errcode:(\d+)\]/g
-      const errorCode = facePattern.exec(error.message)[1] || "500"
-      const errorMessage = getErrorMessage(errorCode)
-      return { code: errorCode, message: errorMessage }
+      return this.buildErrorResult(error)
     }
   }
 
@@ -587,10 +574,7 @@ class Bilibili {
       return data.map(item => item.tag_name)
     } catch (error) {
       console.error("[ERROR] 获取视频标签失败:", error.message)
-      const facePattern = /\[errcode:(\d+)\]/g
-      const errorCode = facePattern.exec(error.message)[1] || "500"
-      const errorMessage = getErrorMessage(errorCode)
-      return { code: errorCode, message: errorMessage }
+      return this.buildErrorResult(error)
     }
   }
 
@@ -602,10 +586,7 @@ class Bilibili {
       return result.tag
     } catch (error) {
       console.error("[ERROR] 获取搜索建议失败:", error.message)
-      const facePattern = /\[errcode:(\d+)\]/g
-      const errorCode = facePattern.exec(error.message)[1] || "500"
-      const errorMessage = getErrorMessage(errorCode)
-      return { code: errorCode, message: errorMessage }
+      return this.buildErrorResult(error)
     }
   }
 
@@ -618,16 +599,13 @@ class Bilibili {
 
   async getsearch(keyword, search_type, order) {
     try {
-      const url = Bapi("search", { order, keyword, search_type })
+      const url = await this.buildApiUrl("searchType", {}, { order, keyword, search_type })
       const { data } = await this.fetchWithHeaders(url)
 
       return data.result
     } catch (error) {
       console.error("[ERROR] 搜索失败:", error.message)
-      const facePattern = /\[errcode:(\d+)\]/g
-      const errorCode = facePattern.exec(error.message)[1] || "500"
-      const errorMessage = getErrorMessage(errorCode)
-      return { code: errorCode, message: errorMessage }
+      return this.buildErrorResult(error)
     }
   }
 
@@ -653,10 +631,7 @@ class Bilibili {
       }
     } catch (error) {
       console.error("[ERROR] 获取用户基本信息失败:", error.message)
-      const facePattern = /\[errcode:(\d+)\]/g
-      const errorCode = facePattern.exec(error.message)[1] || "500"
-      const errorMessage = getErrorMessage(errorCode)
-      return { code: errorCode, message: errorMessage }
+      return this.buildErrorResult(error)
     }
   }
 
@@ -666,10 +641,7 @@ class Bilibili {
       return await BLogin.generateQRImage(true)
     } catch (error) {
       console.error("[ERROR] 生成登录二维码失败:", error.message)
-      const facePattern = /\[errcode:(\d+)\]/g
-      const errorCode = facePattern.exec(error.message)[1] || "500"
-      const errorMessage = getErrorMessage(errorCode)
-      return { code: errorCode, message: errorMessage }
+      return this.buildErrorResult(error)
     }
   }
 
@@ -679,10 +651,7 @@ class Bilibili {
       return await BLogin.pollLoginStatus(this.getUserInfo.bind(this))
     } catch (error) {
       console.error("[ERROR] 检查登录状态失败:", error.message)
-      const facePattern = /\[errcode:(\d+)\]/g
-      const errorCode = facePattern.exec(error.message)[1] || "500"
-      const errorMessage = getErrorMessage(errorCode)
-      return { code: errorCode, message: errorMessage }
+      return this.buildErrorResult(error)
     }
   }
 
@@ -699,10 +668,7 @@ class Bilibili {
       return { face, uname, mid }
     } catch (error) {
       console.error("[ERROR] 获取用户信息失败:", error.message)
-      const facePattern = /\[errcode:(\d+)\]/g
-      const errorCode = facePattern.exec(error.message)[1] || "500"
-      const errorMessage = getErrorMessage(errorCode)
-      return { code: errorCode, message: errorMessage }
+      return this.buildErrorResult(error)
     }
   }
 
@@ -716,10 +682,7 @@ class Bilibili {
       return response.data
     } catch (error) {
       console.error("[ERROR] 获取用户空间视频失败:", error.message)
-      const facePattern = /\[errcode:(\d+)\]/g
-      const errorCode = facePattern.exec(error.message)[1] || "500"
-      const errorMessage = getErrorMessage(errorCode)
-      return { code: errorCode, message: errorMessage }
+      return this.buildErrorResult(error)
     }
   }
 
@@ -752,10 +715,7 @@ class Bilibili {
       return { count: data.count, item: videoList, has_next: data.has_next }
     } catch (error) {
       console.error("[ERROR] 获取用户视频列表失败:", error.message)
-      const facePattern = /\[errcode:(\d+)\]/g
-      const errorCode = facePattern.exec(error.message)[1] || "500"
-      const errorMessage = getErrorMessage(errorCode)
-      return { code: errorCode, message: errorMessage }
+      return this.buildErrorResult(error)
     }
   }
 
@@ -767,10 +727,7 @@ class Bilibili {
       return data
     } catch (error) {
       console.error("[ERROR] 根据mid获取直播间信息失败:", error.message)
-      const facePattern = /\[errcode:(\d+)\]/g
-      const errorCode = facePattern.exec(error.message)[1] || "500"
-      const errorMessage = getErrorMessage(errorCode)
-      return { code: errorCode, message: errorMessage }
+      return this.buildErrorResult(error)
     }
   }
 
@@ -782,10 +739,7 @@ class Bilibili {
       return this.parseRoomInfoData(data)
     } catch (error) {
       console.error("[ERROR] 根据room_id获取直播间信息失败:", error.message)
-      const facePattern = /\[errcode:(\d+)\]/g
-      const errorCode = facePattern.exec(error.message)[1] || "500"
-      const errorMessage = getErrorMessage(errorCode)
-      return { code: errorCode, message: errorMessage }
+      return this.buildErrorResult(error)
     }
   }
 
@@ -817,8 +771,12 @@ class Bilibili {
   }
 
   async getCompleteUrl(url) {
-    const rep = await fetch(url)
-    return rep.url
+    try {
+      const rep = await fetch(url)
+      return rep.url
+    } catch {
+      return ""
+    }
   }
 
   // 获取用户的动态列表
@@ -840,10 +798,7 @@ class Bilibili {
       }
     } catch (error) {
       console.error("[ERROR] 获取动态列表失败:", error.message)
-      const facePattern = /\[errcode:(\d+)\]/g
-      const errorCode = facePattern.exec(error.message)[1] || "500"
-      const errorMessage = getErrorMessage(errorCode)
-      return { code: errorCode, message: errorMessage }
+      return this.buildErrorResult(error)
     }
   }
 
@@ -904,10 +859,7 @@ class Bilibili {
       }
     } catch (error) {
       console.error("[ERROR] 获取文章信息失败:", error.message)
-      const facePattern = /\[errcode:(\d+)\]/g
-      const errorCode = facePattern.exec(error.message)[1] || "500"
-      const errorMessage = getErrorMessage(errorCode)
-      return { code: errorCode, message: errorMessage }
+      return this.buildErrorResult(error)
     }
   }
 
@@ -941,10 +893,7 @@ class Bilibili {
       return { videoUrl, audio }
     } catch (error) {
       console.error("[ERROR] 获取视频数据失败:", error.message)
-      const facePattern = /\[errcode:(\d+)\]/g
-      const errorCode = facePattern.exec(error.message)[1] || "500"
-      const errorMessage = getErrorMessage(errorCode)
-      return { code: errorCode, message: errorMessage }
+      return this.buildErrorResult(error)
     }
   }
 }

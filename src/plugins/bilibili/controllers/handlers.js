@@ -25,6 +25,11 @@ const dynamicType = {
   article: "专栏",
   raffle: "抽奖",
 }
+const GROUP_DATA_DIR = "src/plugins/bilibili/data/group"
+const BILIBILI_BG_DIR = "src/plugins/bilibili/resources/html/bilibili/bg"
+const BILIBILI_VIDEO_HOSTS = ["b23.tv", "m.bilibili.com", "www.bilibili.com", "bilibili.com"]
+const BV_ID_REG = /\bBV[0-9A-Za-z]{10}\b/
+const dynamicTypeKeys = Object.keys(dynamicType)
 
 function getVideoCachePaths(bv) {
   const basePath = path.join(filemage.RootPath, "src/plugins/bilibili/resources/video")
@@ -72,7 +77,11 @@ function cleanupTempFiles(paths = [], label = "缓存") {
 
 function isMilkyRuntime(baseBot, ctx) {
   const protocol = String(
-    ctx?.protocol ?? baseBot?.adapter ?? globalThis.Bot?.adapterType ?? globalThis.Bot?.protocol ?? "",
+    ctx?.protocol ??
+      baseBot?.adapter ??
+      globalThis.Bot?.adapterType ??
+      globalThis.Bot?.protocol ??
+      "",
   )
     .trim()
     .toLowerCase()
@@ -104,6 +113,154 @@ function getDynamicForwardCachePath(dynamicId, index, source = "") {
   } catch {}
 
   return `${cacheDir}/${dynamicId}_${Date.now()}_${index}${ext}`
+}
+
+function normalizeTypeList(types = []) {
+  const list = Array.isArray(types) ? types : [types]
+  return [...new Set(list.map(type => String(type || "").trim()).filter(type => dynamicType[type]))]
+}
+
+function normalizeSubscriptionData(data) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null
+
+  const normalized = { ...data }
+  const subscribedTypes = normalizeTypeList(normalized.dynamicType)
+  const blockedTypes = normalizeTypeList(normalized.unpush)
+  const filteredBlockedTypes = subscribedTypes.length
+    ? blockedTypes.filter(type => !subscribedTypes.includes(type))
+    : blockedTypes
+
+  if (subscribedTypes.length > 0) normalized.dynamicType = subscribedTypes
+  else delete normalized.dynamicType
+
+  if (filteredBlockedTypes.length > 0) normalized.unpush = filteredBlockedTypes
+  else delete normalized.unpush
+
+  if (!normalized.live || typeof normalized.live !== "object" || Array.isArray(normalized.live)) {
+    delete normalized.live
+  }
+
+  return normalized
+}
+
+function getGroupDataFile(groupId) {
+  return `${GROUP_DATA_DIR}/${groupId}.json`
+}
+
+function getDynamicTypeKey(label = "") {
+  return Object.entries(dynamicType).find(([, value]) => value === label)?.[0] || ""
+}
+
+function getNormalizedHost(url = "") {
+  try {
+    const target = /^https?:\/\//i.test(url) ? url : `https://${url}`
+    return new URL(target).hostname.toLowerCase()
+  } catch {
+    return ""
+  }
+}
+
+function isBilibiliVideoUrl(url = "") {
+  const hostname = getNormalizedHost(url)
+  return BILIBILI_VIDEO_HOSTS.some(host => hostname === host || hostname.endsWith(`.${host}`))
+}
+
+function extractBilibiliUrl(ctx) {
+  const directUrl = String(ctx?.url || "").trim()
+  if (directUrl) return directUrl
+
+  const json = ctx?.json
+  if (!json || typeof json !== "object") return ""
+  return String(
+    json?.meta?.detail_1?.qqdocurl ?? json?.meta?.news?.jumpUrl ?? json?.meta?.news?.url ?? "",
+  ).trim()
+}
+
+function extractBvId(url = "") {
+  return String(url || "").match(BV_ID_REG)?.[0] || ""
+}
+
+function pickRandomBilibiliBackground() {
+  try {
+    const bglist = filemage.GetfileList(BILIBILI_BG_DIR)
+    if (!Array.isArray(bglist) || bglist.length === 0) return ""
+    return bglist[lodash.random(0, bglist.length - 1)]
+  } catch {
+    return ""
+  }
+}
+
+function stripDynamicHtml(text = "") {
+  return String(text || "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+}
+
+function buildDynamicFallbackMessage(result = {}) {
+  const authorName = result?.author?.nickname || result?.nickname || "UP主"
+  const title =
+    stripDynamicHtml(result?.video?.title || result?.liveInfo?.title || result?.article?.title) ||
+    ""
+  const content = stripDynamicHtml(result?.text || "")
+  const link = result?.video?.url || result?.liveInfo?.liveurl || result?.erm || ""
+  const lines = [`${authorName}发布了新的${result?.type || ""}动态`]
+  const message = []
+
+  if (result?.author?.img || result?.img) {
+    message.push(segment.image(result.author?.img || result.img))
+  }
+  if (title) lines.push(`标题：${title}`)
+  if (content && content !== title) lines.push(content.slice(0, 500))
+  if (result?.date) lines.push(`时间：${result.date}`)
+  if (link) lines.push(`链接：${link}`)
+
+  message.push(lines.join("\n"))
+  return message
+}
+
+async function renderDynamicMessage(renderer, result = {}) {
+  if (renderer && typeof renderer.renderImg === "function") {
+    try {
+      const rendered = await renderer.renderImg("bilibili", {
+        radom: pickRandomBilibiliBackground(),
+        ...result,
+      })
+      if (rendered) return rendered
+    } catch (err) {
+      logger.warn?.(`[Bilibili] 动态渲染失败，改用文本降级：${err?.message || err}`)
+    }
+  }
+
+  return buildDynamicFallbackMessage(result)
+}
+
+function getBilibiliGroupList() {
+  try {
+    return filemage.GetfileList(GROUP_DATA_DIR).map(item => item.replace(".json", ""))
+  } catch {
+    return []
+  }
+}
+
+async function ensureGroupCommand(ctx) {
+  if (ctx?.isGroup && ctx?.group_id) return true
+  await ctx.reply("请在群聊中使用该命令！")
+  return false
+}
+
+async function resolveBiliUserId(keyword) {
+  const value = String(keyword || "").trim()
+  if (!value) return { mid: "" }
+  if (/^\d+$/.test(value)) return { mid: value }
+
+  const data = await Bili.getSearchUser(value)
+  if (!data?.mid) return { mid: "", user: null }
+  return {
+    mid: String(data.mid),
+    user: data,
+  }
 }
 
 async function prepareDynamicForwardImages(baseBot, ctx, dynamicId, msgList = []) {
@@ -144,37 +301,59 @@ async function prepareDynamicForwardImages(baseBot, ctx, dynamicId, msgList = []
 }
 
 function writeBiliData(groupId, uid, data) {
-  let gdata = getBiliData(groupId) || {}
-  gdata[uid] = data
-  if (data == null) {
+  if (!groupId || !uid) return false
+
+  const gdata = getBiliData(groupId) || {}
+  const normalizedData = normalizeSubscriptionData(data)
+  if (normalizedData) {
+    gdata[uid] = normalizedData
+  } else {
     delete gdata[uid]
   }
-  filemage.writeFileJsonData(`src/plugins/bilibili/data/group/${groupId}.json`, gdata)
-  logger.debug(
-    `[Bilibili] 更新直播状态，群ID：${groupId}，用户ID：${uid}，状态：${data?.live_status === 1 ? "直播中" : "下播"}`,
-  )
+
+  filemage.writeFileJsonData(getGroupDataFile(groupId), gdata)
+
+  const liveStatus = normalizedData?.live?.live_status
+  if (liveStatus !== undefined) {
+    logger.debug(
+      `[Bilibili] 更新直播状态，群ID：${groupId}，用户ID：${uid}，状态：${liveStatus === 1 ? "直播中" : "下播"}`,
+    )
+  }
+
+  return true
 }
 
 function getUpList(groupId) {
-  let gdata = getBiliData(groupId)
-  return Object.keys(gdata) || []
+  return Object.keys(getBiliData(groupId) || {})
 }
 
 function getBiliData(groupId, uid) {
+  if (!groupId) return uid ? null : {}
+
   let gdata = {}
   try {
-    gdata = filemage.getFileDataToJson(`src/plugins/bilibili/data/group/${groupId}.json`) || {}
+    gdata = filemage.getFileDataToJson(getGroupDataFile(groupId)) || {}
   } catch (e) {
-    filemage.writeFileJsonData(`src/plugins/bilibili/data/group/${groupId}.json`, gdata)
-    return false
+    filemage.writeFileJsonData(getGroupDataFile(groupId), gdata)
+    return uid ? null : gdata
   }
-  return uid ? gdata[uid] : gdata
+
+  const normalized = Object.fromEntries(
+    Object.entries(gdata)
+      .map(([key, value]) => [key, normalizeSubscriptionData(value)])
+      .filter(([, value]) => value),
+  )
+  return uid ? normalized[uid] || null : normalized
 }
 
 function writeLiveData(groupId, uid, data) {
-  let gdata = getBiliData(groupId) || {}
-  gdata[uid].live = data
-  writeBiliData(groupId, uid, gdata[uid])
+  const current = getBiliData(groupId, uid)
+  if (!current) return false
+
+  return writeBiliData(groupId, uid, {
+    ...current,
+    live: data && typeof data === "object" ? data : {},
+  })
 }
 
 function isNativeForwardPayload(payload) {
@@ -249,101 +428,139 @@ export function register(bot) {
   bot.registerCommand(
     "^#订阅(UP|up|)(直播|文字|图文|视频|转发|抽奖|专栏|)(动态|)(uid:|UID:|)",
     async ctx => {
+      if (!(await ensureGroupCommand(ctx))) return true
+
       let dtype = ctx.msg.match(/直播|文字|图文|视频|转发|抽奖|专栏/g)?.[0] || "全部"
-      let mid = ctx.msg.replace(new RegExp(ctx.reg), "").trim() //纯数字
-      if (!mid) {
+      const midInput = ctx.msg.replace(new RegExp(ctx.reg), "").trim()
+      if (!midInput) {
         return ctx.reply("订阅不能为空，请输入用户id或者用户昵称！")
       }
-      if (isNaN(mid)) {
-        let data = await Bili.getSearchUser(mid)
-        if (!data) {
-          return ctx.reply("没有找到该用户呢！")
-        }
-        mid = data.mid
+
+      const { mid } = await resolveBiliUserId(midInput)
+      if (!mid) {
+        return ctx.reply("没有找到该用户呢！")
       }
-      let reslut = await Bili.getUpdateDynamic(mid)
-      let updata = getBiliData(ctx.group_id, mid) || {}
-      if (reslut?.code && reslut.code != 0) {
-        if (reslut.code == -352) {
+
+      let result = await Bili.getUpdateDynamic(mid)
+      const prevData = getBiliData(ctx.group_id, mid) || {}
+      if (result?.code && result.code != 0) {
+        if (String(result.code) === "-352") {
           return ctx.reply("请先设置b站ck进行订阅！使用“b站扫码”命令进行登录！")
         }
-        return ctx.reply(reslut.message || reslut.msg)
+        return ctx.reply(result.message || result.msg)
       }
-      let data, type
-      type = Object.entries(dynamicType).find(item => item[1] == dtype)?.[0]
 
-      data = {
-        nickname: reslut?.author?.nickname,
-        upuid: reslut?.id || 0,
+      const type = getDynamicTypeKey(dtype)
+      let data = normalizeSubscriptionData({
+        ...prevData,
+        nickname: result?.author?.nickname || prevData?.nickname,
+        upuid: result?.id || prevData?.upuid || 0,
         uid: mid,
-        img: reslut?.author?.img,
-        pendantImg: reslut?.author?.pendantImg,
-        dynamicType: updata?.dynamicType ? [...updata?.dynamicType, type] : [type],
-      }
+        img: result?.author?.img || prevData?.img,
+        pendantImg: result?.author?.pendantImg || prevData?.pendantImg,
+      })
 
-      if (reslut?.code == 0) {
-        let authorInfo = await Bili.getUserBaseInfo(mid)
-        data = {
-          ...data,
-          nickname: authorInfo?.name,
-          img: authorInfo?.face,
-          pendantImg: authorInfo?.pendant?.image,
-          dynamicType: updata?.dynamicType ? [...updata?.dynamicType, type] : [type],
+      if (String(result?.code) === "0" || !data?.nickname || !data?.img) {
+        const authorInfo = await Bili.getUserBaseInfo(mid)
+        if (!authorInfo?.code) {
+          data = {
+            ...data,
+            nickname: authorInfo?.name || data?.nickname,
+            img: authorInfo?.face || data?.img,
+            pendantImg: authorInfo?.pendant?.image || data?.pendantImg,
+          }
         }
       }
 
-      if (!type) {
+      if (type) {
+        data = {
+          ...data,
+          dynamicType: [...new Set([...(prevData?.dynamicType || []), type])],
+          unpush: normalizeTypeList(prevData?.unpush).filter(item => item !== type),
+        }
+      } else {
         delete data.dynamicType
-        type = "all"
+        delete data.unpush
       }
-      console.log("订阅的:ctx", ctx)
 
-      updata = data
-      writeBiliData(ctx.group_id, mid, updata)
-      return ctx.reply([
-        segment.image(data.img),
+      writeBiliData(ctx.group_id, mid, data)
+
+      const replyMsg = []
+      if (data?.img) {
+        replyMsg.push(segment.image(data.img))
+      }
+      replyMsg.push(
         `昵称：${data.nickname}\n`,
-        type == "all"
+        !type
           ? `订阅Up主${data.nickname}成功！`
           : `已订阅Up主${data.nickname}的${dynamicType[type]}推送！`,
-      ])
+      )
+      return ctx.reply(replyMsg)
     },
   )
 
   bot.registerCommand(
     "^#取消订阅(UP|up|)(直播|文字|图文|视频|转发|抽奖|专栏|)(动态|)(uid:|UID:|)",
     async ctx => {
+      if (!(await ensureGroupCommand(ctx))) return true
+
       let dtype = ctx.msg.match(/直播|文字|图文|视频|转发|抽奖|专栏/g)?.[0]
-      let mid = ctx.msg.replace(new RegExp(ctx.reg), "")
-      if (!mid) {
+      const midInput = ctx.msg.replace(new RegExp(ctx.reg), "").trim()
+      if (!midInput) {
         return ctx.reply("请输入B站用户id或者用户昵称！")
       }
-      if (isNaN(mid)) {
-        let data = await Bili.getSearchUser(mid)
-        if (!data) {
-          return ctx.reply("没有找到该用户呢！")
-        }
-        mid = `${data.mid}`
-      }
-      let updata = getBiliData(ctx.group_id, mid)
-      let result = { ...updata }
 
-      let type = Object.entries(dynamicType).find(item => item[1] == dtype)?.[0] || "all"
-      if (!getUpList(ctx.group_id).includes(mid)) {
+      const { mid } = await resolveBiliUserId(midInput)
+      if (!mid) {
+        return ctx.reply("没有找到该用户呢！")
+      }
+
+      let updata = getBiliData(ctx.group_id, mid)
+      if (!updata || !getUpList(ctx.group_id).includes(mid)) {
         return ctx.reply("暂未订阅该up主！")
-      } else if (type == "all") {
+      }
+
+      let result = { ...updata }
+      const type = getDynamicTypeKey(dtype)
+      if (!type) {
         updata = null
       } else {
-        updata = {
-          ...updata,
-          unpush: updata?.unpush ? [...updata?.unpush, type] : [type],
+        const subscribedTypes = normalizeTypeList(updata?.dynamicType)
+        const blockedTypes = normalizeTypeList(updata?.unpush)
+
+        if (subscribedTypes.length > 0) {
+          if (!subscribedTypes.includes(type)) {
+            return ctx.reply(`当前未订阅Up主${result?.nickname}的${dynamicType[type]}推送！`)
+          }
+
+          const nextTypes = subscribedTypes.filter(item => item !== type)
+          updata =
+            nextTypes.length > 0
+              ? {
+                  ...updata,
+                  dynamicType: nextTypes,
+                  unpush: blockedTypes.filter(item => item !== type),
+                }
+              : null
+        } else {
+          if (blockedTypes.includes(type)) {
+            return ctx.reply(`当前已经取消Up主${result?.nickname}的${dynamicType[type]}推送了！`)
+          }
+
+          const nextBlockedTypes = [...new Set([...blockedTypes, type])]
+          updata =
+            nextBlockedTypes.length >= dynamicTypeKeys.length
+              ? null
+              : {
+                  ...updata,
+                  unpush: nextBlockedTypes,
+                }
         }
       }
-      console.log(type, updata)
 
       writeBiliData(ctx.group_id, mid, updata)
       return ctx.reply(
-        type == "all"
+        !type
           ? `取消订阅Up主${result?.nickname}成功！`
           : `已取消Up主${result?.nickname}的${dynamicType[type]}推送！`,
       )
@@ -352,26 +569,17 @@ export function register(bot) {
 
   //视频解析
   bot.registerCommand(["", 1200], async ctx => {
-    if (!ctx.json && !ctx.url) return false
-    let url = ctx.url
-    let urllist = ["b23.tv", "m.bilibili.com", "www.bilibili.com"]
-    let reg2 = new RegExp(`${urllist[0]}|${urllist[1]}|${urllist[2]}`)
-    if (ctx.json) {
-      let json = ctx.json
-      url = json.meta.detail_1?.qqdocurl || json.meta.news?.jumpUrl
-    }
-    if (!url || !url.match(reg2)) return false
-    let bilireg = /(BV.*?).{10}/
-    let bv = url.match(bilireg)
-    if (bv) {
-      //存在bv长链接
-      bv = bv[0]
-    } else {
-      //不存在长链接
-      let curl = await Bili.getCompleteUrl(url)
-      console.log(curl)
+    const url = extractBilibiliUrl(ctx)
 
-      bv = curl.match(bilireg)[0]
+    if (!url || !isBilibiliVideoUrl(url)) return false
+
+    let bv = extractBvId(url)
+    if (!bv) {
+      const completeUrl = await Bili.getCompleteUrl(url).catch(() => "")
+      bv = extractBvId(completeUrl)
+    }
+    if (!bv) {
+      return await ctx.reply("未识别到有效的B站视频链接，请确认链接后再试。")
     }
 
     let videoInfo = await Bili.getVideoInfo(bv)
@@ -429,48 +637,64 @@ export function register(bot) {
       return num >= 10000 ? (num / 10000).toFixed(1) + "w" : num
     }
 
-    await ctx.reply([
-      segment.image(videoInfo.pic),
+    const videoStat = videoInfo?.stat || {}
+    const videoInfoMessage = []
+    if (videoInfo?.pic) {
+      videoInfoMessage.push(segment.image(videoInfo.pic))
+    }
+    videoInfoMessage.push(
       `标题: ${videoInfo.title}\n`,
       `作者: ${videoInfo.owner.name}\n`,
-      `${addnull(`播放量: ${computew(videoInfo.stat.view)} 弹幕: ${computew(videoInfo.stat.danmaku)}`, "弹")}\n`,
-      `${addnull(`点赞: ${computew(videoInfo.stat.like)}投币: ${computew(videoInfo.stat.coin)}`, "投")}`,
-      `\n${addnull(`收藏: ${computew(videoInfo.stat.favorite)}转发: ${computew(videoInfo.stat.share)}`, "转")}`,
-    ])
+      `${addnull(`播放量: ${computew(videoStat.view || 0)} 弹幕: ${computew(videoStat.danmaku || 0)}`, "弹")}\n`,
+      `${addnull(`点赞: ${computew(videoStat.like || 0)}投币: ${computew(videoStat.coin || 0)}`, "投")}`,
+      `\n${addnull(`收藏: ${computew(videoStat.favorite || 0)}转发: ${computew(videoStat.share || 0)}`, "转")}`,
+    )
+    await ctx.reply(videoInfoMessage)
 
     const changeVideo = async (qn, bv, e) => {
       const { videoPath, audioPath, resultPath } = getVideoCachePaths(bv)
-      const { videoUrl, audio } = await Bili.getQnVideo(qn, bv)
-      if (!videoUrl || !audio) {
-        throw new Error("获取视频下载地址失败")
-      }
+      const cleanupPaths = [videoPath, audioPath, resultPath]
 
-      const videoOk = await download.downloadFile(
-        videoUrl,
-        `src/plugins/bilibili/resources/video/source_${bv}.mp4`,
-        {
-          headers: {
-            referer: "https://www.bilibili.com",
-          },
-        },
-      )
-      const audioOk = await download.downloadFile(
-        audio,
-        `src/plugins/bilibili/resources/video/source_${bv}.mp3`,
-        {
-          headers: {
-            referer: "https://www.bilibili.com",
-          },
-        },
-      )
-      if (!videoOk || !audioOk) return false
+      try {
+        const { videoUrl, audio, code, message } = await Bili.getQnVideo(qn, bv)
+        if (code) {
+          throw new Error(message || "获取视频下载地址失败")
+        }
+        if (!videoUrl || !audio) {
+          throw new Error("获取视频下载地址失败")
+        }
 
-      await composeVideoFile(videoPath, audioPath, resultPath)
-      const sendRes = await e.reply(segment.video(resultPath))
-      if (sendRes) {
-        cleanupVideoCache([videoPath, audioPath, resultPath])
+        const videoOk = await download.downloadFile(
+          videoUrl,
+          `src/plugins/bilibili/resources/video/source_${bv}.mp4`,
+          {
+            headers: {
+              referer: "https://www.bilibili.com",
+            },
+          },
+        )
+        const audioOk = await download.downloadFile(
+          audio,
+          `src/plugins/bilibili/resources/video/source_${bv}.mp3`,
+          {
+            headers: {
+              referer: "https://www.bilibili.com",
+            },
+          },
+        )
+        if (!videoOk || !audioOk) {
+          throw new Error("下载视频资源失败")
+        }
+
+        await composeVideoFile(videoPath, audioPath, resultPath)
+        const sendRes = await e.reply(segment.video(resultPath))
+        if (!sendRes) {
+          throw new Error("视频发送失败")
+        }
+        return sendRes
+      } finally {
+        cleanupVideoCache(cleanupPaths)
       }
-      return sendRes
     }
 
     try {
@@ -486,47 +710,55 @@ export function register(bot) {
     await Blogin.login()
     await ctx.reply(segment.image(Blogin.qrImagePath), false, { recallMsg: 120 })
     let timer = setInterval(async () => {
-      let result = await Blogin.pollLoginStatus(Bili.getUserInfo.bind(Bili))
-      if (result && result?.code == 200) {
+      try {
+        let result = await Blogin.pollLoginStatus(Bili.getUserInfo.bind(Bili))
+        if (result?.code == 200) {
+          clearInterval(timer)
+          await ctx.reply("登录成功！")
+          let uinfo = result.userInfo
+          let { name, face, fans, friend, sign, like_num, archive_count, level } =
+            await Bili.getUserBaseInfo(uinfo.mid)
+          await ctx.reply([
+            segment.image(face),
+            `昵称：${name}\n粉丝：${fans}\n关注：${friend}\n等级：${level}\n简介：${sign}\n投稿：${archive_count}\n点赞：${like_num}\n`,
+          ])
+          return
+        }
+
+        if (result?.code == 86038) {
+          clearInterval(timer)
+          await ctx.reply("二维码已过期，请重新发送“b站扫码”获取新的二维码。")
+        }
+      } catch (err) {
         clearInterval(timer)
-        await ctx.reply("登录成功！")
-        let uinfo = result.userInfo
-        let { name, face, fans, friend, sign, like_num, archive_count, level } =
-          await Bili.getUserBaseInfo(uinfo.mid)
-        await ctx.reply([
-          segment.image(face),
-          `昵称：${name}\n粉丝：${fans}\n关注：${friend}\n等级：${level}\n简介：${sign}\n投稿：${archive_count}\n点赞：${like_num}\n`,
-        ])
+        logger.error?.(`[Bilibili] 扫码登录状态检查失败：${err?.message || err}`)
+        await ctx.reply("扫码登录状态检查失败，请稍后重试。")
       }
     }, 3000)
   })
 
   bot.registerCommand(["^#订阅列表$", 1000], async ctx => {
+    if (!(await ensureGroupCommand(ctx))) return true
+
     let updata = getBiliData(ctx.group_id) || {}
     let msg = "订阅列表如下："
     if (Object.keys(updata).length === 0) {
-      return this.reply("这个群还没订阅任何up主呢！")
+      return await ctx.reply("这个群还没订阅任何up主呢！")
     }
     Object.values(updata).forEach(item => {
+      const includeList = normalizeTypeList(item?.dynamicType).map(type => `${dynamicType[type]}√`)
+      const excludeList = normalizeTypeList(item?.unpush).map(type => `${dynamicType[type]}X`)
+      const typeSummary = [...includeList, ...excludeList]
       msg += `\n昵称：${item.nickname} (${
-        (item?.dynamicType
-          ?.map(t => {
-            return t !== "all" ? dynamicType[t] + "√" : ""
-          })
-          .join("、") || "") +
-          (item?.unpush
-            ?.map(t => {
-              return dynamicType[t] + "X"
-            })
-            .join("、") || "") || "全部"
+        typeSummary.length > 0 ? typeSummary.join("、") : "全部"
       })`
     })
     msg += "\n√表示只推送的类型，X代表禁止推送的类型"
-    ctx.reply(msg)
+    return await ctx.reply(msg)
   })
 
   bot.registerCommand("^#查询灯牌", async ctx => {
-    let card = ctx.msg.replace(new RegExp(ctx.reg), "")
+    let card = ctx.msg.replace(new RegExp(ctx.reg), "").trim()
     if (!card) {
       return await ctx.reply("请输入要查询的直播的灯牌！")
     }
@@ -540,7 +772,7 @@ export function register(bot) {
         throw new Error("没有找到该直播的灯牌！")
       }
     } catch (error) {
-      console.log(error)
+      logger.error?.(`[Bilibili] 查询灯牌失败：${error?.message || error}`)
       return await ctx.reply("查询失败！")
     }
     if (result) {
@@ -559,64 +791,80 @@ export function register(bot) {
   })
 
   bot.registerCommand("#查询up最新动态", async ctx => {
-    if (!ctx.isGroup) return false
-    let mid = ctx.msg.replace("#查询up最新动态", "")
+    if (!(await ensureGroupCommand(ctx))) return true
+
+    const midInput = ctx.msg.replace(new RegExp(ctx.reg), "").trim()
+    if (!midInput) {
+      return await ctx.reply("请输入B站用户id或者用户昵称！")
+    }
+
+    const { mid } = await resolveBiliUserId(midInput)
+    if (!mid) {
+      return await ctx.reply("没有找到该用户呢！")
+    }
+
     let result = await Bili.getFirstDynamic(mid)
 
     if (result && !result?.code) {
-      let bglist = filemage.GetfileList("src/plugins/bilibili/resources/html/bilibili/bg")
-      let radom = bglist[lodash.random(0, bglist.length - 1)]
-      await ctx.reply(await ctx.renderImg("bilibili", { radom, ...result }))
+      return await ctx.reply(await renderDynamicMessage(ctx, result))
     } else {
-      await ctx.reply(`查询失败！${result.message}`)
+      return await ctx.reply(`查询失败！${result.message}`)
     }
   })
 
   //直播推送   群名称 属性名是uid
   bot.setTask("0 * * * * *", async ctx => {
-    let glist = filemage.GetfileList("src/plugins/bilibili/data/group")
-    if (glist.length == 0) return
-    for (let g of glist.map(i => i.replace(".json", ""))) {
-      let flist = filemage.getFileDataToJson(`src/plugins/bilibili/data/group/${g}.json`)
-      for (let u in flist) {
-        if (!flist[u]) continue
-        let result = await Bili.getRoomInfobyMid(u)
-        if (!result) continue
-        let { room_id } = result
-        if (room_id == 0) continue
-        let roomInfo = await Bili.getRoomInfo(room_id)
-        if (roomInfo && roomInfo?.live_status == 1 && !flist[u]?.live?.live_time) {
-          let { title, user_cover, area_name, live_time } = roomInfo
-          let content = [
-            `${flist[u].nickname}开播啦！小伙伴们快去围观吧！`,
-            segment.image(user_cover),
-            `标题：${title}\n分区：${area_name}\n开播时间：${live_time}\n直播间地址：https://live.bilibili.com/${room_id}`,
-          ]
-          try {
-            console.log(g)
+    const runtimeBot = globalThis.Bot
+    if (!runtimeBot || typeof runtimeBot.sendMessage !== "function") return
 
-            let res = await Bot.sendMessage({ group_id: g }, content)
+    let glist = getBilibiliGroupList()
+    if (glist.length == 0) return
+    for (let g of glist) {
+      let flist = getBiliData(g) || {}
+      for (let [u, entry] of Object.entries(flist)) {
+        const item = normalizeSubscriptionData(entry)
+        if (!item) continue
+
+        try {
+          let result = await Bili.getRoomInfobyMid(u)
+          if (!result || result?.code) continue
+
+          let { room_id } = result
+          if (room_id == 0) continue
+
+          let roomInfo = await Bili.getRoomInfo(room_id)
+          if (roomInfo?.code) continue
+
+          if (roomInfo && roomInfo?.live_status == 1 && !item?.live?.live_time) {
+            let { title, user_cover, area_name, live_time } = roomInfo
+            let content = [
+              `${item.nickname}开播啦！小伙伴们快去围观吧！`,
+              segment.image(user_cover),
+              `标题：${title}\n分区：${area_name}\n开播时间：${live_time}\n直播间地址：https://live.bilibili.com/${room_id}`,
+            ]
+
+            let res = await runtimeBot.sendMessage({ group_id: g }, content)
             if (!res) throw new Error("直播推送消息失败")
+
             logger.info(`[Bilibili] 直播推送成功，房间ID：${room_id}，群ID：${g}`)
             writeLiveData(g, u, roomInfo)
-          } catch (e) {
-            logger.error(e)
-          }
-        } else if (roomInfo?.live_status == 0 && flist[u]?.live?.live_time) {
-          let { title, user_cover, area_name, live_time } = flist[u]?.live
-          const liveTime = moment() - moment(live_time)
-          if (liveTime < 60 * 60 * 1000) {
-            try {
-              await Bot.sendMessage({ group_id: g }, [
+          } else if (roomInfo?.live_status == 0 && item?.live?.live_time) {
+            let { title, user_cover, area_name, live_time } = item.live
+            const startAt = moment(live_time)
+            const liveTime = startAt.isValid() ? moment().diff(startAt) : 0
+            if (liveTime < 60 * 60 * 1000) {
+              await runtimeBot.sendMessage({ group_id: g }, [
                 segment.image(user_cover),
                 `\n标题：${title}\n分区：${area_name}\n开播时间：${live_time}\n已结束直播，直播时长：${moment.utc(liveTime).format("HH:mm:ss")}`,
               ])
               writeLiveData(g, u, {})
               logger.info(`[Bilibili] 直播结束推送成功，房间ID：${room_id}，群ID：${g}`)
-            } catch (e) {
-              logger.error(e)
+            } else {
+              writeLiveData(g, u, {})
             }
           }
+        } catch (e) {
+          logger.error?.(`[Bilibili] 直播轮询失败，群ID：${g}，用户ID：${u}，${e?.message || e}`)
         }
       }
     }
@@ -624,37 +872,31 @@ export function register(bot) {
 
   //动态推送
   bot.setTask("10 * * * * *", async ctx => {
-    let glist = filemage.GetfileList("src/plugins/bilibili/data/group")
-    if (glist.length == 0) return
-    for (let g of glist.map(i => i.replace(".json", ""))) {
-      let flist = filemage.getFileDataToJson(`src/plugins/bilibili/data/group/${g}.json`)
-      for (let u in flist) {
-        const item = flist[u]
-        if (!item) continue
-        let result = await Bili.getUpdateDynamic(u)
-        if (!result) continue
-        if (result.code) continue
-        if (
-          item.dynamicType &&
-          !item.dynamicType.includes(
-            Object.keys(dynamicType).find(i => dynamicType[i] === result.type),
-          )
-        )
-          continue
+    const runtimeBot = globalThis.Bot
+    if (!runtimeBot || typeof runtimeBot.sendMessage !== "function") return
 
-        if (
-          item.unpush &&
-          item.unpush.includes(Object.keys(dynamicType).find(i => dynamicType[i] === result.type))
-        )
-          continue
-        if (result.id !== item.upuid) {
-          logger.mark(result.id, item.upuid)
-          let bglist = filemage.GetfileList("src/plugins/bilibili/resources/html/bilibili/bg")
-          let radom = bglist[lodash.random(0, bglist.length - 1)]
-          await Bot.sendMessage(
-            { group_id: g },
-            await Bot.renderImg("bilibili", { radom, ...result }),
-          )
+    let glist = getBilibiliGroupList()
+    if (glist.length == 0) return
+    for (let g of glist) {
+      let flist = getBiliData(g) || {}
+      for (let [u, entry] of Object.entries(flist)) {
+        const item = normalizeSubscriptionData(entry)
+        if (!item) continue
+
+        try {
+          let result = await Bili.getUpdateDynamic(u)
+          if (!result || result.code) continue
+
+          const typeKey = getDynamicTypeKey(result.type)
+          if (item.dynamicType && !item.dynamicType.includes(typeKey)) continue
+          if (item.unpush && item.unpush.includes(typeKey)) continue
+          if (result.id === item.upuid) continue
+
+          const dynamicMessage = await renderDynamicMessage(runtimeBot, result)
+          const sendResult = await runtimeBot.sendMessage({ group_id: g }, dynamicMessage)
+          if (!sendResult) {
+            throw new Error("动态主消息发送失败")
+          }
 
           let imglist = []
           if (result.imglist) {
@@ -682,33 +924,34 @@ export function register(bot) {
                 forwardImgList,
                 "动态图片",
               )
-              await Bot.sendMessage(
-                { group_id: g },
-                forwardMsg,
-              )
+              await runtimeBot.sendMessage({ group_id: g }, forwardMsg)
             } catch (err) {
-              logger.error?.(`[Bilibili] 动态图片转发失败，改为直接发送图片：${err?.message || err}`)
-              await Bot.sendMessage({ group_id: g }, forwardImgList)
+              logger.error?.(
+                `[Bilibili] 动态图片转发失败，改为直接发送图片：${err?.message || err}`,
+              )
+              await runtimeBot.sendMessage({ group_id: g }, forwardImgList)
             } finally {
               cleanupTempFiles(cleanupPaths, "动态图片转发缓存")
             }
           }
 
-          result = {
+          const nextData = {
             ...item,
-            nickname: result.author.nickname,
+            nickname: result.author?.nickname || item.nickname,
             upuid: result.id,
-            uid: item.uid,
-            img: result.author.img,
-            pendantImg: result.author.pendantImg,
+            uid: item.uid || u,
+            img: result.author?.img || item.img,
+            pendantImg: result.author?.pendantImg || item.pendantImg,
           }
-          writeBiliData(g, item.uid, result)
+          writeBiliData(g, item.uid || u, nextData)
+        } catch (err) {
+          logger.error?.(
+            `[Bilibili] 动态轮询失败，群ID：${g}，用户ID：${u}，${err?.message || err}`,
+          )
         }
       }
     }
   })
 }
 
-export function onBotEvent(event) {
-  console.log("[example-plugin] received bot event:", event)
-}
+export function onBotEvent() {}

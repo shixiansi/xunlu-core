@@ -5,7 +5,7 @@ function getURLMap(name, params) {
     searchType: `https://api.bilibili.com/x/web-interface/wbi/search/type`,
     buvid3: `https://api.bilibili.com/x/frontend/finger/spi`,
     videoLow: `https://api.bilibili.com/x/player/playurl?bvid=${params?.bv}&cid=${params?.cid}&qn=112&fnval=4048&fnver=0`,
-    videoInfo: `http://api.bilibili.com/x/web-interface/view?bvid=${params?.bv}`,
+    videoInfo: `https://api.bilibili.com/x/web-interface/view?bvid=${params?.bv}`,
     suggest: `https://s.search.bilibili.com/main/suggest?term=${params?.str}`,
     tags: `https://api.bilibili.com/x/web-interface/view/detail/tag?aid=${params?.aid}&cid=${params?.cid}`,
     userInfo: `https://api.bilibili.com/x/web-interface/nav`,
