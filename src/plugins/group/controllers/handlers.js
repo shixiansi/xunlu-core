@@ -1,6 +1,5 @@
 import _ from "lodash"
 import moment from "moment"
-import fs from "node:fs"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { segment } from "../../../Bot/segment.js"
@@ -11,6 +10,7 @@ import MessageDB from "../../../db/MessageDB.js"
 import env from "../../../lib/env.js"
 import cfg from "../../../lib/config.js"
 import { applyRkeyToUrl, getSceneRkey } from "../../../utils/rkey.js"
+import { setChuoEnabled } from "../../chuo/model/config.js"
 import {
   getBotNoticeConfig,
   getGlobalNoticeConfig,
@@ -24,9 +24,6 @@ import {
 const filemage = new Filemage()
 const groupPass = {}
 
-const CHUO_DATA_DIR = path.resolve(env.RootPath, "data", "chuo")
-const CHUO_CONFIG_PATH = path.join(CHUO_DATA_DIR, "config.json")
-
 const noticeDedupe = new Map()
 
 function toInt(value) {
@@ -35,10 +32,6 @@ function toInt(value) {
   if (v === "") return undefined
   const num = Number(v)
   return Number.isFinite(num) ? Math.floor(num) : undefined
-}
-
-function ensureDir(dir) {
-  fs.mkdirSync(dir, { recursive: true })
 }
 
 function clampText(text, maxLen = 120) {
@@ -204,20 +197,6 @@ function getTempGroupId(ctx) {
   return (
     toInt(ctx?.group_id) ?? toInt(ctx?.group?.group_id) ?? toInt(ctx?.group?.groupId) ?? undefined
   )
-}
-
-function ensureChuoConfigFile() {
-  ensureDir(CHUO_DATA_DIR)
-  if (!fs.existsSync(CHUO_CONFIG_PATH)) {
-    fs.writeFileSync(CHUO_CONFIG_PATH, JSON.stringify({ enabled: true }, null, 2), "utf8")
-  }
-}
-
-function setChuoEnabled(enabled) {
-  ensureChuoConfigFile()
-  const payload = { enabled: Boolean(enabled) }
-  fs.writeFileSync(CHUO_CONFIG_PATH, JSON.stringify(payload, null, 2), "utf8")
-  return payload
 }
 
 function withTimeout(promise, timeoutMs, timeoutValue = null) {

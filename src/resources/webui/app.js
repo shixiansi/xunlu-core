@@ -138,6 +138,7 @@ async function loadSession() {
 
 async function loadPlugins() {
   const res = await api("/plugins")
+  state.pluginStates = new Map()
   state.plugins = Array.isArray(res.plugins) ? res.plugins : []
   if (!state.activePlugin || !state.plugins.find(item => item.name === state.activePlugin)) {
     state.activePlugin = state.plugins[0]?.name || ""

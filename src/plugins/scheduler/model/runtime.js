@@ -59,6 +59,10 @@ export function claimSchedulerRuntime(runtime) {
   return runtime
 }
 
+export function getClaimedSchedulerRuntime() {
+  return getGlobalRuntimeState().runtime || null
+}
+
 export function buildMessagePayload(text, mentions = []) {
   const cleanText = normalizeString(text)
   const cleanMentions = Array.isArray(mentions) ? mentions.map(item => normalizeString(item)).filter(Boolean) : []

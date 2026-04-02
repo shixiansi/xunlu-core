@@ -1,13 +1,13 @@
-# 共享 WebUI 接入手册（AI / 插件作者版）
+# 共享 WebUI 接入手册（AI / 插件作者）
 
-目标：让所有插件都能挂到统一 WebUI 下，由共享宿主负责登录、插件列表、表单渲染和保存；单个插件只声明自己的配置协议与可选扩展页面。
+目标：让所有插件都挂到统一 WebUI 下，由共享宿主负责登录、插件列表、表单渲染和保存；单个插件只声明自己的配置协议与可选扩展页面。
 
 ## 1. 共享 WebUI 入口
 
-- 页面：
+- 页面
   - `GET /webui`：统一后台
   - `GET /webui/login`：统一登录页
-- API：
+- API
   - `GET /webui/api/auth/session`
   - `POST /webui/api/auth/login`
   - `POST /webui/api/auth/logout`
@@ -45,23 +45,17 @@ export default {
         id: "global",
         scope: "global",
         title: "全局配置",
-        fields: [
-          { path: "settings.enabled", label: "启用", type: "boolean" },
-        ],
+        fields: [{ path: "settings.enabled", label: "启用", type: "boolean" }],
       },
       {
         id: "group",
         scope: "group",
         title: "群级配置",
-        emptyText: "没有可选群号时显示的文本",
-        fields: [
-          { path: "config.enabled", label: "群级开关", type: "select", options: [] },
-        ],
+        emptyText: "没有可选群号时显示的文案",
+        fields: [{ path: "config.enabled", label: "群级开关", type: "select", options: [] }],
       },
     ],
-    pages: [
-      { id: "advanced", title: "高级页面", url: "/plugins/<plugin-name>/admin" },
-    ],
+    pages: [{ id: "advanced", title: "高级页面", url: "/plugins/<plugin-name>/admin" }],
   },
 
   async listScopes({ scope }) {
@@ -99,14 +93,14 @@ export default {
 - `array`
   - 前端按“每行一项”编辑，提交时转成字符串数组
 - `json`
-  - 前端按 JSON 文本编辑，提交时会 `JSON.parse`
+  - 前端按 JSON 文本编辑，提交时做 `JSON.parse`
 - `select`
   - `options: [{ label, value }]`
   - `value` 可以是字符串、布尔、数字或 `null`
 
 通用字段属性：
 
-- `path`：值路径，例如 `learning.reply_prob`
+- `path`
 - `label`
 - `description`
 - `placeholder`
@@ -122,11 +116,19 @@ export default {
 - `scope: "group"`
   - 共享宿主会先调用 `listScopes("group")` 拿到可选群号，再调用 `getValues({ scope: "group", scopeId })`
 
-如果插件还有别的作用域，也可以自定义，例如 `user`、`channel`，共享壳会按相同模式处理。
+如果插件还有别的作用域，也可以自定义，例如 `user`、`bot`、`channel`，共享壳会按相同模式处理。
+
+实战范例：
+
+- `group` 插件：`global + bot + group`
+- `other` 插件：`user`
+- `scheduler` / `chuo` 插件：只用 `global`
+
+通常 `listScopes(scope)` 不仅可以返回“已经落盘的 ID”，也可以合并运行时拿得到的候选范围，例如当前 Bot 的群列表、主人账号等。
 
 ## 5. 可选扩展页面
 
-如果插件需要复杂页面，不想完全交给共享表单：
+如果插件需要更复杂的页面，不想完全交给共享表单：
 
 1. 继续保留自己的 `apiRoutes(router)` 或额外页面
 2. 在 `definition.pages` 里声明跳转链接
@@ -148,8 +150,14 @@ src/plugins/<plugin-name>/resources/webui/
 
 - `src/plugins/learning_chat/webui/index.js`
 - `src/plugins/fudu-ban/webui/index.js`
+- `src/plugins/group/webui/index.js`
+- `src/plugins/scheduler/webui/index.js`
+- `src/plugins/other/webui/index.js`
+- `src/plugins/chuo/webui/index.js`
 
-这两个文件分别演示了：
+这些文件分别演示了：
 
 - 复杂全局配置 + 群级覆盖
-- 简单全局开关 + 三态群级继承
+- 简单全局开关 + 三态继承
+- 多作用域（global / bot / group / user）的共享管理
+- JSON 配置编辑（`scheduler.tasks`）
