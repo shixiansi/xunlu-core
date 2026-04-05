@@ -362,7 +362,7 @@ export default class OneBotV11EventListener {
     target.getUserInfo = adapter.getFriendInfo.bind(adapter)
     target.acceptGroupRequest = adapter.acceptGroupRequest.bind(adapter)
     target.rejectGroupRequest = adapter.rejectGroupRequest.bind(adapter)
-    target.renderImg = oneBot.renderImg
+    target.renderImg = oneBot.renderImg.bind(oneBot)
     target.makeGroupForwardMsg = oneBot.makeForwardMsg
     target.getGroupMemberList = async group_id => {
       let members = await adapter.getGroupMemberList.call(adapter, { group_id })

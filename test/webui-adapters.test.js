@@ -401,7 +401,7 @@ test("chuo webui adapter toggles the shared config file", async () => {
   assert.equal(result.stored.enabled, false)
 })
 
-test("ai webui adapter persists caimiao settings", async () => {
+test("ai webui adapter persists caimiao and siliconflow settings", async () => {
   const workspace = createTempWorkspace()
   const result = await runWorkspaceScript(
     workspace,
@@ -415,6 +415,17 @@ test("ai webui adapter persists caimiao settings", async () => {
               caimiao: {
                 "x-token": "token-123",
                 proxy: "http://127.0.0.1:7890",
+              },
+              siliconflow: {
+                base_url: "https://example.com/v1/chat/completions",
+                api_key: "sf-key-456",
+                model: "test-model",
+                timeout_ms: 45000,
+                max_history: 12,
+                trigger_mode: "wake_only",
+                fallback_persona_enabled: false,
+                fallback_persona_prompt: "第一行\\n第二行\\n第三行",
+                wake_words: "荨鹿, 调度器",
               },
             },
           })
@@ -430,10 +441,31 @@ test("ai webui adapter persists caimiao settings", async () => {
 
   assert.equal(result.before.values.caimiao["x-token"], "")
   assert.equal(result.before.values.caimiao.proxy, "")
+  assert.equal(result.before.values.siliconflow.base_url, "https://api.siliconflow.cn/v1/chat/completions")
+  assert.equal(result.before.values.siliconflow.fallback_persona_enabled, true)
+  assert.match(result.before.values.siliconflow.fallback_persona_prompt, /亚托莉|Atri/)
   assert.equal(result.after.values.caimiao["x-token"], "token-123")
   assert.equal(result.after.values.caimiao.proxy, "http://127.0.0.1:7890")
+  assert.equal(result.after.values.siliconflow.base_url, "https://example.com/v1/chat/completions")
+  assert.equal(result.after.values.siliconflow.api_key, "sf-key-456")
+  assert.equal(result.after.values.siliconflow.model, "test-model")
+  assert.equal(result.after.values.siliconflow.timeout_ms, 45000)
+  assert.equal(result.after.values.siliconflow.max_history, 12)
+  assert.equal(result.after.values.siliconflow.trigger_mode, "wake_only")
+  assert.equal(result.after.values.siliconflow.fallback_persona_enabled, false)
+  assert.equal(result.after.values.siliconflow.fallback_persona_prompt, "第一行\n第二行\n第三行")
+  assert.equal(result.after.values.siliconflow.wake_words, "荨鹿, 调度器")
   assert.equal(result.stored.caimiao["x-token"], "token-123")
   assert.equal(result.stored.caimiao.proxy, "http://127.0.0.1:7890")
+  assert.equal(result.stored.siliconflow.base_url, "https://example.com/v1/chat/completions")
+  assert.equal(result.stored.siliconflow.api_key, "sf-key-456")
+  assert.equal(result.stored.siliconflow.model, "test-model")
+  assert.equal(result.stored.siliconflow.timeout_ms, 45000)
+  assert.equal(result.stored.siliconflow.max_history, 12)
+  assert.equal(result.stored.siliconflow.trigger_mode, "wake_only")
+  assert.equal(result.stored.siliconflow.fallback_persona_enabled, false)
+  assert.equal(result.stored.siliconflow.fallback_persona_prompt, "第一行\n第二行\n第三行")
+  assert.deepEqual(result.stored.siliconflow.wake_words, ["荨鹿", "调度器"])
 })
 
 test("set webui adapter persists bot base configuration", async () => {

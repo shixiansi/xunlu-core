@@ -376,6 +376,8 @@ export default class BaseBot {
 
   async renderImg(name, data, options = {}) {
     const tpl = options?.tpl || options?.template || name
+    console.log(this)
+
     return await this.renderer.render(
       name,
       `/html/${name}/${tpl}.html`,
@@ -414,6 +416,7 @@ export default class BaseBot {
       invokeCommandByReg: this.invokeCommandByReg.bind(this),
       invokeCommandByText: this.invokeCommandByText.bind(this),
       findCommandByReg: this.findCommandByReg.bind(this),
+      renderImg: this.renderImg.bind(this),
     }
 
     // 补齐：通用 QQBot API（注册期可用）
@@ -535,7 +538,9 @@ export default class BaseBot {
     const runtimeTakeoverProtocol = String(globalThis.Bot?.__xunlu_takeover_state?.protocol || "")
       .trim()
       .toLowerCase()
-    const eventProtocol = String(e?.protocol || "").trim().toLowerCase()
+    const eventProtocol = String(e?.protocol || "")
+      .trim()
+      .toLowerCase()
     if (e?.__xunluTakeover || e?.__isTakeover || e?.__takeover) return "yunzai-takeover"
     if (runtimeTakeoverProtocol && eventProtocol && runtimeTakeoverProtocol === eventProtocol) {
       return "yunzai-takeover"
@@ -591,21 +596,27 @@ export default class BaseBot {
         flags?.scene ??
         baseMessageRecord?.message_scene ??
         baseMessageRecord?.message_type ??
-        (groupId ?? baseMessageRecord?.group_id ? "group" : "private"),
+        ((groupId ?? baseMessageRecord?.group_id) ? "group" : "private"),
     )
       .trim()
       .toLowerCase()
     const isGroup = desiredScene !== "private"
-    const gid = isGroup ? groupId ?? baseMessageRecord?.group_id ?? baseMessageRecord?.peer_id : undefined
+    const gid = isGroup
+      ? (groupId ?? baseMessageRecord?.group_id ?? baseMessageRecord?.peer_id)
+      : undefined
     const uid = userId ?? baseMessageRecord?.user_id ?? baseMessageRecord?.sender_id
-    const pid = peerId ?? baseMessageRecord?.peer_id ?? (isGroup ? gid : baseMessageRecord?.user_id ?? baseMessageRecord?.sender_id ?? uid)
+    const pid =
+      peerId ??
+      baseMessageRecord?.peer_id ??
+      (isGroup ? gid : (baseMessageRecord?.user_id ?? baseMessageRecord?.sender_id ?? uid))
     if (!uid || !text || (isGroup ? !gid : !pid)) {
       throw new Error("[buildSyntheticCommandEvent] requires userId/rawCommand and a valid target")
     }
 
-    const sender = baseMessageRecord?.sender && typeof baseMessageRecord.sender === "object"
-      ? { ...baseMessageRecord.sender }
-      : {}
+    const sender =
+      baseMessageRecord?.sender && typeof baseMessageRecord.sender === "object"
+        ? { ...baseMessageRecord.sender }
+        : {}
     const runtimeBot = globalThis.Bot || null
     const selfId =
       baseMessageRecord?.self_id ??
@@ -647,13 +658,23 @@ export default class BaseBot {
       rawSegments: [UniversalMessageSegment.text(text)],
       reg: String(reg || ""),
       __synthetic:
-        baseMessageRecord?.__synthetic !== undefined ? Boolean(baseMessageRecord.__synthetic) : true,
+        baseMessageRecord?.__synthetic !== undefined
+          ? Boolean(baseMessageRecord.__synthetic)
+          : true,
       __skipLearning:
-        baseMessageRecord?.__skipLearning !== undefined ? Boolean(baseMessageRecord.__skipLearning) : true,
-      __proactiveCommand: Boolean(flags?.__proactiveCommand ?? baseMessageRecord?.__proactiveCommand),
+        baseMessageRecord?.__skipLearning !== undefined
+          ? Boolean(baseMessageRecord.__skipLearning)
+          : true,
+      __proactiveCommand: Boolean(
+        flags?.__proactiveCommand ?? baseMessageRecord?.__proactiveCommand,
+      ),
       __commandUsageSource:
-        normalizeOptionalString(flags?.__commandUsageSource ?? baseMessageRecord?.__commandUsageSource) ||
-        (flags?.__proactiveCommand ?? baseMessageRecord?.__proactiveCommand ? "proactive-command" : ""),
+        normalizeOptionalString(
+          flags?.__commandUsageSource ?? baseMessageRecord?.__commandUsageSource,
+        ) ||
+        ((flags?.__proactiveCommand ?? baseMessageRecord?.__proactiveCommand)
+          ? "proactive-command"
+          : ""),
       ...flags,
     }
 
@@ -1255,30 +1276,34 @@ export default class BaseBot {
           seg?.data &&
           (Object.prototype.hasOwnProperty.call(seg.data, "text") ||
             Object.prototype.hasOwnProperty.call(seg.data, "content"))) ||
-          (seg?.type === UniversalSegmentType.MENTION &&
-            seg?.data &&
-            (Object.prototype.hasOwnProperty.call(seg.data, "qq") ||
-              Object.prototype.hasOwnProperty.call(seg.data, "target"))) ||
-          (seg?.type === UniversalSegmentType.MENTION_ALL && seg?.data && typeof seg.data === "object") ||
-          (seg?.type === UniversalSegmentType.REPLY &&
-            seg?.data &&
-            (Object.prototype.hasOwnProperty.call(seg.data, "id") ||
-              Object.prototype.hasOwnProperty.call(seg.data, "msgId") ||
-              Object.prototype.hasOwnProperty.call(seg.data, "seq"))) ||
-          ((seg?.type === UniversalSegmentType.IMAGE ||
-            seg?.type === UniversalSegmentType.VOICE ||
-            seg?.type === UniversalSegmentType.VIDEO ||
-            seg?.type === UniversalSegmentType.FILE) &&
-            seg?.data &&
-            (Object.prototype.hasOwnProperty.call(seg.data, "file") ||
-              Object.prototype.hasOwnProperty.call(seg.data, "url") ||
-              Object.prototype.hasOwnProperty.call(seg.data, "fileId") ||
-              Object.prototype.hasOwnProperty.call(seg.data, "path") ||
-              Object.prototype.hasOwnProperty.call(seg.data, "id"))),
+        (seg?.type === UniversalSegmentType.MENTION &&
+          seg?.data &&
+          (Object.prototype.hasOwnProperty.call(seg.data, "qq") ||
+            Object.prototype.hasOwnProperty.call(seg.data, "target"))) ||
+        (seg?.type === UniversalSegmentType.MENTION_ALL &&
+          seg?.data &&
+          typeof seg.data === "object") ||
+        (seg?.type === UniversalSegmentType.REPLY &&
+          seg?.data &&
+          (Object.prototype.hasOwnProperty.call(seg.data, "id") ||
+            Object.prototype.hasOwnProperty.call(seg.data, "msgId") ||
+            Object.prototype.hasOwnProperty.call(seg.data, "seq"))) ||
+        ((seg?.type === UniversalSegmentType.IMAGE ||
+          seg?.type === UniversalSegmentType.VOICE ||
+          seg?.type === UniversalSegmentType.VIDEO ||
+          seg?.type === UniversalSegmentType.FILE) &&
+          seg?.data &&
+          (Object.prototype.hasOwnProperty.call(seg.data, "file") ||
+            Object.prototype.hasOwnProperty.call(seg.data, "url") ||
+            Object.prototype.hasOwnProperty.call(seg.data, "fileId") ||
+            Object.prototype.hasOwnProperty.call(seg.data, "path") ||
+            Object.prototype.hasOwnProperty.call(seg.data, "id"))),
       )
 
     const looksLikeUniversalSegments = segments =>
-      Array.isArray(segments) && segments.length > 0 && segments.every(seg => looksLikeUniversalSegment(seg))
+      Array.isArray(segments) &&
+      segments.length > 0 &&
+      segments.every(seg => looksLikeUniversalSegment(seg))
 
     const rawLooksUniversal = looksLikeUniversalSegments(e.rawSegments)
     if (!e.universalMessage && Array.isArray(e.rawSegments) && e.protocol && !rawLooksUniversal) {
@@ -1388,6 +1413,7 @@ export default class BaseBot {
         "makeGroupForwardMsg",
         "makeGroupForwardMsgByUser",
         "pickUser",
+        "renderImg",
       ],
     })
 

@@ -5,6 +5,33 @@ import CommandUsageDB from "../../db/CommandUsageDB.js"
 import env from "../../lib/env.js"
 
 let modulesPromise = null
+const bridgeState = {
+  loaderRef: null,
+  loaderInitAttempted: false,
+  aiCatalogSignature: "",
+  aiCatalogCommands: null,
+}
+
+function getBridgeLogger() {
+  return globalThis.logger || console
+}
+
+function shouldLogMissingBridge() {
+  return Boolean(globalThis.__xunluYunzaiCommandBridge) || env?.CurEnv === "QQBot-YunZai"
+}
+
+function refreshBridgeStateForLoader(loader) {
+  if (bridgeState.loaderRef === loader) return bridgeState
+  bridgeState.loaderRef = loader
+  bridgeState.loaderInitAttempted = false
+  bridgeState.aiCatalogSignature = ""
+  bridgeState.aiCatalogCommands = null
+  return bridgeState
+}
+
+function cloneAiCatalogCommands(commands = []) {
+  return (Array.isArray(commands) ? commands : []).map(item => ({ ...item }))
+}
 
 function getRuntimeBot() {
   return globalThis.Bot || null
@@ -74,11 +101,239 @@ async function getBridgeModules() {
   return await modulesPromise
 }
 
+async function ensureLoaderReady(loader, { reason = "unknown", allowInit = true } = {}) {
+  if (!loader || typeof loader !== "object") return false
+
+  const state = refreshBridgeStateForLoader(loader)
+  const priorityList = Array.isArray(loader.priority) ? loader.priority : []
+  if (priorityList.length > 0) return true
+  if (!allowInit || typeof loader.load !== "function") {
+    getBridgeLogger().warn?.(`[yunzai-bridge] loader priority is empty for ${reason}`)
+    return false
+  }
+  if (state.loaderInitAttempted) {
+    getBridgeLogger().warn?.(`[yunzai-bridge] loader priority is still empty after init attempt for ${reason}`)
+    return false
+  }
+
+  state.loaderInitAttempted = true
+  getBridgeLogger().info?.(`[yunzai-bridge] initializing yunzai loader for ${reason}`)
+
+  try {
+    await loader.load()
+  } catch (error) {
+    getBridgeLogger().warn?.(
+      `[yunzai-bridge] loader initialization failed for ${reason}:`,
+      error?.stack || error?.message || error,
+    )
+    return false
+  }
+
+  const nextPriority = Array.isArray(loader.priority) ? loader.priority : []
+  if (!nextPriority.length) {
+    getBridgeLogger().warn?.(`[yunzai-bridge] loader finished init but priority is empty for ${reason}`)
+    return false
+  }
+
+  getBridgeLogger().info?.(`[yunzai-bridge] loader ready with ${nextPriority.length} plugin entries for ${reason}`)
+  return true
+}
+
 function buildYunzaiTextMessage(rawCommand) {
   return [{ type: "text", text: String(rawCommand || "") }]
 }
 
-function buildSyntheticYunzaiEvent(ctx = {}, { reg = "", pluginName = "" } = {}) {
+function pickRuleExample(rule = {}) {
+  const example = rule?.example ?? rule?.examples
+  if (Array.isArray(example)) return example.map(item => normalizeString(item)).find(Boolean) || ""
+  return normalizeString(example)
+}
+
+function autoExampleFromReg(reg) {
+  let source = normalizeString(reg)
+  if (!source) return ""
+  if (source.startsWith("^")) source = source.slice(1)
+  if (source.endsWith("$")) source = source.slice(0, -1)
+
+  source = source
+    .replace(/\\s\*|\\s\+/g, " ")
+    .replace(/\\d\+/g, "<数字>")
+    .replace(/\\w\+/g, "<参数>")
+    .replace(/\\S\+/g, "<参数>")
+    .replace(/\.\+/g, "<参数>")
+    .replace(/\.\*/g, "<参数>")
+    .replace(/\(\?:/g, "")
+    .replace(/[()[\]{}]/g, "")
+    .replace(/\|.+$/g, "")
+    .replace(/\\+/g, "")
+    .replace(/[+*?]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+
+  return /[^\s]/.test(source) ? source : ""
+}
+
+function isObviousAiCatchAllReg(reg) {
+  const normalized = normalizeString(reg)
+  if (!normalized) return true
+
+  const compact = normalized
+    .replace(/^\^/, "")
+    .replace(/\$$/, "")
+    .replace(/\s+/g, "")
+
+  return [
+    ".*",
+    ".+",
+    "(.*)",
+    "(.+)",
+    "(?:.*)",
+    "(?:.+)",
+    "(.+)?",
+    "(.*)?",
+  ].includes(compact)
+}
+
+function getAiCatalogSignature(priorityList = []) {
+  return (Array.isArray(priorityList) ? priorityList : [])
+    .map(item => `${normalizeString(item?.name)}::${Number(item?.priority ?? 5000)}::${normalizeString(item?.class?.name)}`)
+    .join("|")
+}
+
+function buildAiCatalogEvent(ctx = {}) {
+  const runtimeBot = getRuntimeBot()
+  const userId = ctx?.user_id ?? ctx?.sender_id ?? 10000
+  const groupId = ctx?.group_id ?? 10000
+  const selfId =
+    ctx?.self_id ??
+    runtimeBot?.self_id ??
+    runtimeBot?.uin ??
+    runtimeBot?.user_id
+
+  return {
+    self_id: selfId,
+    time: Math.floor(Date.now() / 1000),
+    post_type: "message",
+    message_type: "group",
+    sub_type: String(ctx?.sub_type || "normal"),
+    group_id: groupId,
+    peer_id: groupId,
+    user_id: userId,
+    raw_message: "",
+    msg: "",
+    sender:
+      ctx?.sender && typeof ctx.sender === "object"
+        ? { ...ctx.sender }
+        : {
+            user_id: userId,
+            nickname: String(userId || ""),
+            card: String(userId || ""),
+          },
+    group_name: String(ctx?.group_name || groupId || ""),
+    protocol: normalizeProtocol(ctx),
+    reply: async () => false,
+  }
+}
+
+function normalizeYunzaiRuleEvent(rule = {}, plugin = {}) {
+  return normalizeString(rule?.event || plugin?.event || "message").toLowerCase() || "message"
+}
+
+function normalizeYunzaiRulePriority(rule = {}, plugin = {}, loaderItem = {}) {
+  return Number(rule?.priority ?? plugin?.priority ?? loaderItem?.priority ?? 5000) || 5000
+}
+
+export async function listYunzaiCommandsForAi({ ctx, plugin } = {}) {
+  const modules = await getBridgeModules()
+  const loader = modules?.PluginsLoader
+  if (!loader) {
+    if (shouldLogMissingBridge()) {
+      getBridgeLogger().warn?.("[yunzai-bridge] yunzai loader is unavailable while building AI catalog")
+    }
+    return []
+  }
+  if (!(await ensureLoaderReady(loader, { reason: "ai-catalog" }))) return []
+
+  const state = refreshBridgeStateForLoader(loader)
+  const targetPluginName = normalizeString(plugin)
+  const priorityList = Array.isArray(loader?.priority) ? loader.priority : []
+  const signature = getAiCatalogSignature(priorityList)
+
+  if (state.aiCatalogCommands && state.aiCatalogSignature === signature) {
+    const cached = cloneAiCatalogCommands(state.aiCatalogCommands)
+    if (!targetPluginName) return cached
+    return cached.filter(item => normalizeString(item?.plugin) === targetPluginName)
+  }
+
+  const event = buildAiCatalogEvent(ctx)
+  const commands = []
+  let instantiationFailures = 0
+
+  for (const item of priorityList) {
+    if (targetPluginName && normalizeString(item?.name) !== targetPluginName) continue
+
+    const PluginClass = item?.class
+    if (typeof PluginClass !== "function") continue
+
+    let pluginInstance = null
+    try {
+      pluginInstance = new PluginClass(event)
+      pluginInstance.e = event
+    } catch (error) {
+      instantiationFailures += 1
+      if (targetPluginName || priorityList.length <= 5) {
+        getBridgeLogger().warn?.(
+          `[yunzai-bridge] failed to instantiate plugin while building AI catalog: ${normalizeString(item?.name) || "unknown"}`,
+          error?.stack || error?.message || error,
+        )
+      }
+      continue
+    }
+
+    for (const rule of Array.isArray(pluginInstance?.rule) ? pluginInstance.rule : []) {
+      const reg = normalizeString(rule?.reg)
+      const eventName = normalizeYunzaiRuleEvent(rule, pluginInstance)
+      if (!reg || !eventName.startsWith("message") || isObviousAiCatchAllReg(reg)) continue
+
+      commands.push({
+        source: "yunzai",
+        plugin: normalizeString(pluginInstance?.name || item?.name),
+        reg,
+        event: eventName,
+        example: pickRuleExample(rule) || autoExampleFromReg(reg),
+        desc: normalizeString(rule?.desc || pluginInstance?.dsc || pickRuleExample(rule) || autoExampleFromReg(reg)),
+        priority: normalizeYunzaiRulePriority(rule, pluginInstance, item),
+      })
+    }
+  }
+
+  commands.sort(
+    (a, b) =>
+      normalizeYunzaiRulePriority(a) - normalizeYunzaiRulePriority(b) ||
+      normalizeString(a?.plugin).localeCompare(normalizeString(b?.plugin)) ||
+      normalizeString(a?.reg).localeCompare(normalizeString(b?.reg)),
+  )
+
+  if (!targetPluginName) {
+    state.aiCatalogSignature = signature
+    state.aiCatalogCommands = cloneAiCatalogCommands(commands)
+  }
+
+  if (!commands.length) {
+    getBridgeLogger().warn?.(
+      `[yunzai-bridge] AI catalog is empty after scanning ${priorityList.length} plugins` +
+        (instantiationFailures ? ` (${instantiationFailures} instantiation failures)` : ""),
+    )
+  } else {
+    getBridgeLogger().info?.(
+      `[yunzai-bridge] AI catalog ready with ${commands.length} commands from ${priorityList.length} plugins`,
+    )
+  }
+
+  return commands
+}
+
+function buildSyntheticYunzaiEvent(ctx = {}, { reg = "", pluginName = "", preferParentReply = false } = {}) {
   const runtimeBot = getRuntimeBot()
   const rawCommand = normalizeString(ctx?.raw_message || ctx?.msg)
   const groupId = ctx?.group_id
@@ -139,6 +394,7 @@ function buildSyntheticYunzaiEvent(ctx = {}, { reg = "", pluginName = "" } = {})
   event.reply = async (msg = "", quote = false) => {
     void quote
     if (!msg) return false
+    if (preferParentReply && typeof ctx?.reply === "function") return await ctx.reply(msg, quote)
     if (event.group && typeof event.group.sendMsg === "function") return await event.group.sendMsg(msg)
     if (event.friend && typeof event.friend.sendMsg === "function") return await event.friend.sendMsg(msg)
     if (typeof ctx?.reply === "function") return await ctx.reply(msg, quote)
@@ -273,6 +529,25 @@ function createInvokeResult(overrides = {}) {
   }
 }
 
+function logInvokeResult(rawCommand, result, options = {}) {
+  const text = normalizeString(rawCommand)
+  const reason = normalizeString(result?.reason || "unknown")
+  const pluginName = normalizeString(options?.plugin)
+  const detail = pluginName ? ` plugin=${pluginName}` : ""
+
+  if (result?.ok) {
+    getBridgeLogger().debug?.(`[yunzai-bridge] command executed: ${text}${detail} reason=${reason}`)
+    return
+  }
+
+  getBridgeLogger().warn?.(`[yunzai-bridge] command did not complete: ${text}${detail} reason=${reason}`)
+}
+
+function shouldSkipSyntheticCooldown(ctx = {}, options = {}) {
+  if (options?.skipCooldown === true) return true
+  return normalizeString(ctx?.__commandUsageSource).toLowerCase() === "ai-dispatch"
+}
+
 async function runPluginContexts(plugins = []) {
   for (const plugin of plugins) {
     if (!plugin?.getContext) continue
@@ -385,25 +660,32 @@ async function prepareSyntheticInvocation(rawCommand, ctx, options = {}) {
   const modules = await getBridgeModules()
   const loader = modules?.PluginsLoader
   const Runtime = modules?.Runtime
-  if (!loader) return createInvokeResult({ reason: "unavailable" })
+  if (!loader) {
+    if (shouldLogMissingBridge()) {
+      getBridgeLogger().warn?.("[yunzai-bridge] command invocation skipped because loader is unavailable")
+    }
+    return createInvokeResult({ reason: "unavailable" })
+  }
+  if (!(await ensureLoaderReady(loader, { reason: "invoke-command" }))) {
+    return createInvokeResult({ reason: "unavailable" })
+  }
 
   const pluginName = normalizeString(options?.plugin)
-  const syntheticCtx = {
-    ...(ctx && typeof ctx === "object" ? ctx : {}),
-    raw_message: text,
-    msg: text,
-  }
+  const syntheticCtx = ctx && typeof ctx === "object" ? Object.create(ctx) : {}
+  syntheticCtx.raw_message = text
+  syntheticCtx.msg = text
 
   const event = buildSyntheticYunzaiEvent(syntheticCtx, {
     reg: normalizeString(options?.reg),
     pluginName,
+    preferParentReply: options?.preferParentReply === true,
   })
   attachBotIfMissing(event)
 
   if (typeof loader?.checkGuildMsg === "function" && loader.checkGuildMsg(event)) {
     return createInvokeResult({ handled: true, blocked: true, reason: "guild-message" })
   }
-  if (typeof loader?.checkLimit === "function" && !loader.checkLimit(event)) {
+  if (!shouldSkipSyntheticCooldown(ctx, options) && typeof loader?.checkLimit === "function" && !loader.checkLimit(event)) {
     return createInvokeResult({ handled: true, blocked: true, reason: "cooldown" })
   }
   if (typeof loader?.dealMsg === "function") loader.dealMsg(event)
@@ -463,16 +745,25 @@ export async function startYunzaiCommandUsageBridge() {
 
 export async function invokeYunzaiCommandByText(rawCommand, ctx, options = {}) {
   const prepared = await prepareSyntheticInvocation(rawCommand, ctx, options)
-  if (!prepared?.loader) return prepared
+  if (!prepared?.loader) {
+    logInvokeResult(rawCommand, prepared, options)
+    return prepared
+  }
 
   const { loader, event, plugins } = prepared
 
   const contextResult = await runPluginContexts(plugins)
-  if (contextResult) return contextResult
+  if (contextResult) {
+    logInvokeResult(rawCommand, contextResult, options)
+    return contextResult
+  }
 
   if (options?.skipOnlyReplyAt !== true) {
     const acceptResult = await runPluginAccepts(loader, event, plugins)
-    if (acceptResult) return acceptResult
+    if (acceptResult) {
+      logInvokeResult(rawCommand, acceptResult, options)
+      return acceptResult
+    }
   } else {
     applyGameAliasNormalization(loader, event)
 
@@ -480,18 +771,32 @@ export async function invokeYunzaiCommandByText(rawCommand, ctx, options = {}) {
       if (typeof plugin?.accept !== "function") continue
       const accepted = await plugin.accept(event)
       if (accepted === "return") {
-        return createInvokeResult({
+        const result = createInvokeResult({
           ok: true,
           handled: true,
           reason: "accept-return",
           result: accepted,
         })
+        logInvokeResult(rawCommand, result, options)
+        return result
       }
       if (accepted) break
     }
   }
 
-  return await runRuleByMatch(loader, event, plugins)
+  try {
+    const result = await runRuleByMatch(loader, event, plugins, {
+      targetReg: normalizeString(options?.reg),
+    })
+    logInvokeResult(rawCommand, result, options)
+    return result
+  } catch (error) {
+    getBridgeLogger().warn?.(
+      `[yunzai-bridge] plugin execution error for ${normalizeString(rawCommand)}:`,
+      error?.stack || error?.message || error,
+    )
+    throw error
+  }
 }
 
 export async function invokeYunzaiCommandByReg(reg, ctx, options = {}) {
@@ -502,13 +807,18 @@ export async function invokeYunzaiCommandByReg(reg, ctx, options = {}) {
   const loader = modules?.PluginsLoader
   const Runtime = modules?.Runtime
   if (!loader) return false
+  if (!(await ensureLoaderReady(loader, { reason: "invoke-reg" }))) return false
 
   const pluginName = normalizeString(options?.plugin)
-  const event = buildSyntheticYunzaiEvent(ctx, { reg: regText, pluginName })
+  const event = buildSyntheticYunzaiEvent(ctx, {
+    reg: regText,
+    pluginName,
+    preferParentReply: options?.preferParentReply === true,
+  })
   attachBotIfMissing(event)
 
   if (typeof loader?.checkGuildMsg === "function" && loader.checkGuildMsg(event)) return false
-  if (typeof loader?.checkLimit === "function" && !loader.checkLimit(event)) return false
+  if (!shouldSkipSyntheticCooldown(ctx, options) && typeof loader?.checkLimit === "function" && !loader.checkLimit(event)) return false
   if (typeof loader?.dealMsg === "function") loader.dealMsg(event)
   if (typeof loader?.checkBlack === "function" && !loader.checkBlack(event)) return false
   if (typeof loader?.reply === "function") loader.reply(event)
@@ -570,4 +880,12 @@ export async function invokeYunzaiCommandByReg(reg, ctx, options = {}) {
   }
 
   return false
+}
+
+export function __resetYunzaiCommandBridgeStateForTests() {
+  modulesPromise = null
+  bridgeState.loaderRef = null
+  bridgeState.loaderInitAttempted = false
+  bridgeState.aiCatalogSignature = ""
+  bridgeState.aiCatalogCommands = null
 }

@@ -388,7 +388,7 @@ class ListenerLoader {
       }
     }
 
-    Bot.renderImg = pluginLoader.renderImg
+    Bot.renderImg = pluginLoader.renderImg.bind(pluginLoader)
     if (!Bot.getGroupMemberList) {
       Bot.getGroupMemberList = async group_id => {
         console.log(group_id)
@@ -535,7 +535,7 @@ class ListenerLoader {
 
       e.recallMessage = recallMessage
       e.sendMessage = sendMessage
-      e.renderImg = pluginLoader.renderImg
+      e.renderImg = pluginLoader.renderImg.bind(pluginLoader)
       e.getMsg = async msg_id => {
         if (!onebotSendApi) throw new Error("onebot sendApi not available")
         return await onebotSendApi("get_msg", {
@@ -719,7 +719,7 @@ class ListenerLoader {
     }
     e.sendMessage = sendMessage
     e.makeGroupForwardMsg = pluginLoader.makeForwardMsg
-    e.renderImg = pluginLoader.renderImg
+    e.renderImg = pluginLoader.renderImg.bind(pluginLoader)
     delete e.client
   }
 }
