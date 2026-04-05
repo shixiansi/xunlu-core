@@ -89,7 +89,7 @@ function getBotValues() {
     },
     webui: {
       enabled: normalizeBoolean(bot.webui_enable, true),
-      host: normalizeString(bot.webui_host, "127.0.0.1"),
+      host: normalizeString(bot.webui_host, "0.0.0.0"),
       port: normalizePort(bot.webui_port, 3000),
     },
     admin: {
@@ -145,7 +145,7 @@ function saveBotValues(values = {}) {
       "",
     ).trim(),
     webui_enable: normalizeBoolean(webui.enabled, nextValues.webui.enabled),
-    webui_host: normalizeString(webui.host ?? nextValues.webui.host, "127.0.0.1").trim(),
+    webui_host: normalizeString(webui.host ?? nextValues.webui.host, "0.0.0.0").trim(),
     webui_port: normalizePort(webui.port, nextValues.webui.port),
     masterQQ: normalizeMasterIds(admin.masterQQ ?? nextValues.admin.masterQQ),
     log_level: normalizeLogLevel(admin.log_level ?? nextValues.admin.log_level),

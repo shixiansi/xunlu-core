@@ -12,7 +12,7 @@ ctl_token:
 
 # Web UI（内置后台）
 webui_enable: true
-webui_host: 127.0.0.1
+webui_host: 0.0.0.0
 webui_port: 3000
 
 # CLI 发送默认上下文（可选）

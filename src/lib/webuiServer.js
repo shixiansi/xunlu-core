@@ -75,7 +75,7 @@ export async function startWebuiServer() {
   const enable = botCfg.webui_enable !== false && process.env.XUNLU_WEBUI_DISABLE !== "1"
   if (!enable) return null
 
-  const host = String(process.env.XUNLU_WEBUI_HOST || botCfg.webui_host || "127.0.0.1")
+  const host = String(process.env.XUNLU_WEBUI_HOST || botCfg.webui_host || "0.0.0.0")
   const port = toPort(process.env.XUNLU_WEBUI_PORT || botCfg.webui_port, 3000)
 
   const pluginsDir = path.join(env.RootPath, "src", "plugins")
