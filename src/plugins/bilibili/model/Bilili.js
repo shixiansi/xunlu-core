@@ -874,11 +874,19 @@ class Bilibili {
       dash.video.filter((item, index) => {
         if (index === 0 || item.id !== videoList[videoList.length - 1].qn) {
           real_quality.push(item.id)
-          videoList.push({ qn: item.id, url: item.baseUrl })
+          videoList.push({
+            qn: item.id,
+            url: item.baseUrl,
+            bandwidth: Number(item.bandwidth || 0),
+            width: Number(item.width || 0),
+            height: Number(item.height || 0),
+            codecs: item.codecs || "",
+          })
         }
       })
+      const audioItem = dash.audio?.[0] || null
       let accept_quality = real_quality,
-        audio = dash.audio[0].baseUrl
+        audio = audioItem?.baseUrl || ""
       let videoUrl = ""
 
       if (accept_quality[0] == qn || qn > accept_quality[0]) {
@@ -889,8 +897,25 @@ class Bilibili {
         qn = 80
       }
 
-      videoUrl = videoList.find(item => item.qn == qn)?.url
-      return { videoUrl, audio }
+      const selectedVideo = videoList.find(item => item.qn == qn) || null
+      videoUrl = selectedVideo?.url || ""
+      return {
+        qn,
+        videoUrl,
+        audio,
+        duration: Number(dash?.duration || videoInfo?.duration || 0),
+        videoBandwidth: Number(selectedVideo?.bandwidth || 0),
+        audioBandwidth: Number(audioItem?.bandwidth || 0),
+        videoStreams: videoList,
+        audioStream: audioItem
+          ? {
+              url: audio,
+              bandwidth: Number(audioItem?.bandwidth || 0),
+              codecs: audioItem?.codecs || "",
+            }
+          : null,
+        acceptQuality: accept_quality,
+      }
     } catch (error) {
       console.error("[ERROR] 获取视频数据失败:", error.message)
       return this.buildErrorResult(error)

@@ -9,6 +9,11 @@ import {
 
 const msg = new UniversalMessage()
 
+function shouldInlineLocalFile(segmentType, fieldName) {
+  if (fieldName !== "file") return true
+  return segmentType !== "video"
+}
+
 /**
  * 核心：保留原base64转换逻辑，适配通用消息段的字段规范
  * @param {string} type 原消息类型（如at/image/record）
@@ -34,24 +39,29 @@ function toSegment(type, data) {
   // 保留原base64转换逻辑（核心不变）
   for (const i in processedData) {
     switch (typeof processedData[i]) {
-      case "string":
+      case "string": {
         if (i === "file" && !processedData.path && shouldPreserveAsPath(processedData[i])) {
           processedData.path = processedData[i]
         }
         // 处理file字段或file://开头的路径，转base64
+        const filePath = processedData[i].replace(/^file:\/\//, "")
         if (
           (i === "file" || processedData[i].match(/^file:\/\//)) &&
-          fs.existsSync(processedData[i].replace(/^file:\/\//, ""))
+          fs.existsSync(filePath)
         ) {
           // 自动补全文件名（原逻辑保留）
           if (i === "file" && !processedData.name) {
-            processedData.name = path.basename(processedData[i])
+            processedData.name = path.basename(filePath)
+          }
+          if (!shouldInlineLocalFile(type, i)) {
+            processedData.path = filePath
+            break
           }
           // 读取文件并转base64（格式：base64://xxx）
-          const filePath = processedData[i].replace(/^file:\/\//, "")
           processedData[i] = `base64://${fs.readFileSync(filePath).toString("base64")}`
         }
         break
+      }
       case "object":
         // Buffer类型转base64（原逻辑保留）
         if (Buffer.isBuffer(processedData[i])) {

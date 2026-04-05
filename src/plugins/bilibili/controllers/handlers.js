@@ -30,6 +30,112 @@ const BILIBILI_BG_DIR = "src/plugins/bilibili/resources/html/bilibili/bg"
 const BILIBILI_VIDEO_HOSTS = ["b23.tv", "m.bilibili.com", "www.bilibili.com", "bilibili.com"]
 const BV_ID_REG = /\bBV[0-9A-Za-z]{10}\b/
 const dynamicTypeKeys = Object.keys(dynamicType)
+const BILIBILI_VIDEO_QUALITY_LABELS = {
+  120: "4K",
+  116: "1080P60",
+  112: "1080P+",
+  80: "1080P",
+  74: "720P60",
+  64: "720P",
+  32: "480P",
+  16: "360P",
+}
+const BILIBILI_VIDEO_MAX_SOURCE_BYTES = 80 * 1024 * 1024
+const BILIBILI_VIDEO_MAX_RESULT_BYTES = 70 * 1024 * 1024
+
+function formatBytes(bytes = 0) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B"
+  const units = ["B", "KB", "MB", "GB"]
+  let value = bytes
+  let index = 0
+  while (value >= 1024 && index < units.length - 1) {
+    value /= 1024
+    index += 1
+  }
+  return `${value.toFixed(index === 0 ? 0 : 1)} ${units[index]}`
+}
+
+function formatVideoQuality(qn) {
+  const normalized = Number(qn)
+  return BILIBILI_VIDEO_QUALITY_LABELS[normalized] || `QN ${qn}`
+}
+
+function createVideoTooLargeError(stage, actualBytes, limitBytes) {
+  const error = new Error(`video too large at ${stage}: ${actualBytes} > ${limitBytes}`)
+  error.code = "BILIBILI_VIDEO_TOO_LARGE"
+  error.stage = stage
+  error.actualBytes = Number(actualBytes) || 0
+  error.limitBytes = Number(limitBytes) || 0
+  return error
+}
+
+function normalizeVideoSizeError(err) {
+  if (err?.code === "BILIBILI_VIDEO_TOO_LARGE") return err
+  const message = String(err?.message || err || "")
+  const matched = message.match(/download size exceeds limit(?: before resume)?: (\d+) > (\d+)/i)
+  if (!matched) return err
+  return createVideoTooLargeError("download", Number(matched[1]), Number(matched[2]))
+}
+
+function estimateMuxedVideoBytes({
+  duration = 0,
+  videoBandwidth = 0,
+  audioBandwidth = 0,
+  overheadRatio = 1.03,
+} = {}) {
+  const seconds = Number(duration)
+  const videoBitsPerSec = Number(videoBandwidth)
+  const audioBitsPerSec = Number(audioBandwidth)
+  if (!Number.isFinite(seconds) || seconds <= 0) return 0
+  if (!Number.isFinite(videoBitsPerSec) || videoBitsPerSec <= 0) return 0
+  const totalBitsPerSec = videoBitsPerSec + (Number.isFinite(audioBitsPerSec) ? audioBitsPerSec : 0)
+  return Math.ceil((totalBitsPerSec * seconds * overheadRatio) / 8)
+}
+
+function pickEstimatedSendableStream(playInfo = {}, preferredQn, limitBytes = BILIBILI_VIDEO_MAX_RESULT_BYTES) {
+  const streams = Array.isArray(playInfo?.videoStreams) ? playInfo.videoStreams : []
+  const audioBandwidth = Number(playInfo?.audioBandwidth || playInfo?.audioStream?.bandwidth || 0)
+  const duration = Number(playInfo?.duration || 0)
+  if (streams.length === 0) return null
+
+  const uniqueSorted = [...streams]
+    .filter(item => Number.isFinite(Number(item?.qn)) && item?.url)
+    .sort((a, b) => Number(b.qn) - Number(a.qn))
+
+  const preferred = Number(preferredQn)
+  const preferredList = uniqueSorted.filter(item =>
+    Number.isFinite(preferred) ? Number(item.qn) <= preferred : true,
+  )
+  const candidates = preferredList.length > 0 ? preferredList : uniqueSorted
+
+  for (const item of candidates) {
+    const estimatedBytes = estimateMuxedVideoBytes({
+      duration,
+      videoBandwidth: item.bandwidth,
+      audioBandwidth,
+    })
+    if (!estimatedBytes || estimatedBytes <= limitBytes) {
+      return {
+        ...item,
+        estimatedBytes,
+        duration,
+        audioBandwidth,
+      }
+    }
+  }
+
+  return {
+    ...candidates[candidates.length - 1],
+    estimatedBytes: estimateMuxedVideoBytes({
+      duration,
+      videoBandwidth: candidates[candidates.length - 1]?.bandwidth,
+      audioBandwidth,
+    }),
+    duration,
+    audioBandwidth,
+    exceedsLimit: true,
+  }
+}
 
 function getVideoCachePaths(bv) {
   const basePath = path.join(filemage.RootPath, "src/plugins/bilibili/resources/video")
@@ -59,7 +165,30 @@ function cleanupVideoCache(paths = []) {
     try {
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
     } catch (err) {
+      /*
+        logger.warn?.(`[Bilibili] 瑙嗛杩囧ぇ锛屾敼涓哄彂閫侀摼鎺ワ細${err?.message || err}`)
+            ? `\n澶у皬锛?{formatBytes(err.actualBytes)}锛岄檺鍒讹細${formatBytes(err.limitBytes)}`
+          `瑙嗛鏂囦欢杩囧ぇ锛屽凡鏀逛负鍙戦€佽棰戦摼鎺ャ€俓n鏍囬锛?{videoInfo.title}${sizeText}\n閾炬帴锛?{videoLink}`,
+      }
+      /*
+        logger.warn?.(`[Bilibili] 瑙嗛杩囧ぇ锛屾敼涓哄彂閫侀摼鎺ワ細${err?.message || err}`)
+            ? `\n澶у皬锛?{formatBytes(err.actualBytes)}锛岄檺鍒讹細${formatBytes(err.limitBytes)}`
+          `瑙嗛鏂囦欢杩囧ぇ锛屽凡鏀逛负鍙戦€佽棰戦摼鎺ャ€俓n鏍囬锛?{videoInfo.title}${sizeText}\n閾炬帴锛?{videoLink}`,
+        )
+      }
       logger.warn?.(`[Bilibili] 清理视频缓存失败：${filePath}，${err?.message || err}`)
+    }
+  }
+}
+
+      /*
+      logger.warn?.(`[Bilibili] 娓呯悊瑙嗛缂撳瓨澶辫触锛?{filePath}锛?{err?.message || err}`)
+    }
+  }
+}
+
+      */
+      logger.warn?.(`[Bilibili] 娓呯悊瑙嗛缂撳瓨澶辫触锛?{filePath}锛?{err?.message || err}`)
     }
   }
 }
@@ -650,14 +779,75 @@ export function register(bot) {
       `\n${addnull(`收藏: ${computew(videoStat.favorite || 0)}转发: ${computew(videoStat.share || 0)}`, "转")}`,
     )
     await ctx.reply(videoInfoMessage)
+    const videoLink = videoInfo?.bvid ? `https://www.bilibili.com/video/${videoInfo.bvid}` : url
+    const qnPlayInfo = await Bili.getQnVideo(qn, bv)
+    if (false && qnPlayInfo?.code) {
+      return await ctx.reply(`视频发送失败：${qnPlayInfo.message || "获取视频信息失败"}`)
+    }
+    if (qnPlayInfo?.code) {
+      return await ctx.reply(`瑙嗛鍙戦€佸け璐ワ細${qnPlayInfo.message || "鑾峰彇瑙嗛淇℃伅澶辫触"}`)
+    }
 
-    const changeVideo = async (qn, bv, e) => {
+    /*
+    const selectedStream = pickEstimatedSendableStream(qnPlayInfo, qn)
+    if (false && !selectedStream?.url) {
+      return await ctx.reply("瑙嗛鍙戦€佸け璐ワ細鏈壘鍒板彲鐢ㄧ殑瑙嗛娓?）
+    }
+    if (selectedStream.exceedsLimit) {
+      logger.warn?.(
+        `[Bilibili] 视频预估大小超限，改为发送链接：${selectedStream.estimatedBytes} > ${BILIBILI_VIDEO_MAX_RESULT_BYTES}`,
+      )
+      return await ctx.reply(
+        `视频文件预估过大，已改为发送视频链接。\n标题：${videoInfo.title}\n预估大小：${formatBytes(selectedStream.estimatedBytes)}\n链接：${videoLink}`,
+      )
+    }
+    if (selectedStream.exceedsLimit) {
+      logger.warn?.(
+        `[Bilibili] 瑙嗛棰勪及澶у皬瓒呴檺锛屾敼涓哄彂閫侀摼鎺ワ細${selectedStream.estimatedBytes} > ${BILIBILI_VIDEO_MAX_RESULT_BYTES}`,
+      )
+      return await ctx.reply(
+        `瑙嗛鏂囦欢棰勪及杩囧ぇ锛屽凡鏀逛负鍙戦€佽棰戦摼鎺ャ€俓n鏍囬锛?{videoInfo.title}\n棰勪及澶у皬锛?{formatBytes(selectedStream.estimatedBytes)}\n閾炬帴锛?{videoLink}`,
+      )
+    }
+    if (Number(selectedStream.qn) !== Number(qn)) {
+      await ctx.reply(
+        `鏍规嵁棰勪及瑙嗛澶у皬锛屽凡鑷姩灏嗙敾璐ㄨ皟鏁翠负 ${formatVideoQuality(selectedStream.qn)}锛堥浼板ぇ灏?{formatBytes(selectedStream.estimatedBytes)}锛?`,
+      )
+    }
+
+    */
+    const selectedStream = pickEstimatedSendableStream(qnPlayInfo, qn)
+    if (false && !selectedStream?.url) {
+      return await ctx.reply("视频发送失败：未找到可用的视频流")
+    }
+    if (!selectedStream?.url) {
+      return await ctx.reply("视频发送失败：未找到可用的视频流")
+    }
+    if (!selectedStream?.url) {
+      return await ctx.reply("视频发送失败：未找到可用的视频流")
+    }
+    if (selectedStream.exceedsLimit) {
+      logger.warn?.(
+        `[Bilibili] 视频预估大小超限，改为发送链接：${selectedStream.estimatedBytes} > ${BILIBILI_VIDEO_MAX_RESULT_BYTES}`,
+      )
+      return await ctx.reply(
+        `视频文件预估过大，已改为发送视频链接。\n标题：${videoInfo.title}\n预估大小：${formatBytes(selectedStream.estimatedBytes)}\n链接：${videoLink}`,
+      )
+    }
+    if (Number(selectedStream.qn) !== Number(qn)) {
+      await ctx.reply(
+        `根据预估视频大小，已自动将画质调整为 ${formatVideoQuality(selectedStream.qn)}（预估大小：${formatBytes(selectedStream.estimatedBytes)}）`,
+      )
+    }
+
+    const changeVideo = async (streamPlan, playInfo, bv, e) => {
       const { videoPath, audioPath, resultPath } = getVideoCachePaths(bv)
       const cleanupPaths = [videoPath, audioPath, resultPath]
 
       try {
-        const { videoUrl, audio, code, message } = await Bili.getQnVideo(qn, bv)
-        if (code) {
+        const videoUrl = streamPlan?.url
+        const audio = playInfo?.audio
+        if (false) {
           throw new Error(message || "获取视频下载地址失败")
         }
         if (!videoUrl || !audio) {
@@ -671,6 +861,7 @@ export function register(bot) {
             headers: {
               referer: "https://www.bilibili.com",
             },
+            maxBytes: BILIBILI_VIDEO_MAX_SOURCE_BYTES,
           },
         )
         const audioOk = await download.downloadFile(
@@ -680,6 +871,7 @@ export function register(bot) {
             headers: {
               referer: "https://www.bilibili.com",
             },
+            maxBytes: BILIBILI_VIDEO_MAX_SOURCE_BYTES,
           },
         )
         if (!videoOk || !audioOk) {
@@ -687,6 +879,10 @@ export function register(bot) {
         }
 
         await composeVideoFile(videoPath, audioPath, resultPath)
+        const resultSize = fs.statSync(resultPath).size
+        if (resultSize > BILIBILI_VIDEO_MAX_RESULT_BYTES) {
+          throw createVideoTooLargeError("result", resultSize, BILIBILI_VIDEO_MAX_RESULT_BYTES)
+        }
         const sendRes = await e.reply(segment.video(resultPath))
         if (!sendRes) {
           throw new Error("视频发送失败")
@@ -698,8 +894,19 @@ export function register(bot) {
     }
 
     try {
-      await changeVideo(qn, bv, ctx)
+      await changeVideo(selectedStream, qnPlayInfo, bv, ctx)
     } catch (err) {
+      err = normalizeVideoSizeError(err)
+      if (err?.code === "BILIBILI_VIDEO_TOO_LARGE") {
+        logger.warn?.(`[Bilibili] 视频过大，改为发送链接：${err?.message || err}`)
+        const sizeText =
+          err?.actualBytes && err?.limitBytes
+            ? `\n大小：${formatBytes(err.actualBytes)}，限制：${formatBytes(err.limitBytes)}`
+            : ""
+        return await ctx.reply(
+          `视频文件过大，已改为发送视频链接。\n标题：${videoInfo.title}${sizeText}\n链接：${videoLink}`,
+        )
+      }
       logger.error?.(`[Bilibili] 视频解析发送失败：${err?.message || err}`)
       return await ctx.reply(`视频发送失败：${err?.message || "未知错误"}`)
     }
