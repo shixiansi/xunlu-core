@@ -2,6 +2,20 @@ import { isBlacklistedDomain, normalizeDomain } from "./store.js"
 
 const URL_REGEXP =
   /(?:(?:https?|ftp):\/\/|www\.|(?:[a-z0-9-]+\.)+(?:com|cn|net|org|cc|tv|top|xyz|io|co|me|app|dev))(?:[^\s<>"'，。！？、；：“”‘’（）【】《》]*)/gi
+const FETCH_TIMEOUT_MS = 4000
+const MAX_HTML_BYTES = 256 * 1024
+const HTML_CONTENT_TYPE_REGEXP = /(?:text\/html|application\/xhtml\+xml)/i
+const HIGH_ABUSE_HOSTING_SUFFIXES = [
+  "pages.dev",
+  "workers.dev",
+  "netlify.app",
+  "vercel.app",
+  "github.io",
+  "web.app",
+]
+const HIGH_RISK_DOMAIN_KEYWORD_REGEXP =
+  /(?:troll|scare|virus|trojan|hack|phish|login|verify|secure|security|alert|warning|support|privacy|update|unlock|gift|free|reward|claim)/i
+const RANDOM_SUBDOMAIN_REGEXP = /^(?=.*[a-z])(?=.*\d)[a-z0-9-]{8,}$/i
 const HTML_RULES = [
   {
     id: "fullscreen-api",
@@ -100,16 +114,54 @@ function isIpHost(domain) {
   return /^(?:\d{1,3}\.){3}\d{1,3}$/.test(String(domain || ""))
 }
 
-function detectSuspiciousSignals(link, domain) {
+function getDomainSuffix(domain) {
+  const normalized = String(domain || "").toLowerCase()
+  return HIGH_ABUSE_HOSTING_SUFFIXES.find(suffix => normalized === suffix || normalized.endsWith(`.${suffix}`)) || ""
+}
+
+function detectLinkSignals(link, domain) {
   const reasons = []
   const normalizedDomain = String(domain || "").toLowerCase()
   const rawLink = String(link || "")
+  let score = 0
 
-  if (normalizedDomain.startsWith("xn--")) reasons.push("域名包含 punycode 编码，疑似仿冒字符")
-  if (isIpHost(normalizedDomain)) reasons.push("直接使用 IP 地址而不是正常域名")
-  if (/@/.test(rawLink)) reasons.push("链接中包含 @，可能用于伪装真实跳转地址")
+  const abuseSuffix = getDomainSuffix(normalizedDomain)
+  if (abuseSuffix) {
+    score += 2
+    reasons.push(`命中高滥用托管域 ${abuseSuffix}`)
+  }
 
-  return reasons
+  if (normalizedDomain.startsWith("xn--")) {
+    score += 3
+    reasons.push("域名包含 punycode 编码，疑似仿冒字符")
+  }
+  if (isIpHost(normalizedDomain)) {
+    score += 3
+    reasons.push("直接使用 IP 地址而不是正常域名")
+  }
+  if (/@/.test(rawLink)) {
+    score += 3
+    reasons.push("链接中包含 @，可能用于伪装真实跳转地址")
+  }
+
+  if (HIGH_RISK_DOMAIN_KEYWORD_REGEXP.test(normalizedDomain) || HIGH_RISK_DOMAIN_KEYWORD_REGEXP.test(rawLink)) {
+    score += 3
+    reasons.push("链接中包含诱导、仿冒或恐吓类关键词")
+  }
+
+  const firstLabel = normalizedDomain.split(".")[0] || ""
+  if (RANDOM_SUBDOMAIN_REGEXP.test(firstLabel)) {
+    score += 1
+    reasons.push("子域名结构较随机，存在批量投放风险")
+  }
+
+  return { score, reasons }
+}
+
+function resolveLinkLevel(score) {
+  if (score >= 5) return "malicious"
+  if (score >= 3) return "suspicious"
+  return "clean"
 }
 
 function inspectLink(link) {
@@ -130,14 +182,16 @@ function inspectLink(link) {
       }
     }
 
-    const suspiciousReasons = detectSuspiciousSignals(link, domain)
-    if (suspiciousReasons.length) {
+    const signalResult = detectLinkSignals(link, domain)
+    const level = resolveLinkLevel(signalResult.score)
+    if (level !== "clean") {
       return {
-        level: "suspicious",
+        level,
         link,
         domain,
         matchedDomain: domain,
-        reasons: suspiciousReasons,
+        reasons: signalResult.reasons,
+        score: signalResult.score,
       }
     }
 
@@ -147,9 +201,95 @@ function inspectLink(link) {
       domain,
       matchedDomain: domain,
       reasons: [],
+      score: 0,
     }
   } catch {
     return null
+  }
+}
+
+async function fetchHtmlSource(link, options = {}) {
+  const fetchImpl = options.fetchImpl || globalThis.fetch
+  if (typeof fetchImpl !== "function") {
+    return { ok: false, error: "当前环境不支持 fetch" }
+  }
+
+  const timeoutMs = Math.max(500, Math.floor(Number(options.timeoutMs || FETCH_TIMEOUT_MS)))
+  const maxBytes = Math.max(1024, Math.floor(Number(options.maxBytes || MAX_HTML_BYTES)))
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(new Error("fetch timeout")), timeoutMs)
+
+  try {
+    const response = await fetchImpl(link, {
+      method: "GET",
+      redirect: "follow",
+      signal: controller.signal,
+      headers: {
+        accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.1",
+        "user-agent": "xunlu-core anti-phish/1.0",
+      },
+    })
+
+    if (!response?.ok) {
+      return { ok: false, error: `HTTP ${Number(response?.status || 0) || "error"}` }
+    }
+
+    const contentType = String(response.headers?.get?.("content-type") || "")
+    if (!HTML_CONTENT_TYPE_REGEXP.test(contentType)) {
+      return { ok: false, error: `非 HTML 内容: ${contentType || "unknown"}` }
+    }
+
+    const contentLength = Number(response.headers?.get?.("content-length") || 0)
+    if (contentLength > maxBytes) {
+      return { ok: false, error: `HTML 过大: ${contentLength} bytes` }
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer())
+    if (buffer.length > maxBytes) {
+      return { ok: false, error: `HTML 过大: ${buffer.length} bytes` }
+    }
+
+    return {
+      ok: true,
+      finalUrl: String(response.url || link),
+      contentType,
+      source: buffer.toString("utf8"),
+      bytes: buffer.length,
+    }
+  } catch (error) {
+    return { ok: false, error: error?.name === "AbortError" ? "抓取超时" : error?.message || String(error) }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+function mergeLinkAndSourceResult(baseResult, htmlScan, fetchInfo) {
+  const baseReasons = Array.isArray(baseResult?.reasons) ? baseResult.reasons : []
+  const htmlReasons = Array.isArray(htmlScan?.hits) ? htmlScan.hits.map(item => String(item?.reason || "")) : []
+  const reasons = [...baseReasons, ...htmlReasons].filter(Boolean)
+  const baseScore = Number(baseResult?.score || 0)
+  const htmlScore = Number(htmlScan?.score || 0)
+
+  let level = String(baseResult?.level || "clean")
+  if (htmlScan?.level === "high-risk") level = "malicious"
+  else if (htmlScan?.level === "suspicious" && level === "clean") level = "suspicious"
+
+  return {
+    ...(baseResult || {}),
+    level,
+    score: baseScore + htmlScore,
+    reasons,
+    sourceFetched: Boolean(fetchInfo?.ok),
+    sourceMeta: fetchInfo?.ok
+      ? {
+          finalUrl: fetchInfo.finalUrl,
+          contentType: fetchInfo.contentType,
+          bytes: fetchInfo.bytes,
+        }
+      : {
+          error: fetchInfo?.error || "",
+        },
+    htmlScan,
   }
 }
 
@@ -161,6 +301,44 @@ export function scanTextForLinks(text) {
 
 export function scanCtxForLinks(ctx) {
   return scanTextForLinks(extractText(ctx))
+}
+
+export async function scanTextForLinksWithSource(text, options = {}) {
+  const links = extractLinksFromText(text)
+  const results = []
+
+  for (const link of links) {
+    const baseResult = inspectLink(link)
+    if (!baseResult) continue
+
+    if (baseResult.level === "malicious" && !options.forceFetchOnMalicious) {
+      results.push({
+        ...baseResult,
+        sourceFetched: false,
+        sourceMeta: { error: "已命中本地高危规则，跳过抓源码" },
+      })
+      continue
+    }
+
+    const fetchInfo = await fetchHtmlSource(link, options)
+    if (!fetchInfo.ok) {
+      results.push({
+        ...baseResult,
+        sourceFetched: false,
+        sourceMeta: { error: fetchInfo.error || "抓取失败" },
+      })
+      continue
+    }
+
+    const htmlScan = scanHtmlSource(fetchInfo.source)
+    results.push(mergeLinkAndSourceResult(baseResult, htmlScan, fetchInfo))
+  }
+
+  return results
+}
+
+export async function scanCtxForLinksWithSource(ctx, options = {}) {
+  return await scanTextForLinksWithSource(extractText(ctx), options)
 }
 
 export function scanHtmlSource(source) {

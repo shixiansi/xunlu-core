@@ -25,11 +25,11 @@ function createDefaultStore() {
     version: 1,
     updatedAt: Date.now(),
     blacklist: {
-      "trollweb.pages.dev": {
-        reason: "手动标记的恶意网址",
-        addedAt: Date.now(),
-        source: "builtin",
-      },
+      // "trollweb.pages.dev": {
+      //   reason: "手动标记的恶意网址",
+      //   addedAt: Date.now(),
+      //   source: "builtin",
+      // },
     },
   }
 }

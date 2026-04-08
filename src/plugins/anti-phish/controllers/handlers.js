@@ -3,7 +3,11 @@ import {
   listBlacklist,
   removeBlacklistDomain,
 } from "../model/store.js"
-import { scanCtxForLinks, scanHtmlSource, scanTextForLinks } from "../model/detector.js"
+import {
+  scanCtxForLinksWithSource,
+  scanHtmlSource,
+  scanTextForLinksWithSource,
+} from "../model/detector.js"
 
 const recentWarnCache = new Map()
 const WARN_TTL_MS = 2 * 60 * 1000
@@ -33,8 +37,15 @@ function shouldWarn(ctx, result) {
 function formatResultLine(item) {
   const domain = String(item?.matchedDomain || item?.domain || "未知域名")
   const reasons = Array.isArray(item?.reasons) ? item.reasons.filter(Boolean) : []
-  if (!reasons.length) return domain
-  return `${domain}：${reasons.join("；")}`
+  const score = Number(item?.score || 0)
+  const scoreText = score > 0 ? ` [风险分:${score}]` : ""
+  const fetchState = item?.sourceFetched
+    ? " [已抓源码]"
+    : item?.sourceMeta?.error
+      ? ` [未抓源码:${String(item.sourceMeta.error)}]`
+      : ""
+  if (!reasons.length) return `${domain}${scoreText}${fetchState}`
+  return `${domain}${scoreText}${fetchState}：${reasons.join("；")}`
 }
 
 function extractCommandArg(ctx, prefixRegExp) {
@@ -67,8 +78,7 @@ function formatHtmlScanResult(result) {
 }
 
 async function handleScanMessage(ctx) {
-  const results = scanCtxForLinks(ctx)
-  
+  const results = await scanCtxForLinksWithSource(ctx)
   const risky = results.filter(item => item.level === "malicious" || item.level === "suspicious")
   if (!risky.length) return false
 
@@ -106,13 +116,13 @@ export function register(bot) {
     [
       "^[#＃]恶意网址检测\\s+(.+)$",
       {
-        example: ["#恶意网址检测 https://trollweb.pages.dev/"],
+        example: ["#恶意网址检测 https://example.com/"],
         desc: "手动检测一段链接文本是否命中恶意网址规则",
       },
     ],
     async ctx => {
       const text = extractCommandArg(ctx, /^[#＃]恶意网址检测\s*/)
-      const results = scanTextForLinks(text)
+      const results = await scanTextForLinksWithSource(text)
       if (!results.length) return await ctx.reply("没有识别到可检测的网址")
 
       const risky = results.filter(item => item.level !== "clean")
@@ -147,7 +157,7 @@ export function register(bot) {
     [
       "^[#＃]恶意网址添加\\s+(.+)$",
       {
-        example: ["#恶意网址添加 trollweb.pages.dev", "#恶意网址添加 https://abc.example.com/path"],
+        example: ["#恶意网址添加 example.com", "#恶意网址添加 https://abc.example.com/path"],
         desc: "添加恶意域名黑名单",
       },
     ],
@@ -164,7 +174,7 @@ export function register(bot) {
     [
       "^[#＃]恶意网址删除\\s+(.+)$",
       {
-        example: ["#恶意网址删除 trollweb.pages.dev"],
+        example: ["#恶意网址删除 example.com"],
         desc: "移除恶意域名黑名单",
       },
     ],
