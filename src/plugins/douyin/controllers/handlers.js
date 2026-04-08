@@ -7,7 +7,7 @@ import DouyinService, {
 } from "../services/douyin-service.js"
 
 const ACTIVE_SESSION_KEY = "global"
-const QR_POLL_INTERVAL_MS = 3000
+const QR_POLL_INTERVAL_MS = 5000
 const QR_MAX_POLLS = 60
 const activeQrSessions = new Map()
 

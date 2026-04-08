@@ -161,6 +161,20 @@ function buildLaunchOptions({ profileDir = "" } = {}) {
   return options
 }
 
+function shouldBlockLoginRequest(request) {
+  const type = normalizeString(request?.resourceType?.())
+  if (["media", "font", "websocket", "eventsource", "manifest"].includes(type)) return true
+
+  const url = normalizeString(request?.url?.()).toLowerCase()
+  if (!url) return false
+
+  if (/(\.mp4|\.m3u8|\.mp3)(\?|$)/i.test(url)) return true
+  if (/(?:^|\/)(?:aweme|feed)\/v\d+\/(?:web\/)?feed/i.test(url)) return true
+  if (/\/recommend\//i.test(url) || /webcast/i.test(url) || /live\.douyin\.com/i.test(url)) return true
+
+  return false
+}
+
 function parseDataUrl(dataUrl = "") {
   const source = String(dataUrl || "").trim()
   const matched = source.match(/^data:([^;,]+)?;base64,(.+)$/)
@@ -752,12 +766,53 @@ class DouyinService {
     return buildLaunchOptions({ profileDir })
   }
 
-  async prepareLoginPage(page) {
+  async prepareLoginPage(page, { lightweight = false } = {}) {
+    if (lightweight && !page.__douyinRequestInterceptionInstalled) {
+      await page.setRequestInterception(true)
+      page.on("request", request => {
+        if (shouldBlockLoginRequest(request)) {
+          void request.abort().catch(() => {})
+          return
+        }
+        void request.continue().catch(() => {})
+      })
+      page.__douyinRequestInterceptionInstalled = true
+    }
+
     await page.evaluateOnNewDocument(() => {
       Object.defineProperty(navigator, "webdriver", { get: () => undefined })
       window.chrome = window.chrome || { runtime: {} }
       Object.defineProperty(navigator, "languages", { get: () => ["zh-CN", "zh", "en"] })
       Object.defineProperty(navigator, "plugins", { get: () => [1, 2, 3, 4, 5] })
+
+      const silenceMedia = node => {
+        if (!node || typeof node !== "object") return
+        if (typeof node.pause === "function") {
+          try {
+            node.pause()
+          } catch {}
+        }
+        try {
+          node.autoplay = false
+          node.muted = true
+          node.loop = false
+          node.preload = "none"
+          if (typeof node.removeAttribute === "function") node.removeAttribute("autoplay")
+        } catch {}
+      }
+
+      const silencePageMedia = () => {
+        for (const media of document.querySelectorAll("video,audio")) silenceMedia(media)
+      }
+
+      document.addEventListener("DOMContentLoaded", () => {
+        silencePageMedia()
+        const observer = new MutationObserver(() => silencePageMedia())
+        observer.observe(document.documentElement || document.body, {
+          childList: true,
+          subtree: true,
+        })
+      })
     })
     await page.setUserAgent(USER_AGENT)
     await page.setExtraHTTPHeaders({
@@ -933,12 +988,12 @@ class DouyinService {
 
     const page = await browser.newPage()
     try {
-      await this.prepareLoginPage(page)
+      await this.prepareLoginPage(page, { lightweight: true })
       await page.goto(LOGIN_ENTRY_URL, {
         waitUntil: "domcontentloaded",
         timeout: 120000,
       })
-      await delay(7000)
+      await delay(3000)
 
       const title = await page.title().catch(() => "")
       if (String(title).includes("验证码中间页")) {
