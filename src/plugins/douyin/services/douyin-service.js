@@ -1,6 +1,7 @@
 import fs from "node:fs"
 import { randomUUID } from "node:crypto"
 import path from "node:path"
+import { createRequire } from "node:module"
 
 import { load } from "cheerio"
 import fetch from "node-fetch"
@@ -10,20 +11,71 @@ import env from "../../../lib/env.js"
 import Download from "../../../utils/download.js"
 import {
   clearDouyinAuth,
+  getDouyinDataDir,
   readDouyinAuth,
   writeDouyinAuth,
 } from "../model/auth-store.js"
+
+const require = createRequire(import.meta.url)
+const { generate_a_bogus } = require("../utils/a-bogus.cjs")
+const { sign: generate_x_bogus } = require("../utils/x-bogus.cjs")
 
 const ROOT_PATH = path.resolve(env.RootPath)
 const TEMP_DIR = path.join(ROOT_PATH, "temp", "douyin")
 const TEMP_VIDEO_DIR = path.join(TEMP_DIR, "video")
 const BROWSER_PROFILE_ROOT = path.join(TEMP_DIR, "browser-profile")
 const QR_IMAGE_PATH = path.join(TEMP_DIR, "login-qrcode.png")
-const LOGIN_ENTRY_URL = "https://www.douyin.com/jingxuan"
 const VIDEO_MAX_BYTES = 70 * 1024 * 1024
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 const WEB_REFERER = "https://www.douyin.com/"
+const LOGIN_WINDOW_ENV = "1536|747|1536|834|0|30|0|0|1536|834|1536|864|1525|747|24|24|Win32"
+const LOGIN_QUERY_TEMPLATE = {
+  passport_jssdk_version: "3.1.3",
+  passport_jssdk_type: "normal",
+  is_from_ttaccountsdk: "1",
+  aid: "6383",
+  language: "zh",
+  account_app_language: "zh-CN",
+  next: "https://www.douyin.com",
+  service: WEB_REFERER,
+  correct_service: WEB_REFERER,
+  need_short_url: "true",
+  need_logo: "false",
+  is_new_login: "1",
+  is_from_iesaccountsaas: "1",
+  p_ui: "2.1.9-alpha.6",
+  p_ca: "4.0.17",
+  p_ca_real: "1.0.0.753",
+  account_sdk_source: "web",
+  p_js_v: "3.1.3",
+  p_js_t: "pro",
+  p_zt: "3.3.10",
+  p_ver: "1.1.3",
+  p_ver_real: "0",
+  request_host: encodeURIComponent(WEB_REFERER),
+  p_bd: "1.0.1.19-fix.01",
+  device_platform: "web_app",
+}
+const LOGIN_QR_ENDPOINTS = [
+  {
+    url: "https://login.douyin.com/passport/web/get_qrcode/",
+    query: {
+      aid: "6383",
+    },
+  },
+]
+const LOGIN_QR_POLL_ENDPOINTS = [
+  {
+    url: "https://login.douyin.com/passport/web/check_qrconnect/",
+    buildQuery(token) {
+      return {
+        aid: "6383",
+        token,
+      }
+    },
+  },
+]
 const COMMON_QUERY = {
   aid: "6383",
   channel: "channel_pc_web",
@@ -82,6 +134,68 @@ const COMMENT_ENDPOINTS = [
 ]
 const DOUYIN_HOST_RE = /(^|\.)((v\.)?douyin\.com|iesdouyin\.com)$/i
 const URL_RE = /https?:\/\/[^\s]+/gi
+const QR_API_CONFIG_PATH = path.join(getDouyinDataDir(), "qr-api.json")
+
+function readQrApiConfig() {
+  try {
+    if (!fs.existsSync(QR_API_CONFIG_PATH)) return {}
+    const data = JSON.parse(fs.readFileSync(QR_API_CONFIG_PATH, "utf8"))
+    if (!data || typeof data !== "object" || Array.isArray(data)) return {}
+    return data
+  } catch (err) {
+    logger.warn?.(`[Douyin] 读取二维码接口配置失败：${err?.message || err}`)
+    return {}
+  }
+}
+
+function applyTemplateParams(input = "", params = {}) {
+  let output = String(input || "")
+  for (const [key, value] of Object.entries(params || {})) {
+    const token = `{{${key}}}`
+    output = output.split(token).join(String(value ?? ""))
+  }
+  return output
+}
+
+function parseUrlQuery(input = "") {
+  const source = normalizeString(input)
+  if (!source) return {}
+  try {
+    const url = new URL(source)
+    return Object.fromEntries(url.searchParams.entries())
+  } catch {
+    try {
+      return Object.fromEntries(new URLSearchParams(source).entries())
+    } catch {
+      return {}
+    }
+  }
+}
+
+function getLoginQrEndpoints() {
+  const customUrl =
+    normalizeString(readQrApiConfig()?.get_qrcode_url) ||
+    normalizeString(process.env.DOUYIN_QR_API_URL)
+  return customUrl
+    ? [{ url: customUrl, query: {} }, ...LOGIN_QR_ENDPOINTS]
+    : LOGIN_QR_ENDPOINTS
+}
+
+function getLoginQrPollEndpoints() {
+  const customUrl =
+    normalizeString(readQrApiConfig()?.check_qrconnect_url) ||
+    normalizeString(process.env.DOUYIN_QR_POLL_API_URL)
+  if (!customUrl) return LOGIN_QR_POLL_ENDPOINTS
+  return [
+    {
+      url: customUrl,
+      buildQuery(token) {
+        return { token }
+      },
+    },
+    ...LOGIN_QR_POLL_ENDPOINTS,
+  ]
+}
 
 function createError(message, code, extra = {}) {
   const err = new Error(message)
@@ -268,8 +382,27 @@ function buildCookieHeader(cookies = {}) {
     .join("; ")
 }
 
+function parseCookieHeader(cookieHeader = "") {
+  const out = {}
+  for (const part of String(cookieHeader || "").split(";")) {
+    const raw = String(part || "").trim()
+    if (!raw) continue
+    const separator = raw.indexOf("=")
+    if (separator <= 0) continue
+    const key = raw.slice(0, separator).trim()
+    const value = raw.slice(separator + 1).trim()
+    if (!key || !value) continue
+    out[key] = value
+  }
+  return out
+}
+
 function getResponseCookies(response) {
   return parseSetCookieArray(response?.headers?.raw?.()["set-cookie"] || [])
+}
+
+function getResponseLocation(response) {
+  return normalizeString(response?.headers?.get?.("location"))
 }
 
 function buildHeaders(auth = null, extra = {}) {
@@ -302,6 +435,22 @@ async function requestJson(url, options = {}) {
   return { response, data }
 }
 
+async function requestJsonWithCookies(url, { cookies = {}, headers = {}, ...options } = {}) {
+  const cookieHeader = buildCookieHeader(cookies)
+  const { response, data } = await requestJson(url, {
+    ...options,
+    headers: {
+      ...headers,
+      ...(cookieHeader ? { cookie: cookieHeader } : {}),
+    },
+  })
+  return {
+    response,
+    data,
+    cookies: mergeCookies(cookies, getResponseCookies(response)),
+  }
+}
+
 function safeDecodeURIComponent(text = "") {
   const source = String(text || "").trim()
   if (!source) return ""
@@ -314,6 +463,107 @@ function safeDecodeURIComponent(text = "") {
 
 function normalizeString(value) {
   return String(value ?? "").trim()
+}
+
+function normalizeBooleanString(value, defaultValue = false) {
+  const source = normalizeString(value).toLowerCase()
+  if (["1", "true", "yes", "on"].includes(source)) return true
+  if (["0", "false", "no", "off"].includes(source)) return false
+  return defaultValue
+}
+
+function resolveAbsoluteUrl(input, baseUrl = WEB_REFERER) {
+  const source = normalizeString(input)
+  if (!source) return ""
+  try {
+    return new URL(source, baseUrl).toString()
+  } catch {
+    return source
+  }
+}
+
+function randomHex(size = 16) {
+  return randomUUID().replace(/-/g, "").slice(0, Math.max(1, size))
+}
+
+function createMsToken() {
+  return `${randomUUID().replace(/-/g, "")}${Date.now().toString(36)}`
+}
+
+function parseDouyinQrStatus(payload = {}) {
+  const data = payload?.data ?? payload
+  const numericStatus = Number(
+    data?.status ??
+      data?.qrconnect_status ??
+      data?.check_status ??
+      data?.status_code ??
+      data?.check_status_code ??
+      payload?.status,
+  )
+  const statusText = normalizeString(
+    data?.status ??
+      data?.qrconnect_status ??
+      data?.check_status ??
+      data?.status_msg ??
+      data?.message ??
+      payload?.message,
+  ).toLowerCase()
+  const statusCode = Number(data?.status_code ?? data?.check_status_code)
+  const confirmUrl = resolveAbsoluteUrl(
+    data?.redirect_url ?? data?.redirectUrl ?? data?.confirm_url ?? data?.confirmUrl,
+  )
+
+  if (confirmUrl) {
+    return {
+      status: "success",
+      message: "登录成功",
+      redirectUrl: confirmUrl,
+      raw: data,
+    }
+  }
+
+  if (
+    /confirm|success|scan confirmed|authorized|login success/i.test(statusText) ||
+    [3, 200, 20000].includes(numericStatus) ||
+    [3, 200, 20000].includes(statusCode)
+  ) {
+    return {
+      status: "success",
+      message: "登录成功",
+      redirectUrl: confirmUrl,
+      raw: data,
+    }
+  }
+
+  if (
+    /scan|scanned|confirming|waiting_confirm|已扫码|确认登录/i.test(statusText) ||
+    [2, 1002].includes(numericStatus) ||
+    [2, 1002].includes(statusCode)
+  ) {
+    return {
+      status: "scanned",
+      message: "已扫码，请在抖音 App 内确认登录",
+      raw: data,
+    }
+  }
+
+  if (
+    /expired|timeout|invalid|cancel|过期|失效/i.test(statusText) ||
+    [4, 5, 1004, 1005].includes(numericStatus) ||
+    [4, 5, 1004, 1005].includes(statusCode)
+  ) {
+    return {
+      status: "expired",
+      message: "二维码已过期",
+      raw: data,
+    }
+  }
+
+  return {
+    status: "pending",
+    message: "等待扫码",
+    raw: data,
+  }
 }
 
 function pickFirstUrl(value) {
@@ -841,10 +1091,16 @@ class DouyinService {
 
   async readLoginModalState(page) {
     return await page.evaluate(() => {
-      const modal = document.querySelector(".douyin_login_new_class")
+      const getText = node => String(node?.innerText || node?.textContent || "").trim()
+      const modal =
+        document.querySelector(".douyin_login_new_class") ||
+        [...document.querySelectorAll('div[role="dialog"],div[class],section')]
+          .find(node => {
+            const text = getText(node)
+            return text.includes("扫码登录") || text.includes("登录抖音")
+          })
       if (!modal) return { exists: false, text: "", qrDataUrl: "" }
 
-      const getText = node => String(node?.innerText || node?.textContent || "").trim()
       let qrImage = modal.querySelector('#douyin_login_comp_scan_code img[src^="data:image/"]')
       if (!qrImage) {
         const qrTab = [...modal.querySelectorAll("*")].find(
@@ -860,6 +1116,41 @@ class DouyinService {
         qrDataUrl: String(qrImage?.getAttribute("src") || "").trim(),
       }
     })
+  }
+
+  async captureFallbackLoginScreenshot(page) {
+    this.ensureTempDirs()
+    cleanupFile(this.qrImagePath)
+
+    const selectors = [
+      ".douyin_login_new_class",
+      'div[role="dialog"]',
+      "#douyin_login_comp_scan_code",
+      "body",
+    ]
+
+    for (const selector of selectors) {
+      const handle = await page.$(selector).catch(() => null)
+      if (!handle) continue
+      try {
+        const box = await handle.boundingBox()
+        if (!box || box.width < 120 || box.height < 120) continue
+        await handle.screenshot({ path: this.qrImagePath })
+        if (fs.existsSync(this.qrImagePath) && fs.statSync(this.qrImagePath).size > 0) {
+          return this.qrImagePath
+        }
+      } catch {}
+    }
+
+    await page.screenshot({
+      path: this.qrImagePath,
+      fullPage: false,
+    })
+    if (fs.existsSync(this.qrImagePath) && fs.statSync(this.qrImagePath).size > 0) {
+      return this.qrImagePath
+    }
+
+    throw createError("未找到抖音登录截图区域", "DOUYIN_QR_INVALID")
   }
 
   saveQrDataUrl(dataUrl) {
@@ -932,6 +1223,10 @@ class DouyinService {
       return this.saveQrDataUrl(modalState.qrDataUrl)
     }
 
+    if (modalState?.exists) {
+      return this.captureFallbackLoginScreenshot(page)
+    }
+
     throw createError("未找到抖音扫码二维码", "DOUYIN_QR_INVALID")
   }
 
@@ -961,17 +1256,178 @@ class DouyinService {
     return out
   }
 
+  saveQrBase64Image(base64 = "") {
+    const source = normalizeString(base64)
+    if (!source) {
+      throw createError("未获取到抖音扫码二维码数据", "DOUYIN_QR_INVALID")
+    }
+
+    this.ensureTempDirs()
+    cleanupFile(this.qrImagePath)
+    fs.writeFileSync(this.qrImagePath, Buffer.from(source, "base64"))
+    return this.qrImagePath
+  }
+
+  buildLoginApiHeaders(cookieHeader = "") {
+    return buildHeaders(
+      cookieHeader ? { cookieHeader } : null,
+      {
+        accept: "application/json, text/plain, */*",
+        origin: WEB_REFERER.replace(/\/$/, ""),
+        "x-requested-with": "XMLHttpRequest",
+      },
+    )
+  }
+
+  buildSignedLoginQuery(extra = {}, cookies = {}) {
+    const msToken =
+      normalizeString(extra?.msToken) ||
+      normalizeString(cookies?.msToken) ||
+      normalizeString(process.env.DOUYIN_MS_TOKEN) ||
+      createMsToken()
+
+    const query = {
+      ...LOGIN_QUERY_TEMPLATE,
+      ...extra,
+      msToken,
+      ts: String(Math.floor(Date.now() / 1000)),
+      p_ts: String(Date.now()),
+      p_no: normalizeString(extra?.p_no) || randomHex(64),
+      biz_trace_id: normalizeString(extra?.biz_trace_id) || randomHex(8),
+    }
+
+    const searchParams = new URLSearchParams()
+    for (const [key, value] of Object.entries(query)) {
+      if (value === undefined || value === null || value === "") continue
+      searchParams.set(key, String(value))
+    }
+
+    const queryString = searchParams.toString()
+    try {
+      searchParams.set("a_bogus", generate_a_bogus(queryString, USER_AGENT, LOGIN_WINDOW_ENV))
+    } catch (err) {
+      logger.warn?.(`[Douyin] 生成 a_bogus 失败：${err?.message || err}`)
+    }
+    try {
+      searchParams.set("X-Bogus", generate_x_bogus(searchParams.toString(), USER_AGENT))
+    } catch (err) {
+      logger.warn?.(`[Douyin] 生成 X-Bogus 失败：${err?.message || err}`)
+    }
+
+    return Object.fromEntries(searchParams.entries())
+  }
+
+  buildFixedUrlFromTemplate(templateUrl, replacements = {}) {
+    return applyTemplateParams(templateUrl, replacements)
+  }
+
+  buildFixedFormFromTemplate(templateForm = "", replacements = {}) {
+    return applyTemplateParams(templateForm, replacements)
+  }
+
+  async warmupLoginCookies(cookies = {}) {
+    let nextCookies = normalizeCookies(cookies)
+    try {
+      const response = await fetch(WEB_REFERER, {
+        method: "GET",
+        redirect: "manual",
+        headers: this.buildLoginApiHeaders(buildCookieHeader(nextCookies)),
+      })
+      nextCookies = mergeCookies(nextCookies, getResponseCookies(response))
+    } catch (err) {
+      logger.warn?.(`[Douyin] 预热登录 Cookie 失败：${err?.message || err}`)
+    }
+    return nextCookies
+  }
+
+  async requestLoginQrTicket() {
+    let cookies = await this.warmupLoginCookies({})
+    let lastError = null
+
+    for (const endpoint of getLoginQrEndpoints()) {
+      try {
+        const config = readQrApiConfig()
+        const customUrl = normalizeString(config?.get_qrcode_url)
+        const url = customUrl
+          ? this.buildFixedUrlFromTemplate(customUrl)
+          : buildUrl(endpoint.url, this.buildSignedLoginQuery(endpoint.query, cookies))
+        const result = await requestJsonWithCookies(url, {
+          cookies,
+          headers: this.buildLoginApiHeaders(buildCookieHeader(cookies)),
+        })
+        cookies = result.cookies
+        const payload = result.data?.data ?? result.data
+        const token = normalizeString(payload?.token)
+        const qrcode = normalizeString(payload?.qrcode)
+        const qrUrl = resolveAbsoluteUrl(payload?.qrcode_index_url ?? payload?.qrcodeIndexUrl)
+
+        if (token && qrcode) {
+          return {
+            endpoint,
+            token,
+            qrUrl,
+            imagePath: this.saveQrBase64Image(qrcode),
+            cookies,
+            payload,
+          }
+        }
+      } catch (err) {
+        lastError = err
+      }
+    }
+
+    if (lastError?.code === "DOUYIN_BAD_JSON") {
+      throw createError(
+        `抖音二维码接口返回了非 JSON 内容，请在 ${QR_API_CONFIG_PATH} 配置完整签名的 get_qrcode_url 和 check_qrconnect_url`,
+        "DOUYIN_QR_API_CONFIG_REQUIRED",
+        {
+          cause: lastError,
+        },
+      )
+    }
+
+    throw createError(
+      lastError?.message || "获取抖音扫码二维码失败",
+      lastError?.code || "DOUYIN_QR_FAILED",
+    )
+  }
+
+  async followLoginRedirects(url, cookies = {}) {
+    let currentUrl = resolveAbsoluteUrl(url)
+    let nextCookies = normalizeCookies(cookies)
+
+    for (let index = 0; index < 8 && currentUrl; index += 1) {
+      const cookieHeader = buildCookieHeader(nextCookies)
+      const response = await fetch(currentUrl, {
+        method: "GET",
+        redirect: "manual",
+        headers: buildHeaders(cookieHeader ? { cookieHeader } : null, {
+          accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        }),
+      })
+
+      nextCookies = mergeCookies(nextCookies, getResponseCookies(response))
+      const location = getResponseLocation(response)
+      if (!location) {
+        return {
+          finalUrl: currentUrl,
+          cookies: nextCookies,
+          response,
+        }
+      }
+      currentUrl = resolveAbsoluteUrl(location, currentUrl)
+    }
+
+    return {
+      finalUrl: currentUrl,
+      cookies: nextCookies,
+    }
+  }
+
   async closeLoginSession(token) {
     const session = this.loginSessions.get(token)
     this.loginSessions.delete(token)
     if (!session) return
-    try {
-      await session.page?.close?.()
-    } catch {}
-    try {
-      await session.browser?.close?.()
-    } catch {}
-    cleanupDir(session.profileDir)
   }
 
   async startQrLogin() {
@@ -980,56 +1436,20 @@ class DouyinService {
       await this.closeLoginSession(token)
     }
 
-    const profileDir = this.createLoginProfileDir()
-    const browser = await puppeteer.launch(this.getLoginLaunchOptions(profileDir)).catch(err => {
-      cleanupDir(profileDir)
-      throw createError(err?.message || "启动浏览器失败", "DOUYIN_QR_FAILED")
+    const ticket = await this.requestLoginQrTicket()
+    const sessionToken = randomUUID()
+    this.loginSessions.set(sessionToken, {
+      token: sessionToken,
+      qrToken: ticket.token,
+      qrUrl: ticket.qrUrl,
+      imagePath: ticket.imagePath,
+      cookies: ticket.cookies,
+      createdAt: Date.now(),
     })
-
-    const page = await browser.newPage()
-    try {
-      await this.prepareLoginPage(page, { lightweight: true })
-      await page.goto(LOGIN_ENTRY_URL, {
-        waitUntil: "domcontentloaded",
-        timeout: 120000,
-      })
-      await delay(3000)
-
-      const title = await page.title().catch(() => "")
-      if (String(title).includes("验证码中间页")) {
-        throw createError("抖音登录页被验证码中间页拦截，请稍后重试", "DOUYIN_QR_BLOCKED")
-      }
-
-      const modalState = await this.waitForLoginModal(page)
-      if (!modalState?.exists) {
-        throw createError("未找到抖音扫码二维码", "DOUYIN_QR_INVALID")
-      }
-
-      const imagePath = await this.captureQrImageFromPage(page)
-      const initialCookies = await this.getLoginSessionCookies(page)
-      const token = randomUUID()
-      this.loginSessions.set(token, {
-        token,
-        browser,
-        page,
-        profileDir,
-        createdAt: Date.now(),
-        initialCookieHeader: buildCookieHeader(initialCookies),
-      })
-      return {
-        token,
-        qrUrl: "",
-        imagePath,
-      }
-    } catch (err) {
-      try {
-        await page.close()
-      } catch {}
-      try {
-        await browser.close()
-      } catch {}
-      cleanupDir(profileDir)
-      throw err
+    return {
+      token: sessionToken,
+      qrUrl: ticket.qrUrl,
+      imagePath: ticket.imagePath,
     }
   }
 
@@ -1099,71 +1519,153 @@ class DouyinService {
     return saved
   }
 
+  async importCookieHeader(cookieHeader = "") {
+    const cookies = parseCookieHeader(cookieHeader)
+    const normalizedHeader = buildCookieHeader(cookies)
+    if (!normalizedHeader) {
+      throw createError("未识别到有效 Cookie，请完整粘贴浏览器中的 Cookie。", "DOUYIN_COOKIE_EMPTY")
+    }
+
+    const authPreview = {
+      cookieHeader: normalizedHeader,
+      cookies,
+    }
+    const userInfo = await this.fetchSelfUserInfo(authPreview).catch(err => {
+      if (err?.code === "DOUYIN_AUTH_INVALID") throw err
+      throw createError(
+        err?.message || "Cookie 校验失败，请确认复制的是 www.douyin.com 当前登录态。",
+        "DOUYIN_COOKIE_VALIDATE_FAILED",
+      )
+    })
+
+    return await this.finalizeQrLogin({
+      cookies,
+      raw: hasResolvedUserInfo(userInfo) ? { user_info: userInfo } : {},
+    })
+  }
+
   async pollQrLogin(token) {
     const qrToken = normalizeString(token)
     if (!qrToken) throw createError("二维码 token 缺失", "DOUYIN_QR_TOKEN_MISSING")
     const session = this.loginSessions.get(qrToken)
-    if (!session?.page || !session?.browser) {
+    if (!session?.qrToken) {
       throw createError("二维码会话不存在或已结束", "DOUYIN_QR_TOKEN_MISSING")
     }
 
     try {
-      const cookies = await this.getLoginSessionCookies(session.page)
-      const nextCookieHeader = buildCookieHeader(cookies)
-      const cookiesChanged =
-        normalizeString(nextCookieHeader) !== normalizeString(session.initialCookieHeader)
-      if (hasAuthenticatedCookies(cookies) && cookiesChanged) {
-        const authPreview = {
-          cookieHeader: nextCookieHeader,
-          cookies,
-        }
-        const userInfo = await this.fetchSelfUserInfo(authPreview).catch(err => {
-          if (err?.code === "DOUYIN_AUTH_INVALID") return null
-          logger.warn?.(`[Douyin] 登录态确认失败，改为直接保存 Cookie：${err?.message || err}`)
-          return null
-        })
+      let lastError = null
 
-        const auth = await this.finalizeQrLogin({
-          cookies,
-          raw: hasResolvedUserInfo(userInfo) ? { user_info: userInfo } : {},
-        })
-        await this.closeLoginSession(qrToken)
-        return {
-          status: "success",
-          auth,
-          userInfo: auth.userInfo,
-          message: "登录成功",
+      for (const endpoint of getLoginQrPollEndpoints()) {
+        try {
+          const config = readQrApiConfig()
+          const customUrl = normalizeString(config?.check_qrconnect_url)
+          const formTemplate = normalizeString(config?.check_qrconnect_form)
+          const url = customUrl
+            ? this.buildFixedUrlFromTemplate(customUrl, {
+                token: session.qrToken,
+              })
+            : buildUrl(
+                endpoint.url,
+                this.buildSignedLoginQuery(endpoint.buildQuery(session.qrToken), session.cookies),
+              )
+          const body = formTemplate
+            ? this.buildFixedFormFromTemplate(formTemplate, {
+                token: session.qrToken,
+              })
+            : ""
+          logger.info?.(
+            `[Douyin] 轮询请求: ${JSON.stringify({
+              method: body ? "POST" : "GET",
+              url,
+              body,
+            })}`,
+          )
+          const result = await requestJsonWithCookies(url, {
+            method: body ? "POST" : "GET",
+            body: body || undefined,
+            cookies: session.cookies,
+            headers: {
+              ...this.buildLoginApiHeaders(buildCookieHeader(session.cookies)),
+              ...(body
+                ? {
+                    "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
+                    origin: "https://login.douyin.com",
+                  }
+                : {}),
+            },
+          })
+          session.cookies = result.cookies
+
+          const state = parseDouyinQrStatus(result.data)
+          logger.info?.(
+            `[Douyin] 扫码轮询状态: method=${body ? "POST" : "GET"}, status=${state.status}, raw=${JSON.stringify({
+              status: result?.data?.data?.status ?? result?.data?.status,
+              status_code: result?.data?.data?.status_code ?? result?.data?.status_code,
+              check_status: result?.data?.data?.check_status ?? result?.data?.check_status,
+              message: result?.data?.data?.message ?? result?.data?.message,
+              status_msg: result?.data?.data?.status_msg ?? result?.data?.status_msg,
+              has_redirect_url: Boolean(
+                result?.data?.data?.redirect_url ||
+                  result?.data?.data?.redirectUrl ||
+                  result?.data?.redirect_url ||
+                  result?.data?.redirectUrl,
+              ),
+            })}`,
+          )
+          if (
+            state.status === "pending" &&
+            normalizeString(result?.data?.message).toLowerCase() === "error"
+          ) {
+            throw createError(
+              `轮询接口返回 error，请在 ${QR_API_CONFIG_PATH} 配置浏览器抓到的完整 check_qrconnect_url 模板`,
+              "DOUYIN_QR_API_CONFIG_REQUIRED",
+            )
+          }
+          if (state.status !== "success") {
+            return state
+          }
+
+          const redirectUrl = state.redirectUrl
+          let cookies = normalizeCookies(session.cookies)
+          if (redirectUrl) {
+            const settled = await this.followLoginRedirects(redirectUrl, cookies)
+            cookies = mergeCookies(cookies, settled.cookies)
+          }
+
+          const authPreview = {
+            cookieHeader: buildCookieHeader(cookies),
+            cookies,
+          }
+          const userInfo = await this.fetchSelfUserInfo(authPreview).catch(err => {
+            if (err?.code === "DOUYIN_AUTH_INVALID") return null
+            logger.warn?.(`[Douyin] 登录态确认失败，改为直接保存 Cookie：${err?.message || err}`)
+            return null
+          })
+
+          const auth = await this.finalizeQrLogin({
+            cookies,
+            raw: hasResolvedUserInfo(userInfo) ? { user_info: userInfo } : {},
+          })
+          await this.closeLoginSession(qrToken)
+          return {
+            status: "success",
+            auth,
+            userInfo: auth.userInfo,
+            message: "登录成功",
+          }
+        } catch (err) {
+          lastError = err
         }
       }
 
-      const modalState = await this.readLoginModalState(session.page).catch(() => ({
-        exists: false,
-        text: "",
-        qrDataUrl: "",
-      }))
-      const modalText = normalizeString(modalState?.text)
-
-      if (/已失效|过期|二维码失效|二维码过期/i.test(modalText)) {
-        await this.closeLoginSession(qrToken)
-        return {
-          status: "expired",
-          message: "二维码已过期",
-          raw: { text: modalText },
-        }
-      }
-
-      if (/已扫码|请在抖音APP内确认|确认登录|确认后登录/i.test(modalText)) {
-        return {
-          status: "scanned",
-          message: "已扫码，请在抖音 App 内确认登录",
-          raw: { text: modalText },
-        }
+      if (lastError) {
+        throw lastError
       }
 
       return {
         status: "pending",
         message: "等待扫码",
-        raw: { text: modalText },
+        raw: {},
       }
     } catch (err) {
       await this.closeLoginSession(qrToken).catch(() => {})

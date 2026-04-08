@@ -175,21 +175,43 @@ test.afterEach(() => {
   cleanupDouyinArtifacts()
 })
 
-test("douyin qr login stores auth and replies with summary", async () => {
-  const qrPath = ensureFile(path.join(tempDouyinDir, "login-qrcode.png"))
+test("douyin scan command replies with cookie setup guide", async () => {
+  await withHarness({}, async harness => {
+    const res = await harness.emitMessage({
+      scene: "private",
+      text: "#抖音扫码",
+      user_id: masterId,
+    })
 
+    assert.equal(res.ok, true)
+    const text = res.replies.map(item => item?.text || "").join("\n")
+    assert.match(text, /手动设置 Cookie 登录/)
+    assert.match(text, /WebUI 的抖音配置页/)
+  })
+})
+
+test("douyin scan command falls back to cookie guide when qr start fails", async () => {
+  await withHarness({}, async harness => {
+    const res = await harness.emitMessage({
+      scene: "private",
+      text: "#抖音扫码",
+      user_id: masterId,
+    })
+
+    assert.equal(res.ok, true)
+    const text = res.replies.map(item => item?.text || "").join("\n")
+    assert.match(text, /手动设置 Cookie 登录/)
+    assert.match(text, /抖音登录/)
+  })
+})
+
+test("douyin cookie login imports cookie and replies with summary", async () => {
   await withPatchedMethods(
     DouyinService,
     {
-      async startQrLogin() {
-        return {
-          token: "qr-token",
-          qrUrl: "https://example.com/qr",
-          imagePath: qrPath,
-        }
-      },
-      async pollQrLogin() {
-        const auth = writeDouyinAuth({
+      async importCookieHeader(cookieHeader) {
+        assert.ok(cookieHeader.includes("sessionid=abc"))
+        return writeDouyinAuth({
           cookieHeader: "sessionid=abc; passport_csrf_token=def",
           cookies: {
             sessionid: "abc",
@@ -200,90 +222,20 @@ test("douyin qr login stores auth and replies with summary", async () => {
             uid: "douyin-user-1",
           },
         })
-        return {
-          status: "success",
-          auth,
-          userInfo: auth.userInfo,
-        }
       },
     },
     async () => {
       await withHarness({}, async harness => {
         const res = await harness.emitMessage({
           scene: "private",
-          text: "#抖音扫码",
+          text: "#抖音登录 sessionid=abc; passport_csrf_token=def",
           user_id: masterId,
         })
 
         assert.equal(res.ok, true)
         assert.ok(res.replies.some(item => /抖音登录成功/.test(item?.text || "")))
         const saved = JSON.parse(fs.readFileSync(getDouyinAuthFilePath(), "utf8"))
-        assert.equal(saved.cookieHeader, "sessionid=abc; passport_csrf_token=def")
         assert.equal(saved.userInfo.nickname, "测试抖音号")
-      })
-    },
-  )
-})
-
-test("douyin qr login replies when qr expires", async () => {
-  const qrPath = ensureFile(path.join(tempDouyinDir, "expired-qrcode.png"))
-
-  await withPatchedMethods(
-    DouyinService,
-    {
-      async startQrLogin() {
-        return {
-          token: "expired-token",
-          qrUrl: "https://example.com/qr",
-          imagePath: qrPath,
-        }
-      },
-      async pollQrLogin() {
-        return { status: "expired" }
-      },
-    },
-    async () => {
-      await withHarness({}, async harness => {
-        const res = await harness.emitMessage({
-          scene: "private",
-          text: "#抖音扫码",
-          user_id: masterId,
-        })
-
-        assert.equal(res.ok, true)
-        assert.ok(res.replies.some(item => /二维码已过期/.test(item?.text || "")))
-      })
-    },
-  )
-})
-
-test("douyin qr login replies when poll fails", async () => {
-  const qrPath = ensureFile(path.join(tempDouyinDir, "failed-qrcode.png"))
-
-  await withPatchedMethods(
-    DouyinService,
-    {
-      async startQrLogin() {
-        return {
-          token: "failed-token",
-          qrUrl: "https://example.com/qr",
-          imagePath: qrPath,
-        }
-      },
-      async pollQrLogin() {
-        throw new Error("poll failed")
-      },
-    },
-    async () => {
-      await withHarness({}, async harness => {
-        const res = await harness.emitMessage({
-          scene: "private",
-          text: "#抖音扫码",
-          user_id: masterId,
-        })
-
-        assert.equal(res.ok, true)
-        assert.ok(res.replies.some(item => /状态检查失败/.test(item?.text || "")))
       })
     },
   )
@@ -299,7 +251,7 @@ test("douyin parse prompts for login when auth is missing", async () => {
     })
 
     assert.equal(res.ok, true)
-    assert.ok(res.replies.some(item => /抖音扫码/.test(item?.text || "")))
+    assert.ok(res.replies.some(item => /抖音登录/.test(item?.text || "")))
   })
 })
 

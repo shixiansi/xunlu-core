@@ -25,11 +25,20 @@ function getBotForwardUserId(ctx) {
 
 function buildAuthPrompt(ctx, reason = "missing") {
   if (reason === "expired") {
-    if (ctx?.isMaster) return "抖音登录已失效，请私聊我重新发送 #抖音扫码。"
-    return "抖音登录已失效，请联系主人私聊我重新发送 #抖音扫码。"
+    if (ctx?.isMaster) return "抖音登录已失效，请私聊我发送 #抖音登录 <cookie> 重新导入。"
+    return "抖音登录已失效，请联系主人私聊我发送 #抖音登录 <cookie> 重新导入。"
   }
-  if (ctx?.isMaster) return "请先私聊我发送 #抖音扫码，完成登录后再解析抖音链接。"
-  return "抖音解析暂未就绪，请联系主人私聊我发送 #抖音扫码。"
+  if (ctx?.isMaster) return "请先私聊我发送 #抖音登录 <cookie>，完成登录后再解析抖音链接。"
+  return "抖音解析暂未就绪，请联系主人私聊我发送 #抖音登录 <cookie>。"
+}
+
+function buildCookieImportGuide() {
+  return [
+    "抖音当前改为手动设置 Cookie 登录。",
+    "请私聊发送：#抖音登录 <完整cookie>",
+    "也可以在 WebUI 的抖音配置页里粘贴完整 Cookie 保存。",
+    "获取方式可参考：浏览器打开 www.douyin.com 并登录后，在开发者工具或 Cookie-Editor 里复制整段 Cookie。",
+  ].join("\n")
 }
 
 function buildSummaryMessage(aweme = {}) {
@@ -237,28 +246,41 @@ async function processQrPoll(key = ACTIVE_SESSION_KEY, { notifyPending = false }
 async function handleQrLoginCommand(ctx) {
   if (!ctx?.isMaster) return false
   if (!ctx?.isPrivate) {
-    return await ctx.reply("请私聊我发送 #抖音扫码。")
+    return await ctx.reply("请私聊我发送 #抖音登录 <cookie>，或前往 WebUI 的抖音配置页设置 Cookie。")
+  }
+  clearQrSession(ACTIVE_SESSION_KEY)
+  DouyinService.cleanupQrImage()
+  await ctx.reply(buildCookieImportGuide())
+  return true
+}
+
+async function handleCookieLoginCommand(ctx) {
+  if (!ctx?.isMaster) return false
+  if (!ctx?.isPrivate) {
+    return await ctx.reply("请私聊我发送 #抖音登录 <cookie>。")
+  }
+
+  const text = String(ctx?.msg || ctx?.text || "").trim()
+  const matched = text.match(/^(?:[#＃]\s*)?抖音(?:登录|cookie|ck)\s+([\s\S]+)$/i)
+  const cookieHeader = String(matched?.[1] || "").trim()
+  if (!cookieHeader) {
+    await ctx.reply(buildCookieImportGuide())
+    return true
   }
 
   clearQrSession(ACTIVE_SESSION_KEY)
+  DouyinService.cleanupQrImage()
 
   try {
-    const login = await DouyinService.startQrLogin()
-    activeQrSessions.set(ACTIVE_SESSION_KEY, {
-      token: login.token,
-      ctx,
-      pollCount: 0,
-      scannedNotified: false,
-      pendingNotified: false,
-      timer: null,
-    })
-    await ctx.reply(segment.image(login.imagePath), false, { recallMsg: 120 })
-    await processQrPoll(ACTIVE_SESSION_KEY, { notifyPending: true })
+    const auth = await DouyinService.importCookieHeader(cookieHeader)
+    const userInfo = auth?.userInfo || {}
+    const lines = ["抖音登录成功，Cookie 已保存。"]
+    if (userInfo?.nickname) lines.push(`账号：${userInfo.nickname}`)
+    if (userInfo?.uid) lines.push(`UID：${userInfo.uid}`)
+    await ctx.reply(lines.join("\n"))
   } catch (err) {
-    clearQrSession(ACTIVE_SESSION_KEY)
-    DouyinService.cleanupQrImage()
-    logger.error?.(`[Douyin] 获取扫码二维码失败：${err?.message || err}`)
-    await ctx.reply("获取抖音扫码二维码失败，请稍后重试。")
+    logger.error?.(`[Douyin] 导入 Cookie 登录失败：${err?.message || err}`)
+    await ctx.reply(err?.message || "抖音 Cookie 导入失败，请确认后重试。")
   }
 
   return true
@@ -305,6 +327,10 @@ export function register(bot) {
   if (!bot?.registerCommand) return
 
   bot.registerCommand(["^[#＃]抖音扫码$", 1000], async ctx => await handleQrLoginCommand(ctx))
+  bot.registerCommand(
+    ["^[#＃]抖音(登录|cookie|ck)(\\s+.+)?$", 1000],
+    async ctx => await handleCookieLoginCommand(ctx),
+  )
   bot.registerCommand(["", 1200], async ctx => await handleDouyinParse(ctx))
 }
 
@@ -319,7 +345,9 @@ export function __resetDouyinSessionsForTests() {
 
 export {
   buildSummaryMessage,
+  buildCookieImportGuide,
   extractFirstDouyinUrlFromContext,
+  handleCookieLoginCommand,
   handleDouyinParse,
   handleQrLoginCommand,
   sendHotCommentsForward,
