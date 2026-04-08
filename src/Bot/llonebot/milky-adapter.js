@@ -83,7 +83,7 @@ class MilkyAdapter {
 
     try {
       const result = await this.client.callApi(normalizedName, input)
-      console.debug(`[MilkyAdapter] 调用API ${normalizedName} 成功:`, result)
+      logger.debug(`[MilkyAdapter] 调用API ${normalizedName} 成功:`, result)
       return result
     } catch (error) {
       console.error(`[MilkyAdapter] 调用API ${normalizedName} 失败:`, error)

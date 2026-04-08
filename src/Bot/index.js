@@ -227,16 +227,6 @@ async function enrichGroupRoleFlags(e) {
   })
   let botFlags = selection.flags
   let botFlagsSource = selection.source
-  console.log("Bot角色权限缓存", {
-    groupId,
-    selfId,
-    cached: cached ? { role: cached.role, isOwner: cached.isOwner, isAdmin: cached.isAdmin } : null,
-    localPlaceholder: isPlaceholderMemberInfo(localBotInfo, { expectedUserId: selfId }),
-    hasGetGroupMemberInfo: typeof e.getGroupMemberInfo === "function",
-    hasGetGroupMemberList: typeof e.getGroupMemberList === "function",
-    source: botFlagsSource,
-    botFlags,
-  })
 
   if (!botFlags && typeof e.getGroupMemberInfo === "function") {
     try {
@@ -299,13 +289,7 @@ async function enrichGroupRoleFlags(e) {
       }
     } catch {}
   }
-  console.log("botFlags:", {
-    groupId,
-    selfId,
-    source: botFlagsSource,
-    placeholderDetected: selection.placeholderDetected,
-    flags: botFlags,
-  })
+ 
 
   if (botFlags) {
     e.botMember = applyRoleFlags(
@@ -378,7 +362,6 @@ export default class BaseBot {
 
   async renderImg(name, data, options = {}) {
     const tpl = options?.tpl || options?.template || name
-    console.log(this)
 
     return await this.renderer.render(
       name,
