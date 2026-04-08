@@ -1,7 +1,10 @@
 import { Jieba } from "@node-rs/jieba"
 import { dict } from "@node-rs/jieba/dict.js"
 
-const URL_REGEXP = /(https?|ftp|file):\/\/[^\s]+/gi
+const URL_REGEXP =
+  /(?:(?:https?|ftp|file):\/\/|www\.|(?:[a-z0-9-]+\.)+(?:com|cn|net|org|cc|tv|top|xyz|io|co|me|app))(?:[^\s]|[\u3000])*/gi
+const URL_LIKE_FRAGMENT_REGEXP =
+  /\b(?:[a-z0-9-]+\.)+(?:com|cn|net|org|cc|tv|top|xyz|io|co|me|app)\b(?:\/[^\s]*)?/gi
 const SYMBOL_REGEXP = /^[\s~`!@#$%^&*()_+\-=[\]{};:'",.<>/?|\\，。！？、；：“”‘’（）【】《》…—]+$/
 const LATIN_TOKEN_REGEXP = /[a-zA-Z][a-zA-Z0-9_-]*|\d+/g
 const CUSTOM_DICT = Buffer.from(
@@ -77,9 +80,14 @@ const STOP_WORDS = new Set([
   "webp",
 ])
 
-function cleanText(text) {
+function stripUrlLikeText(text) {
   return String(text || "")
     .replace(URL_REGEXP, " ")
+    .replace(URL_LIKE_FRAGMENT_REGEXP, " ")
+}
+
+function normalizeText(text) {
+  return stripUrlLikeText(text)
     .replace(/\s+/g, " ")
     .trim()
 }
@@ -105,7 +113,7 @@ export function extractPlainTextFromSegments(segments) {
 }
 
 export function tokenizeText(text) {
-  const cleaned = cleanText(text)
+  const cleaned = normalizeText(text)
   if (!cleaned) return []
 
   const jiebaTokens = jieba.cut(cleaned, true).map(token => String(token || "").trim())
@@ -120,7 +128,7 @@ export function buildWordStatsFromMessages(messages = []) {
   let textSampleCount = 0
 
   for (const item of Array.isArray(messages) ? messages : []) {
-    const text = extractPlainTextFromSegments(item?.message)
+    const text = normalizeText(extractPlainTextFromSegments(item?.message))
     if (!text) continue
     textSampleCount += 1
 
