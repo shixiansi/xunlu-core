@@ -1,0 +1,59 @@
+{{extend defaulthtml}}
+
+{{block 'css'}}
+<link rel="stylesheet" href="{{_res_path}}/html/douyin/douyin.css" />
+{{/block}}
+
+{{block 'main'}}
+<div class="dy-card {{awemeType}}">
+  <div class="dy-header">
+    <div class="dy-user">
+      <img class="dy-avatar" src="{{avatar || cover}}" alt="avatar" />
+      <div class="dy-meta">
+        <div class="dy-name">{{nickname}}</div>
+        <div class="dy-time">{{publishedAt || nowText}}</div>
+      </div>
+    </div>
+    <div class="dy-brand">
+      <div class="dy-brand-icon">♪</div>
+      <div class="dy-brand-text">抖音</div>
+    </div>
+  </div>
+
+  {{if desc}}
+  <div class="dy-desc">{{desc}}</div>
+  {{/if}}
+
+  <div class="dy-media {{awemeType}}">
+    <img class="dy-media-img" src="{{cover}}" alt="cover" />
+    {{if awemeType === 'video'}}
+    <div class="dy-play">
+      <div class="dy-play-triangle"></div>
+    </div>
+    {{/if}}
+  </div>
+</div>
+<script>
+  (function () {
+    const markReady = function () {
+      document.body.dataset.renderReady = "1"
+    }
+    const images = Array.from(document.images || [])
+    if (!images.length) {
+      markReady()
+      return
+    }
+    let left = images.length
+    const done = function () {
+      left -= 1
+      if (left <= 0) markReady()
+    }
+    images.forEach(function (img) {
+      if (img.complete) return done()
+      img.addEventListener("load", done, { once: true })
+      img.addEventListener("error", done, { once: true })
+    })
+    setTimeout(markReady, 3000)
+  })()
+</script>
+{{/block}}

@@ -10,6 +10,7 @@ const ACTIVE_SESSION_KEY = "global"
 const QR_POLL_INTERVAL_MS = 5000
 const QR_MAX_POLLS = 60
 const activeQrSessions = new Map()
+let renderImg = null
 
 function clearQrSession(key = ACTIVE_SESSION_KEY) {
   const session = activeQrSessions.get(key)
@@ -60,6 +61,40 @@ function buildSummaryMessage(aweme = {}) {
   if (aweme?.cover) message.push(segment.image(aweme.cover))
   message.push(lines.join("\n"))
   return message
+}
+
+async function renderSummaryCard(aweme = {}) {
+  if (typeof renderImg !== "function") return null
+
+  const desc = String(aweme?.desc || "").trim()
+  const normalizedDesc = desc.length > 140 ? `${desc.slice(0, 139)}…` : desc
+  return await renderImg("douyin", {
+    nickname: String(aweme?.author?.nickname || "抖音用户").trim() || "抖音用户",
+    avatar: aweme?.author?.avatar || aweme?.cover || "",
+    publishedAt: aweme?.publishedAt || "",
+    nowText: new Date().toISOString().replace("T", " ").slice(0, 19),
+    desc: normalizedDesc,
+    cover: aweme?.cover || aweme?.images?.[0] || "",
+    awemeType: aweme?.type === "note" ? "note" : "video",
+    saveId: `douyin_${aweme?.id || Date.now()}`,
+  }, {
+    tpl: "card",
+  })
+}
+
+async function sendSummaryCard(ctx, aweme = {}) {
+  try {
+    const rendered = await renderSummaryCard(aweme)
+    if (rendered) {
+      await ctx.reply(rendered)
+      return true
+    }
+  } catch (err) {
+    logger.warn?.(`[Douyin] 摘要卡片渲染失败，回退纯文本：${err?.message || err}`)
+  }
+
+  await ctx.reply(buildSummaryMessage(aweme))
+  return false
 }
 
 function buildCommentNode(comment = {}) {
@@ -320,7 +355,7 @@ async function handleDouyinParse(ctx) {
     return true
   }
 
-  await ctx.reply(buildSummaryMessage(aweme))
+  await sendSummaryCard(ctx, aweme)
 
   if (aweme?.type === "note") {
     await sendNoteMedia(ctx, aweme)
@@ -340,6 +375,7 @@ async function handleDouyinParse(ctx) {
 
 export function register(bot) {
   if (!bot?.registerCommand) return
+  renderImg = typeof bot?.renderImg === "function" ? bot.renderImg : null
 
   bot.registerCommand(["^[#＃]抖音扫码$", 1000], async ctx => await handleQrLoginCommand(ctx))
   bot.registerCommand(

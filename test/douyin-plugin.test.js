@@ -430,7 +430,8 @@ test("douyin video parse sends summary, video media and comment forward", async 
         })
 
         assert.equal(res.ok, true)
-        assert.ok(res.replies.some(item => /抖音视频解析/.test(item?.text || "")))
+        assert.ok(res.renderCalls.length >= 1)
+        assert.ok(res.renderCalls.some(call => call.name === "douyin" && /card/.test(call.tplPath || "")))
         assert.ok(
           res.replies.some(item =>
             Array.isArray(item?.message)
@@ -518,7 +519,8 @@ test("douyin note parse sends summary and image list", async () => {
         })
 
         assert.equal(res.ok, true)
-        assert.ok(res.replies.some(item => /抖音图文解析/.test(item?.text || "")))
+        assert.ok(res.renderCalls.length >= 1)
+        assert.ok(res.renderCalls.some(call => call.name === "douyin" && /card/.test(call.tplPath || "")))
         assert.ok(
           res.apiCalls.some(call => /forward/i.test(String(call?.name || ""))) ||
             JSON.stringify(res.apiCalls).includes("抖音图文"),
