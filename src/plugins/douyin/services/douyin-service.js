@@ -28,6 +28,8 @@ const QR_IMAGE_PATH = path.join(TEMP_DIR, "login-qrcode.png")
 const VIDEO_MAX_BYTES = 70 * 1024 * 1024
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+const MOBILE_DOUYIN_USER_AGENT =
+  "Mozilla/5.0 (Linux; Android 5.0; SM-G900P Build/LRX21T) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.25 Mobile Safari/537.36"
 const WEB_REFERER = "https://www.douyin.com/"
 const LOGIN_WINDOW_ENV = "1536|747|1536|834|0|30|0|0|1536|834|1536|864|1525|747|24|24|Win32"
 const LOGIN_QUERY_TEMPLATE = {
@@ -671,6 +673,32 @@ function normalizeImageList(candidate = {}) {
     }
   }
   return urls
+}
+
+function pickLastUrl(value) {
+  if (!value) return ""
+  if (typeof value === "string") {
+    const text = value.trim()
+    return /^https?:\/\//i.test(text) ? text : ""
+  }
+  if (Array.isArray(value)) {
+    for (let index = value.length - 1; index >= 0; index -= 1) {
+      const found = pickLastUrl(value[index])
+      if (found) return found
+    }
+    return ""
+  }
+  if (typeof value === "object") {
+    return (
+      pickLastUrl(value.url_list) ||
+      pickLastUrl(value.urlList) ||
+      pickLastUrl(value.uri) ||
+      pickLastUrl(value.url) ||
+      pickLastUrl(value.src) ||
+      ""
+    )
+  }
+  return ""
 }
 
 function pickVideoUrl(video = {}) {
@@ -1975,6 +2003,71 @@ class DouyinService {
     return null
   }
 
+  buildReferenceAwemeDetailUrl(awemeId) {
+    const baseUrl =
+      `https://www.douyin.com/aweme/v1/web/aweme/detail/?device_platform=webapp&aid=6383&channel=channel_pc_web&aweme_id=${encodeURIComponent(awemeId)}` +
+      "&pc_client_type=1&version_code=190500&version_name=19.5.0&cookie_enabled=true" +
+      "&screen_width=1344&screen_height=756&browser_language=zh-CN&browser_platform=Win32" +
+      "&browser_name=Firefox&browser_version=118.0&browser_online=true" +
+      "&engine_name=Gecko&engine_version=109.0&os_name=Windows&os_version=10&cpu_core_num=16&device_memory=&platform=PC"
+    const query = new URLSearchParams(new URL(baseUrl).search).toString()
+    return `${baseUrl}&a_bogus=${generate_a_bogus(query, MOBILE_DOUYIN_USER_AGENT, LOGIN_WINDOW_ENV)}`
+  }
+
+  async fetchAwemeByReferenceApi(awemeId, auth = null, sourceUrl = "") {
+    const url = this.buildReferenceAwemeDetailUrl(awemeId)
+    const { data } = await requestJson(url, {
+      headers: {
+        ...buildHeaders(auth, {
+          referer: WEB_REFERER,
+        }),
+        "user-agent": MOBILE_DOUYIN_USER_AGENT,
+      },
+    })
+
+    const detail = data?.aweme_detail
+    if (!detail || typeof detail !== "object") return null
+
+    const type = String(sourceUrl || "").includes("/note/") ? "note" : "video"
+    const videoSource = detail?.video && typeof detail.video === "object" ? detail.video : {}
+    const playAddr = videoSource?.play_addr
+    const playAddr265 = videoSource?.play_addr_265
+    const playUrl = pickLastUrl(playAddr?.url_list) || pickLastUrl(playAddr)
+    const playUrl265 = pickLastUrl(playAddr265?.url_list) || pickLastUrl(playAddr265)
+    const playSize = Number(playAddr?.data_size)
+    const use265 = Number.isFinite(playSize) && playSize > 100 * 1024 * 1024 && playUrl265
+    const resultUrl = use265 ? playUrl265 : playUrl
+    const images =
+      type === "note"
+        ? (Array.isArray(detail?.images) ? detail.images : []).map(item => pickFirstUrl(item?.url_list)).filter(Boolean)
+        : []
+
+    const normalized = normalizeDouyinAweme(
+      {
+        ...detail,
+        images: images.length > 0 ? images : detail?.images,
+        video: {
+          ...videoSource,
+          play_addr: resultUrl ? { url_list: [resultUrl], data_size: use265 ? playAddr265?.data_size : playAddr?.data_size } : playAddr,
+        },
+      },
+      { sourceUrl },
+    )
+
+    if (type === "note" && images.length > 0) {
+      normalized.images = images
+      normalized.type = "note"
+    }
+    if (resultUrl) {
+      normalized.video = {
+        ...normalized.video,
+        url: resultUrl,
+      }
+      normalized.type = type === "note" && images.length > 0 ? "note" : "video"
+    }
+    return normalized
+  }
+
   async getAwemeDetail(rawUrl, auth = null) {
     const resolvedUrl = await this.resolveShareUrl(rawUrl)
     const page = await this.fetchAwemePage(resolvedUrl, auth)
@@ -1982,6 +2075,17 @@ class DouyinService {
     const awemeId = normalizeString(urlMatch?.[2])
     let aweme = this.findAwemeFromHtml(page.html, awemeId)
     let sourceUrl = page.url || resolvedUrl
+
+    if (awemeId) {
+      try {
+        const fromReference = await this.fetchAwemeByReferenceApi(awemeId, auth, sourceUrl)
+        if (fromReference?.id && (fromReference?.video?.url || fromReference?.images?.length > 0)) {
+          return fromReference
+        }
+      } catch (err) {
+        logger.warn?.(`[Douyin] 参考 detail API 解析失败，继续尝试现有链路：${err?.message || err}`)
+      }
+    }
 
     if (!aweme) {
       try {

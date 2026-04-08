@@ -520,11 +520,8 @@ test("douyin note parse sends summary and image list", async () => {
         assert.equal(res.ok, true)
         assert.ok(res.replies.some(item => /抖音图文解析/.test(item?.text || "")))
         assert.ok(
-          res.replies.some(item =>
-            Array.isArray(item?.message)
-              ? item.message.some(seg => seg?.type === "image")
-              : false,
-          ),
+          res.apiCalls.some(call => /forward/i.test(String(call?.name || ""))) ||
+            JSON.stringify(res.apiCalls).includes("抖音图文"),
         )
       })
     },
@@ -534,16 +531,58 @@ test("douyin note parse sends summary and image list", async () => {
 test("douyin note helper falls back to first image when image sending fails", async () => {
   const calls = []
   const ctx = {
+    self_id: 10000,
+    async makeGroupForwardMsg() {
+      throw new Error("send failed")
+    },
     async reply(message) {
       calls.push(message)
-      if (calls.length === 1) throw new Error("send failed")
       return true
     },
   }
 
   const ok = await sendNoteMedia(ctx, createMockNoteAweme())
   assert.equal(ok, false)
-  assert.ok(String(calls[1]?.[1] || calls[1]).includes("已改为发送首图和原链接"))
+  assert.ok(String(calls[0]?.[1] || calls[0]).includes("已改为发送首图和原链接"))
+})
+
+test("douyin parse stays silent when hot comments fetch fails", async () => {
+  await withPatchedMethods(
+    DouyinService,
+    {
+      async ensureAuthorizedSession() {
+        return {
+          ok: true,
+          auth: {
+            cookieHeader: "sessionid=abc",
+          },
+        }
+      },
+      async getAwemeDetail() {
+        return createMockVideoAweme()
+      },
+      async downloadVideoFile() {
+        return ensureFile(path.join(tempDouyinDir, "video", "no-comment-video.mp4"), "video")
+      },
+      async fetchHotComments() {
+        throw new Error("comment api failed")
+      },
+      cleanupFiles() {},
+    },
+    async () => {
+      await withHarness({}, async harness => {
+        const res = await harness.emitMessage({
+          scene: "group",
+          text: "看看这个 https://v.douyin.com/iNoComment/",
+          group_id: 999,
+          user_id: 10001,
+        })
+
+        assert.equal(res.ok, true)
+        assert.ok(!res.replies.some(item => /热门评论获取失败/.test(item?.text || "")))
+      })
+    },
+  )
 })
 
 test("douyin hot comments helper builds forward nodes and limits to top 10", async () => {

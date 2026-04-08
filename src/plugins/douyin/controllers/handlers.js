@@ -128,11 +128,9 @@ async function sendVideoMedia(ctx, aweme) {
 }
 
 async function sendNoteMedia(ctx, aweme) {
-  const imageSegments = (Array.isArray(aweme?.images) ? aweme.images : [])
-    .filter(Boolean)
-    .map(url => segment.image(url))
+  const imageUrls = (Array.isArray(aweme?.images) ? aweme.images : []).filter(Boolean)
 
-  if (imageSegments.length === 0) {
+  if (imageUrls.length === 0) {
     if (aweme?.cover) {
       await ctx.reply([
         segment.image(aweme.cover),
@@ -143,7 +141,25 @@ async function sendNoteMedia(ctx, aweme) {
   }
 
   try {
-    await ctx.reply(imageSegments)
+    const botUserId = getBotForwardUserId(ctx)
+    const nickname = String(aweme?.author?.nickname || "抖音图文").trim() || "抖音图文"
+    const nodes = imageUrls.map((url, index) => ({
+      user_id: botUserId,
+      uin: botUserId,
+      nickname,
+      sender_name: nickname,
+      name: nickname,
+      content: [
+        segment.image(url),
+        ...(index === 0 && aweme?.link ? [`链接：${aweme.link}`] : []),
+      ],
+    }))
+    const forward = await ctx.makeGroupForwardMsg(
+      ctx,
+      nodes,
+      `抖音图文（${imageUrls.length}张）`,
+    )
+    await ctx.reply(forward)
     return true
   } catch (err) {
     logger.warn?.(`[Douyin] 图文发送失败，改走首图降级：${err?.message || err}`)
@@ -317,7 +333,6 @@ async function handleDouyinParse(ctx) {
     await sendHotCommentsForward(ctx, comments)
   } catch (err) {
     logger.warn?.(`[Douyin] 获取热门评论失败：${err?.message || err}`)
-    await ctx.reply("热门评论获取失败，请稍后再试。")
   }
 
   return true
