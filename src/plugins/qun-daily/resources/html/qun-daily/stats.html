@@ -20,18 +20,45 @@
 
   <div class="qd-cards">
     <div class="qd-card">
-      <div class="qd-card-k">水天帝</div>
-      <div class="qd-card-v">{{kings.waterKing.name}}</div>
+      <div class="qd-card-head">
+        {{if kings.waterKing.avatar}}
+        <img class="qd-avatar qd-avatar-lg" src="{{kings.waterKing.avatar}}" alt="{{kings.waterKing.name}}" />
+        {{else}}
+        <div class="qd-avatar qd-avatar-lg qd-avatar-fallback">{{kings.waterKing.name && kings.waterKing.name[0] || '水'}}</div>
+        {{/if}}
+        <div>
+          <div class="qd-card-k">水天帝</div>
+          <div class="qd-card-v">{{kings.waterKing.name}}</div>
+        </div>
+      </div>
       <div class="qd-card-s">{{kings.waterKing.subtitle}} · {{kings.waterKing.value}}</div>
     </div>
     <div class="qd-card">
-      <div class="qd-card-k">表情帝</div>
-      <div class="qd-card-v">{{kings.emojiKing.name}}</div>
+      <div class="qd-card-head">
+        {{if kings.emojiKing.avatar}}
+        <img class="qd-avatar qd-avatar-lg" src="{{kings.emojiKing.avatar}}" alt="{{kings.emojiKing.name}}" />
+        {{else}}
+        <div class="qd-avatar qd-avatar-lg qd-avatar-fallback">{{kings.emojiKing.name && kings.emojiKing.name[0] || '表'}}</div>
+        {{/if}}
+        <div>
+          <div class="qd-card-k">表情帝</div>
+          <div class="qd-card-v">{{kings.emojiKing.name}}</div>
+        </div>
+      </div>
       <div class="qd-card-s">{{kings.emojiKing.subtitle}} · {{kings.emojiKing.value}}</div>
     </div>
     <div class="qd-card">
-      <div class="qd-card-k">潜水帝</div>
-      <div class="qd-card-v">{{kings.diveKing.name}}</div>
+      <div class="qd-card-head">
+        {{if kings.diveKing.avatar}}
+        <img class="qd-avatar qd-avatar-lg" src="{{kings.diveKing.avatar}}" alt="{{kings.diveKing.name}}" />
+        {{else}}
+        <div class="qd-avatar qd-avatar-lg qd-avatar-fallback">{{kings.diveKing.name && kings.diveKing.name[0] || '潜'}}</div>
+        {{/if}}
+        <div>
+          <div class="qd-card-k">潜水帝</div>
+          <div class="qd-card-v">{{kings.diveKing.name}}</div>
+        </div>
+      </div>
       <div class="qd-card-s">{{kings.diveKing.subtitle}} · {{kings.diveKing.value}}</div>
     </div>
   </div>
@@ -39,28 +66,34 @@
   <div class="qd-panel">
     <div class="qd-panel-title">活跃排行榜 Top 10</div>
     {{if talkers && talkers.length}}
-    <table class="qd-table">
-      <thead>
-        <tr>
-          <th>#</th>
-          <th>成员</th>
-          <th>消息数</th>
-          <th>图片数</th>
-          <th>QQ</th>
-        </tr>
-      </thead>
-      <tbody>
-        {{each talkers item}}
-        <tr>
-          <td>{{item.rank}}</td>
-          <td>{{item.displayName}}</td>
-          <td>{{item.messageCount}}</td>
-          <td>{{item.imageCount}}</td>
-          <td>{{item.userId}}</td>
-        </tr>
-        {{/each}}
-      </tbody>
-    </table>
+    <div class="qd-talker-list">
+      {{each talkers item}}
+      <div class="qd-talker-item">
+        <div class="qd-rank-chip">#{{item.rank}}</div>
+        <div class="qd-talker-main">
+          {{if item.avatar}}
+          <img class="qd-avatar" src="{{item.avatar}}" alt="{{item.displayName}}" />
+          {{else}}
+          <div class="qd-avatar qd-avatar-fallback">{{item.displayName && item.displayName[0] || item.rank}}</div>
+          {{/if}}
+          <div class="qd-talker-meta">
+            <div class="qd-talker-name">{{item.displayName}}</div>
+            <div class="qd-talker-id">QQ {{item.userId}}</div>
+          </div>
+        </div>
+        <div class="qd-talker-stats">
+          <div class="qd-stat-pill">
+            <span>消息</span>
+            <strong>{{item.messageCount}}</strong>
+          </div>
+          <div class="qd-stat-pill">
+            <span>图片</span>
+            <strong>{{item.imageCount}}</strong>
+          </div>
+        </div>
+      </div>
+      {{/each}}
+    </div>
     {{else}}
     <div class="qd-empty">当天暂无可统计消息</div>
     {{/if}}

@@ -22,6 +22,7 @@
     <div class="qd-panel-title">词云</div>
     {{if words && words.length}}
     <div class="qd-cloud-wrap">
+      <div class="qd-cloud-hint">词频越高，字号越大</div>
       <canvas id="wordcloud-canvas" class="qd-cloud" width="920" height="420"></canvas>
     </div>
     {{else}}
@@ -79,11 +80,11 @@
       list: list.map(function (item) { return [item[0], item[1]] }),
       backgroundColor: "rgba(0,0,0,0)",
       color: function (word, weight) {
-        if (weight >= 60) return "#fef08a"
-        if (weight >= 48) return "#7dd3fc"
-        if (weight >= 36) return "#86efac"
-        if (weight >= 26) return "#c4b5fd"
-        return "#e2e8f0"
+        if (weight >= 60) return "#c2410c"
+        if (weight >= 48) return "#0369a1"
+        if (weight >= 36) return "#15803d"
+        if (weight >= 26) return "#6d28d9"
+        return "#475569"
       },
       gridSize: Math.max(8, Math.round(canvas.width / 36)),
       weightFactor: 1,

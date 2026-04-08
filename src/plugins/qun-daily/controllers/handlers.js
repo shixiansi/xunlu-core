@@ -10,6 +10,13 @@ import { buildWordCloudList } from "../model/words.js"
 
 const MANUAL_RANGE_REGEXP = /(?:今日|今天|1天|3天|7天|30天)$/
 
+function getQqAvatarUrl(userId, size = 100) {
+  const uid = String(userId || "").trim()
+  if (!/^\d{4,}$/.test(uid)) return ""
+  const s = Math.max(40, Math.floor(Number(size) || 100))
+  return `https://q1.qlogo.cn/g?b=qq&nk=${uid}&s=${s}`
+}
+
 function toScopeLabel(days) {
   if (days <= 1) return "今日"
   return `${days}天`
@@ -164,6 +171,7 @@ function buildStatsRenderData(rangeStats, kings) {
     messageCount: item.messageCount || 0,
     imageCount: item.imageCount || 0,
     userId: item.userId,
+    avatar: getQqAvatarUrl(item.userId, 100),
   }))
 
   return {
@@ -179,16 +187,19 @@ function buildStatsRenderData(rangeStats, kings) {
         name: kings?.waterKing?.displayName || "暂无",
         value: kings?.waterKing?.messageCount || 0,
         subtitle: "消息最多",
+        avatar: getQqAvatarUrl(kings?.waterKing?.userId, 100),
       },
       emojiKing: {
         name: kings?.emojiKing?.displayName || "暂无",
         value: kings?.emojiKing?.imageCount || 0,
         subtitle: "图片最多",
+        avatar: getQqAvatarUrl(kings?.emojiKing?.userId, 100),
       },
       diveKing: {
         name: kings?.diveKing?.displayName || "暂无可靠数据",
         value: kings?.diveKing?.lastSentTime ? formatDateTime(kings.diveKing.lastSentTime) : "暂无数据",
         subtitle: "最后发言最早",
+        avatar: getQqAvatarUrl(kings?.diveKing?.userId, 100),
       },
     },
     talkers,

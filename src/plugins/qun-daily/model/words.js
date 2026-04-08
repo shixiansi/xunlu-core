@@ -92,6 +92,26 @@ function normalizeText(text) {
     .trim()
 }
 
+function tryParseJson(text) {
+  try {
+    return JSON.parse(text)
+  } catch {
+    return null
+  }
+}
+
+function isJsonLikeText(text) {
+  const raw = String(text || "").trim()
+  if (!raw) return false
+
+  const looksLikeJson =
+    (raw.startsWith("{") && raw.endsWith("}")) || (raw.startsWith("[") && raw.endsWith("]"))
+  if (!looksLikeJson) return false
+
+  const parsed = tryParseJson(raw)
+  return Boolean(parsed && typeof parsed === "object")
+}
+
 function isNoiseToken(token) {
   const text = String(token || "").trim().toLowerCase()
   if (!text) return true
@@ -128,7 +148,10 @@ export function buildWordStatsFromMessages(messages = []) {
   let textSampleCount = 0
 
   for (const item of Array.isArray(messages) ? messages : []) {
-    const text = normalizeText(extractPlainTextFromSegments(item?.message))
+    const plainText = extractPlainTextFromSegments(item?.message)
+    if (!plainText || isJsonLikeText(plainText)) continue
+
+    const text = normalizeText(plainText)
     if (!text) continue
     textSampleCount += 1
 
