@@ -673,18 +673,51 @@ function normalizeImageList(candidate = {}) {
   return urls
 }
 
+function pickVideoUrl(video = {}) {
+  const source = video && typeof video === "object" ? video : {}
+  const directCandidates = [
+    source?.play_addr_h264,
+    source?.play_addr,
+    source?.play_addr_265,
+    source?.play_addr_lowbr,
+    source?.play_api,
+    source?.playApi,
+    source?.play_url,
+    source?.playUrl,
+    source?.download_addr,
+    source?.downloadAddr,
+    source?.src,
+    source?.url,
+  ]
+
+  for (const item of directCandidates) {
+    const url = pickFirstUrl(item)
+    if (url) return url
+  }
+
+  const bitRates = Array.isArray(source?.bit_rate)
+    ? source.bit_rate
+    : Array.isArray(source?.bitRate)
+      ? source.bitRate
+      : []
+  for (const item of bitRates) {
+    const url =
+      pickFirstUrl(item?.play_addr) ||
+      pickFirstUrl(item?.playAddr) ||
+      pickFirstUrl(item?.play_addr_h264) ||
+      pickFirstUrl(item?.playAddrH264) ||
+      pickFirstUrl(item?.play_api) ||
+      pickFirstUrl(item?.playApi)
+    if (url) return url
+  }
+
+  return ""
+}
+
 function normalizeVideoData(candidate = {}) {
   const source = candidate && typeof candidate === "object" ? candidate : {}
   const video = source?.video && typeof source.video === "object" ? source.video : source
-  const playUrl =
-    pickFirstUrl(video?.play_addr_h264) ||
-    pickFirstUrl(video?.play_addr) ||
-    pickFirstUrl(video?.bit_rate?.[0]?.play_addr) ||
-    pickFirstUrl(video?.download_addr) ||
-    pickFirstUrl(video?.play_api) ||
-    pickFirstUrl(video?.playApi) ||
-    pickFirstUrl(video?.play_url) ||
-    ""
+  const playUrl = pickVideoUrl(video)
   const cover =
     pickFirstUrl(video?.cover) ||
     pickFirstUrl(video?.dynamic_cover) ||

@@ -333,6 +333,36 @@ test("douyin aweme normalization supports video and note payloads", () => {
   assert.equal(note.link, "https://www.douyin.com/note/70002")
 })
 
+test("douyin aweme normalization picks video url from fallback fields", () => {
+  const video = normalizeDouyinAweme(
+    {
+      aweme_id: "70003",
+      desc: "视频文案 2",
+      author: {
+        nickname: "视频作者 2",
+      },
+      video: {
+        bit_rate: [
+          {},
+          {
+            play_addr: {
+              url_list: ["https://example.com/video-fallback.mp4"],
+            },
+          },
+        ],
+        dynamic_cover: {
+          url_list: ["https://example.com/video-fallback-cover.jpg"],
+        },
+      },
+    },
+    { sourceUrl: "https://www.douyin.com/video/70003" },
+  )
+
+  assert.equal(video.type, "video")
+  assert.equal(video.video.url, "https://example.com/video-fallback.mp4")
+  assert.equal(video.cover, "https://example.com/video-fallback-cover.jpg")
+})
+
 test("douyin launch options support sandbox override for container environments", () => {
   const previous = process.env.PUPPETEER_DISABLE_SANDBOX
   process.env.PUPPETEER_DISABLE_SANDBOX = "true"
