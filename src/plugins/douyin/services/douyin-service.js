@@ -125,6 +125,42 @@ function resolveChromeExecutablePath() {
   return ""
 }
 
+function shouldDisableSandbox() {
+  const override = normalizeString(
+    process.env.PUPPETEER_DISABLE_SANDBOX || process.env.CHROME_NO_SANDBOX,
+  ).toLowerCase()
+  if (["1", "true", "yes", "on"].includes(override)) return true
+  if (["0", "false", "no", "off"].includes(override)) return false
+  if (process.platform !== "linux") return false
+  if (typeof process.getuid === "function" && process.getuid() === 0) return true
+  return Boolean(process.env.container || process.env.DOCKER_CONTAINER)
+}
+
+function buildLaunchOptions({ profileDir = "" } = {}) {
+  const executablePath = resolveChromeExecutablePath()
+  const args = [
+    "--disable-blink-features=AutomationControlled",
+    "--no-first-run",
+    "--no-default-browser-check",
+    "--disable-gpu",
+    "--disable-dev-shm-usage",
+    "--window-size=1440,1200",
+  ]
+
+  if (shouldDisableSandbox()) {
+    args.push("--disable-setuid-sandbox", "--no-sandbox", "--no-zygote")
+  }
+
+  const options = {
+    headless: "new",
+    ignoreDefaultArgs: ["--enable-automation"],
+    args,
+  }
+  if (profileDir) options.userDataDir = profileDir
+  if (executablePath) options.executablePath = executablePath
+  return options
+}
+
 function parseDataUrl(dataUrl = "") {
   const source = String(dataUrl || "").trim()
   const matched = source.match(/^data:([^;,]+)?;base64,(.+)$/)
@@ -713,22 +749,7 @@ class DouyinService {
   }
 
   getLoginLaunchOptions(profileDir) {
-    const executablePath = resolveChromeExecutablePath()
-    const options = {
-      headless: "new",
-      userDataDir: profileDir,
-      ignoreDefaultArgs: ["--enable-automation"],
-      args: [
-        "--disable-blink-features=AutomationControlled",
-        "--no-first-run",
-        "--no-default-browser-check",
-        "--disable-gpu",
-        "--disable-dev-shm-usage",
-        "--window-size=1440,1200",
-      ],
-    }
-    if (executablePath) options.executablePath = executablePath
-    return options
+    return buildLaunchOptions({ profileDir })
   }
 
   async prepareLoginPage(page) {
@@ -1207,19 +1228,7 @@ class DouyinService {
   }
 
   async fetchRenderedAwemePage(url, auth = null) {
-    const browser = await puppeteer.launch({
-      headless: "new",
-      executablePath: resolveChromeExecutablePath() || undefined,
-      ignoreDefaultArgs: ["--enable-automation"],
-      args: [
-        "--disable-blink-features=AutomationControlled",
-        "--no-first-run",
-        "--no-default-browser-check",
-        "--disable-gpu",
-        "--disable-dev-shm-usage",
-        "--window-size=1440,1200",
-      ],
-    })
+    const browser = await puppeteer.launch(buildLaunchOptions())
 
     const page = await browser.newPage()
     try {
@@ -1497,6 +1506,7 @@ class DouyinService {
 }
 
 export {
+  buildLaunchOptions,
   extractFirstDouyinUrlFromText,
   extractFirstDouyinUrlFromValue,
   formatCount,

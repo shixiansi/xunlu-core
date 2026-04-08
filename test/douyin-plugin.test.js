@@ -15,6 +15,7 @@ import {
   sendVideoMedia,
 } from "../src/plugins/douyin/controllers/handlers.js"
 import DouyinService, {
+  buildLaunchOptions,
   extractFirstDouyinUrlFromText,
   normalizeDouyinAweme,
 } from "../src/plugins/douyin/services/douyin-service.js"
@@ -378,6 +379,22 @@ test("douyin aweme normalization supports video and note payloads", () => {
   assert.equal(note.type, "note")
   assert.equal(note.images.length, 2)
   assert.equal(note.link, "https://www.douyin.com/note/70002")
+})
+
+test("douyin launch options support sandbox override for container environments", () => {
+  const previous = process.env.PUPPETEER_DISABLE_SANDBOX
+  process.env.PUPPETEER_DISABLE_SANDBOX = "true"
+
+  try {
+    const options = buildLaunchOptions({ profileDir: path.join(tempDouyinDir, "profile") })
+    assert.equal(options.userDataDir, path.join(tempDouyinDir, "profile"))
+    assert.ok(options.args.includes("--no-sandbox"))
+    assert.ok(options.args.includes("--disable-setuid-sandbox"))
+    assert.ok(options.args.includes("--no-zygote"))
+  } finally {
+    if (previous === undefined) delete process.env.PUPPETEER_DISABLE_SANDBOX
+    else process.env.PUPPETEER_DISABLE_SANDBOX = previous
+  }
 })
 
 test("douyin video parse sends summary, video media and comment forward", async () => {
