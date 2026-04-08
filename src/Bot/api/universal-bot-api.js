@@ -1377,6 +1377,9 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
         .map(i => ({
           id: i.id,
           plugin: i.plugin,
+          pluginTitle: i.pluginTitle,
+          pluginShortName: i.pluginShortName,
+          pluginAliases: i.pluginAliases,
           reg: i.reg,
           event: i.event,
           priority: i.priority,
@@ -1394,6 +1397,25 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
         return String(a.reg || "").localeCompare(String(b.reg || ""))
       })
 
+      return items
+    },
+
+    listPlugins() {
+      if (!bot || typeof bot !== "object") {
+        throw new Error("[listPlugins] requires BaseBot instance")
+      }
+
+      const items = Object.values(bot.pluginCatalog || {})
+        .filter(i => i && typeof i === "object")
+        .map(i => ({
+          name: i.name,
+          title: i.title,
+          shortName: i.shortName,
+          aliases: i.aliases,
+          helpHidden: Boolean(i.helpHidden),
+        }))
+
+      items.sort((a, b) => String(a.title || a.name || "").localeCompare(String(b.title || b.name || "")))
       return items
     },
 

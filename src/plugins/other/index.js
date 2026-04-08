@@ -12,6 +12,9 @@ import { createRouter } from "./routes/index.js"
 
 export default {
   name: "other",
+  title: "其他功能",
+  shortName: "其他",
+  aliases: ["其他功能", "其他"],
   register: handlers.register,
   apiRoutes(router) {
     router.use(createRouter({ name: "other" }))

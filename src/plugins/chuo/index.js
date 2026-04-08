@@ -11,6 +11,9 @@ import * as handlers from "./controllers/handlers.js"
 
 export default {
   name: "chuo",
+  title: "戳一戳",
+  shortName: "戳",
+  aliases: ["戳一戳", "戳"],
   register: handlers.register,
   onBotEvent: handlers.onBotEvent,
 }

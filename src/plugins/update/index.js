@@ -12,6 +12,9 @@ import { createRouter } from "./routes/index.js"
 
 export default {
   name: "update",
+  title: "更新",
+  shortName: "更新",
+  aliases: ["更新"],
   register: handlers.register,
   apiRoutes(router) {
     router.use(createRouter({ name: "example" }))

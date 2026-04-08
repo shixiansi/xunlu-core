@@ -136,6 +136,9 @@ function deriveCapUpdate({ capBefore, attempts, successTimes }) {
 
 export default {
   name: "dianzan",
+  title: "点赞",
+  shortName: "赞",
+  aliases: ["点赞", "赞"],
   register(botApi) {
     if (!botApi?.registerCommand) return
 

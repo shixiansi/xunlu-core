@@ -342,6 +342,7 @@ export default class BaseBot {
       options.renderer && typeof options.renderer.render === "function" ? options.renderer : Render
     this.scheduledTasks = []
     this.plugins = {}
+    this.pluginCatalog = {}
     this.groupReply = {}
     this.privateReply = {}
     this.onMount = []
@@ -366,6 +367,7 @@ export default class BaseBot {
     const cacheBust = options.cacheBust !== false
 
     this.plugins = {}
+    this.pluginCatalog = {}
     this.onMount = []
 
     await this.loadBotPlugins({ cacheBust })
@@ -405,8 +407,17 @@ export default class BaseBot {
   async registerPlugin(plugin) {
     if (!plugin.implementation?.register) return
     let idx = 1
+    this.pluginCatalog[plugin.name] = {
+      name: plugin.name,
+      title: plugin.title || plugin.name,
+      shortName: plugin.shortName || plugin.title || plugin.name,
+      aliases: Array.isArray(plugin.aliases) ? plugin.aliases : [plugin.name],
+      helpHidden: Boolean(plugin.helpHidden),
+      entryPath: plugin.entryPath,
+      rootDir: plugin.rootDir,
+    }
     const pluginAPI = {
-      registerCommand: this.createCommandRegistrar(plugin.name, idx),
+      registerCommand: this.createCommandRegistrar(plugin, idx),
       contextReply: this.createContextReplyHandler(),
       setTask: this.collectTimerTasks(),
       callFnc: this.callPluginFnc(),
@@ -769,9 +780,24 @@ export default class BaseBot {
     return await this.invokeMatchedCommand(command, ctx)
   }
 
-  createCommandRegistrar(pname, idx) {
+  createCommandRegistrar(pluginMeta, idx) {
     return (command, handler) => {
       if (!command || !handler) return
+
+      const pname =
+        pluginMeta && typeof pluginMeta === "object" ? String(pluginMeta.name || "") : String(pluginMeta || "")
+      const ptitle =
+        pluginMeta && typeof pluginMeta === "object"
+          ? String(pluginMeta.title || pluginMeta.name || "")
+          : String(pluginMeta || "")
+      const pshort =
+        pluginMeta && typeof pluginMeta === "object"
+          ? String(pluginMeta.shortName || pluginMeta.title || pluginMeta.name || "")
+          : String(pluginMeta || "")
+      const paliases =
+        pluginMeta && typeof pluginMeta === "object" && Array.isArray(pluginMeta.aliases)
+          ? pluginMeta.aliases
+          : [pname]
 
       // 支持：registerCommand(["^xx$", "message", 5000, { example, desc }], handler)
       // 也兼容：registerCommand({ reg/pattern, event, priority, help/example/desc }, handler)
@@ -815,6 +841,9 @@ export default class BaseBot {
       this.plugins[`${pname}-${reg == "" ? idx : reg}`] = {
         id: `${pname}-${idx}`,
         plugin: pname,
+        pluginTitle: ptitle,
+        pluginShortName: pshort,
+        pluginAliases: paliases,
         reg,
         event,
         priority,

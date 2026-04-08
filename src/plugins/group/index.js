@@ -12,6 +12,9 @@ import { createRouter } from "./routes/index.js";
 
 export default {
   name: "group",
+  title: "群管",
+  shortName: "群管",
+  aliases: ["群管", "群管理"],
   register: handlers.register,
   apiRoutes(router) {
     router.use(createRouter({ name: "group" }));

@@ -200,6 +200,15 @@ class Puppeteer extends Renderer {
     try {
       page = await this.browser.newPage()
 
+      const viewportWidth = Number(data.viewportWidth || 0)
+      const viewportHeight = Number(data.viewportHeight || 0)
+      if (viewportWidth > 0 || viewportHeight > 0) {
+        await page.setViewport({
+          width: Math.max(320, Math.round(viewportWidth || 1280)),
+          height: Math.max(320, Math.round(viewportHeight || 900)),
+        })
+      }
+
       // 修复：路径拼接（正确的file协议格式）
       const fileUrl = `file:///${path.resolve(savePath).replace(/\\/g, "/")}`
       logger.debug(`[screenshot] 访问模板：${fileUrl}`)

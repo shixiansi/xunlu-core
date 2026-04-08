@@ -2,6 +2,20 @@ import fs from "fs";
 import path from "path";
 import { pathToFileURL } from "url";
 
+function uniqueTextList(values = []) {
+  const seen = new Set()
+  const list = []
+  for (const value of values) {
+    const text = String(value || "").trim()
+    if (!text) continue
+    const key = text.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    list.push(text)
+  }
+  return list
+}
+
 // 只做模块加载，不主动创建 express 对象或调用 register
 // 调用方负责根据运行上下文决定是否调用 plugin.register(bot)
 export async function loadPlugins(dir, options = {}) {
@@ -41,8 +55,15 @@ export async function loadPlugins(dir, options = {}) {
       loadedTargets.add(baseUrl);
       const implementation = mod.default || mod;
       const name = implementation.name || path.basename(target, ".js");
+      const title = String(implementation.title ?? implementation.displayName ?? name).trim() || name
+      const shortName = String(implementation.shortName ?? implementation.alias ?? title).trim() || title
+      const aliases = uniqueTextList([name, title, shortName, ...(implementation.aliases || [])])
       const plugin = {
         name,
+        title,
+        shortName,
+        aliases,
+        helpHidden: Boolean(implementation.helpHidden),
         implementation,
         entryPath: target,
         rootDir: stat.isDirectory() ? full : path.dirname(target),

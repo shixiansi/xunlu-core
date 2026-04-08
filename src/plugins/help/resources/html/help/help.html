@@ -14,7 +14,9 @@
     <div class="h-meta">
       <div class="h-badge">生成时间 {{generatedAt}}</div>
       <div class="h-badge">插件 {{pluginCount}}</div>
-      <div class="h-badge">指令 {{commandCount}}</div>
+      <div class="h-badge">功能 {{featureCount}}</div>
+      <div class="h-badge">消息 {{messageCount}}</div>
+      <div class="h-badge">自动 {{autoCount}}</div>
       {{if query}}
       <div class="h-badge">筛选 {{queryType}}：{{query}}</div>
       {{/if}}
@@ -23,32 +25,90 @@
 
   <div class="h-body">
     {{if plugins && plugins.length}}
-      {{each plugins p}}
-      <div class="plugin">
-        <div class="plugin-head">
-          <div class="plugin-name">{{p.name}}</div>
-          <div class="plugin-count">{{p.count}} 条</div>
+      {{if summaryMode}}
+        <div class="plugin-overview-grid">
+          {{each plugins p}}
+          <div class="plugin plugin-summary-card">
+            <div class="plugin-head">
+              <div>
+                <div class="plugin-name">{{p.title}}</div>
+                <div class="plugin-sub">{{p.summaryText}}</div>
+              </div>
+              <div class="plugin-badges">
+                <div class="plugin-chip">{{p.count}} 项</div>
+              </div>
+            </div>
+            <div class="plugin-summary-main">
+              <div class="plugin-summary-short">简称：{{p.shortName||p.title}}</div>
+              {{if p.aliasText}}
+              <div class="plugin-summary-alias">别名：{{p.aliasText}}</div>
+              {{/if}}
+              <div class="plugin-summary-hint">查看详情：{{p.detailHint}}</div>
+            </div>
+          </div>
+          {{/each}}
         </div>
-        {{if p.commands && p.commands.length}}
-          <div class="cmd-grid">
-            {{each p.commands c}}
-            <div class="cmd">
-              <div class="cmd-example"><code>{{c.example}}</code></div>
-              <div class="cmd-desc">{{c.desc}}</div>
-              {{if c.event && c.event !== 'message'}}
-              <div class="cmd-tag">event: {{c.event}}</div>
+      {{else}}
+        {{each plugins p}}
+        <div class="plugin">
+          <div class="plugin-head">
+            <div>
+              <div class="plugin-name">{{p.title}}</div>
+              <div class="plugin-sub">{{p.summaryText}}</div>
+              {{if p.aliasText}}
+              <div class="plugin-sub">别名：{{p.aliasText}}</div>
               {{/if}}
             </div>
+            <div class="plugin-badges">
+              <div class="plugin-chip">{{p.count}} 项</div>
+              {{if p.commandCount}}
+              <div class="plugin-chip">消息 {{p.commandCount}}</div>
+              {{/if}}
+              {{if p.autoCount}}
+              <div class="plugin-chip plugin-chip-auto">自动 {{p.autoCount}}</div>
+              {{/if}}
+            </div>
+          </div>
+          {{if p.detailHint}}
+          <div class="plugin-detail-hint">快捷查看：{{p.detailHint}}</div>
+          {{/if}}
+          {{if p.sections && p.sections.length}}
+            {{each p.sections s}}
+            <div class="plugin-section plugin-section-{{s.key}}">
+              <div class="section-head">
+                <div class="section-title">{{s.title}}</div>
+                <div class="section-desc">{{s.desc}}</div>
+              </div>
+              <div class="cmd-grid">
+                {{each s.items c}}
+                <div class="cmd cmd-{{c.modeClass}}">
+                  <div class="cmd-top">
+                    <div class="cmd-example"><code>{{c.example}}</code></div>
+                    <div class="cmd-flags">
+                      <div class="cmd-badge cmd-badge-{{c.modeClass}}">{{c.triggerLabel}}</div>
+                      {{if c.eventCategory}}
+                      <div class="cmd-badge cmd-badge-event">{{c.eventCategory}}</div>
+                      {{/if}}
+                    </div>
+                  </div>
+                  <div class="cmd-desc">{{c.desc}}</div>
+                  {{if c.eventLine}}
+                  <div class="cmd-tag">{{c.eventLine}}</div>
+                  {{/if}}
+                </div>
+                {{/each}}
+              </div>
+            </div>
             {{/each}}
-          </div>
-        {{else}}
-          <div class="cmd">
-            <div class="cmd-example"><code>（暂无指令）</code></div>
-            <div class="cmd-desc">该插件当前未注册可用命令。</div>
-          </div>
-        {{/if}}
-      </div>
-      {{/each}}
+          {{else}}
+            <div class="cmd">
+              <div class="cmd-example"><code>（暂无指令）</code></div>
+              <div class="cmd-desc">该插件当前未注册可展示的功能。</div>
+            </div>
+          {{/if}}
+        </div>
+        {{/each}}
+      {{/if}}
     {{else}}
       <div class="cmd">
         <div class="cmd-example"><code>（无匹配）</code></div>
@@ -56,7 +116,7 @@
       </div>
     {{/if}}
 
-    <div class="note">用法：帮助 / 帮助 &lt;插件名&gt; / 帮助 &lt;关键词&gt;（示例与说明为自动生成或由插件提供）。</div>
+    <div class="note">用法：帮助 / 帮助 &lt;插件名或简称&gt; / &lt;插件名或简称&gt;帮助 / 帮助 &lt;关键词&gt;。默认只展示大插件总览，带上插件名或简称才会展开对应插件的详细功能。</div>
   </div>
 </div>
 {{/block}}

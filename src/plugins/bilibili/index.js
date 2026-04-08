@@ -11,6 +11,9 @@ import * as handlers from "./controllers/handlers.js"
 
 export default {
   name: "bilibili-plugin",
+  title: "B站",
+  shortName: "B站",
+  aliases: ["B站", "哔哩哔哩", "bilibili"],
   register: handlers.register,
   onBotEvent: handlers.onBotEvent,
   // 新增接口：插件初始化和销毁

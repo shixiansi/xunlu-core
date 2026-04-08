@@ -12,6 +12,9 @@ import { createRouter } from "./routes/index.js"
 
 export default {
   name: "set",
+  title: "设置",
+  shortName: "设置",
+  aliases: ["设置"],
   register: handlers.register,
   apiRoutes(router) {
     router.use(createRouter({ name: "set" }))

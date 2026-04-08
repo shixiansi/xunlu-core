@@ -731,6 +731,11 @@ class MilkyAdapter {
 
     const list = Array.isArray(forwardMsg) ? forwardMsg : forwardMsg ? [forwardMsg] : []
     const tempUrlCache = new Map()
+    const isQqNtMediaUrl = input => {
+      if (input === undefined || input === null) return false
+      const raw = String(input).trim()
+      return /^https:\/\/multimedia\.nt\.qq\.com\.cn\//i.test(raw)
+    }
     const isDirectMediaUri = input => {
       if (input === undefined || input === null) return false
       const raw = String(input).trim()
@@ -761,6 +766,8 @@ class MilkyAdapter {
       const type = String(seg.type || "").toLowerCase()
       if (type !== "image") return this.dealMilkyMsg(seg)
 
+      const resource_id = toResourceId(seg)
+
       const data = seg.data && typeof seg.data === "object" ? seg.data : {}
       const directUriRaw =
         data?.url ??
@@ -776,7 +783,9 @@ class MilkyAdapter {
         data?.file ??
         seg?.file ??
         ""
-      if (isDirectMediaUri(directUriRaw)) {
+      const preferResourceTempUrl = Boolean(resource_id) && isQqNtMediaUrl(directUriRaw)
+
+      if (isDirectMediaUri(directUriRaw) && !preferResourceTempUrl) {
         return this.dealMilkyMsg({
           ...seg,
           data: {
@@ -789,7 +798,6 @@ class MilkyAdapter {
         })
       }
 
-      const resource_id = toResourceId(seg)
       if (!resource_id) return this.dealMilkyMsg(seg)
 
       let url = tempUrlCache.get(resource_id) || ""
@@ -809,6 +817,9 @@ class MilkyAdapter {
         }
       }
 
+      if (!url && isDirectMediaUri(directUriRaw)) {
+        url = directUriRaw
+      }
       if (!url) return this.dealMilkyMsg(seg)
 
       const patched = {

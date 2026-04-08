@@ -12,6 +12,9 @@ import { createRouter } from "./routes/index.js";
 
 export default {
   name: "example",
+  title: "示例",
+  shortName: "例",
+  aliases: ["示例", "例"],
   register: handlers.register,
   apiRoutes(router) {
     router.use(createRouter({ name: "example" }));

@@ -36,6 +36,111 @@ function listPluginNamesFromFs() {
   }
 }
 
+function listPluginMetasFromFs() {
+  return listPluginNamesFromFs().map(name => ({
+    name,
+    title: name,
+    shortName: name,
+    aliases: [name],
+    helpHidden: false,
+  }))
+}
+
+function uniqueTextList(values = []) {
+  const seen = new Set()
+  const list = []
+  for (const value of values) {
+    const text = String(value || "").trim()
+    if (!text) continue
+    const key = text.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    list.push(text)
+  }
+  return list
+}
+
+function normalizeSearchKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, "")
+}
+
+function normalizePluginMeta(item) {
+  const name = String(item?.name ?? item?.plugin ?? "").trim()
+  if (!name) return null
+
+  const title = String(item?.title ?? item?.pluginTitle ?? item?.displayName ?? name).trim() || name
+  const shortName =
+    String(item?.shortName ?? item?.pluginShortName ?? item?.abbr ?? item?.alias ?? title).trim() || title
+  const aliases = uniqueTextList([
+    name,
+    title,
+    shortName,
+    ...(Array.isArray(item?.aliases) ? item.aliases : []),
+    ...(Array.isArray(item?.pluginAliases) ? item.pluginAliases : []),
+  ])
+
+  return {
+    name,
+    title,
+    shortName,
+    aliases,
+    helpHidden: Boolean(item?.helpHidden),
+  }
+}
+
+function mergePluginMeta(base, extra) {
+  if (!base) return extra
+  if (!extra) return base
+
+  return {
+    name: base.name || extra.name,
+    title: base.title || extra.title || base.name,
+    shortName: base.shortName || extra.shortName || base.title || extra.title || base.name,
+    aliases: uniqueTextList([...(base.aliases || []), ...(extra.aliases || [])]),
+    helpHidden: Boolean(base.helpHidden || extra.helpHidden),
+  }
+}
+
+function buildPluginMetaMap(rawPlugins, items) {
+  const map = new Map()
+  const addMeta = raw => {
+    const meta = normalizePluginMeta(raw)
+    if (!meta) return
+    map.set(meta.name, mergePluginMeta(map.get(meta.name), meta))
+  }
+
+  for (const plugin of rawPlugins || []) addMeta(plugin)
+  for (const item of items || []) {
+    addMeta({
+      name: item.plugin,
+      title: item.pluginTitle,
+      shortName: item.pluginShortName,
+      aliases: item.pluginAliases,
+    })
+  }
+  if (map.size === 0) {
+    for (const plugin of listPluginMetasFromFs()) addMeta(plugin)
+  }
+
+  return map
+}
+
+function resolvePluginQuery(query, pluginMetaMap) {
+  const qKey = normalizeSearchKey(query)
+  if (!qKey) return null
+
+  for (const meta of pluginMetaMap.values()) {
+    const aliasList = Array.isArray(meta.aliases) ? meta.aliases : [meta.name, meta.title, meta.shortName]
+    if (aliasList.some(alias => normalizeSearchKey(alias) === qKey)) {
+      return meta
+    }
+  }
+  return null
+}
+
 function pickHelpExample(help) {
   if (!help) return ""
   const ex = help.example ?? help.examples
@@ -239,6 +344,152 @@ function autoDescFromExample(example, plugin) {
   return `执行 ${plugin || "插件"} 指令`
 }
 
+function isMessageEvent(event) {
+  const value = String(event || "message").trim() || "message"
+  return value === "message" || value.startsWith("message.")
+}
+
+function getEventMeta(event) {
+  const value = String(event || "message").trim() || "message"
+
+  const exactMap = {
+    message: {
+      title: "消息指令",
+      category: "消息事件",
+      detail: "发送对应消息后触发",
+    },
+    "message.group.*": {
+      title: "群消息监听",
+      category: "消息事件",
+      detail: "收到群聊消息时自动触发",
+    },
+    "message.private.*": {
+      title: "私聊消息监听",
+      category: "消息事件",
+      detail: "收到私聊或临时消息时自动触发",
+    },
+    "notice.group.poke": {
+      title: "戳一戳互动",
+      category: "通知事件",
+      detail: "被群成员戳一戳时自动触发",
+    },
+    "notice.group.recall": {
+      title: "群消息撤回",
+      category: "通知事件",
+      detail: "检测到群消息被撤回时自动触发",
+    },
+    "notice.private.recall": {
+      title: "私聊消息撤回",
+      category: "通知事件",
+      detail: "检测到私聊消息被撤回时自动触发",
+    },
+    "request.private.friend": {
+      title: "好友申请",
+      category: "请求事件",
+      detail: "收到好友申请时自动触发",
+    },
+    "request.group.add": {
+      title: "加群申请",
+      category: "请求事件",
+      detail: "收到用户加群申请时自动触发",
+    },
+    "request.group.invite": {
+      title: "群邀请/入群审核",
+      category: "请求事件",
+      detail: "收到群邀请或邀请入群审核时自动触发",
+    },
+    "notice.group.invited": {
+      title: "被邀请入群",
+      category: "通知事件",
+      detail: "Bot 被邀请进群时自动触发",
+    },
+    "notice.group.increase": {
+      title: "群成员增加",
+      category: "通知事件",
+      detail: "检测到成员加入或 Bot 进群时自动触发",
+    },
+    "notice.group.decrease": {
+      title: "群成员减少",
+      category: "通知事件",
+      detail: "检测到成员退出、被移出或 Bot 退群时自动触发",
+    },
+    "notice.group.admin": {
+      title: "管理员变更",
+      category: "通知事件",
+      detail: "检测到群管理员变更时自动触发",
+    },
+    "notice.group.ban": {
+      title: "群禁言变化",
+      category: "通知事件",
+      detail: "检测到群禁言事件时自动触发",
+    },
+    "notice.group.allban": {
+      title: "全员禁言变化",
+      category: "通知事件",
+      detail: "检测到全员禁言状态变化时自动触发",
+    },
+  }
+
+  if (exactMap[value]) return exactMap[value]
+
+  if (value.startsWith("message.group")) {
+    return {
+      title: "群消息监听",
+      category: "消息事件",
+      detail: "收到群聊消息时自动触发",
+    }
+  }
+
+  if (value.startsWith("message.private")) {
+    return {
+      title: "私聊消息监听",
+      category: "消息事件",
+      detail: "收到私聊消息时自动触发",
+    }
+  }
+
+  if (value.startsWith("message.")) {
+    return {
+      title: "消息监听",
+      category: "消息事件",
+      detail: `收到 ${value} 时自动触发`,
+    }
+  }
+
+  if (value.startsWith("notice.")) {
+    return {
+      title: "通知响应",
+      category: "通知事件",
+      detail: `收到 ${value} 通知时自动触发`,
+    }
+  }
+
+  if (value.startsWith("request.")) {
+    return {
+      title: "请求处理",
+      category: "请求事件",
+      detail: `收到 ${value} 请求时自动触发`,
+    }
+  }
+
+  return {
+    title: value,
+    category: "事件监听",
+    detail: `监听 ${value} 事件时自动触发`,
+  }
+}
+
+function joinUniqueText(parts, separator = "；") {
+  const list = []
+  for (const part of parts) {
+    const text = String(part || "").trim()
+    if (!text) continue
+    if (list.some(existing => existing.includes(text) || text.includes(existing))) continue
+    list.push(text)
+  }
+  return list.join(separator)
+}
+
 function normalizePluginName(item) {
   const p = item?.plugin
   if (p) return String(p)
@@ -250,30 +501,84 @@ function normalizePluginName(item) {
 function normalizeHelpItem(item) {
   const plugin = normalizePluginName(item)
   const reg = String(item?.reg || "")
+  const event = String(item?.event || "message")
   const help = isPlainObject(item?.help) ? item.help : null
+  const hasReg = Boolean(reg.trim())
+  const isMessage = isMessageEvent(event)
+  const mode = hasReg && isMessage ? "command" : "auto"
+  const eventMeta = getEventMeta(event)
 
-  // 空 reg 通常是内部监听器/非消息事件，不展示到帮助里（避免出现“(指令)”）
-  if (!reg.trim()) {
-    if (!help) return null
-  }
+  // 空 reg 的消息监听器通常属于内部逻辑，避免塞满帮助页；非消息事件则展示为自动触发能力
+  if (!hasReg && !help && isMessage) return null
 
-  const example = pickHelpExample(help) || autoExampleFromReg(reg) || "(指令)"
-  const desc = pickHelpDesc(help) || autoDescFromExample(example, plugin)
+  const example = pickHelpExample(help) || autoExampleFromReg(reg) || (mode === "auto" ? eventMeta.title : "(指令)")
+  const helpDesc = pickHelpDesc(help)
+  const desc =
+    mode === "command"
+      ? helpDesc || autoDescFromExample(example, plugin)
+      : joinUniqueText([helpDesc, hasReg ? autoDescFromExample(example, plugin) : "", eventMeta.detail])
 
   return {
     plugin,
+    pluginTitle: String(item?.pluginTitle || "").trim(),
+    pluginShortName: String(item?.pluginShortName || "").trim(),
+    pluginAliases: Array.isArray(item?.pluginAliases) ? item.pluginAliases : [],
     example: clampText(example, 60),
-    desc: clampText(desc, 90),
-    event: String(item?.event || "message"),
+    desc: clampText(desc, 96),
+    event,
+    mode,
+    modeClass: mode,
+    triggerLabel: mode === "command" ? "消息指令" : "自动触发",
+    eventCategory: mode === "command" ? "" : eventMeta.category,
+    eventTitle: eventMeta.title,
+    eventLine: mode === "command" ? "" : `监听事件：${event}`,
     priority: Number(item?.priority ?? 5000),
   }
 }
 
-function groupByPlugin(pluginNames, items) {
-  const map = new Map()
-  for (const name of pluginNames) {
-    map.set(name, { name, commands: [] })
+function buildPluginDetailHint(meta) {
+  const title = String(meta?.title || meta?.name || "").trim()
+  const shortName = String(meta?.shortName || "").trim()
+  const variants = uniqueTextList([
+    title ? `${title}帮助` : "",
+    shortName && shortName !== title ? `${shortName}帮助` : "",
+    shortName ? `帮助 ${shortName}` : "",
+  ])
+  return variants.join(" / ")
+}
+
+function buildPluginSections(commands) {
+  const sectionDefs = [
+    {
+      key: "command",
+      title: "消息指令",
+      desc: "发送对应消息即可触发",
+      items: commands.filter(i => i.mode === "command"),
+    },
+    {
+      key: "auto",
+      title: "自动触发",
+      desc: "满足事件条件后自动执行，无需手动发送指令",
+      items: commands.filter(i => i.mode !== "command"),
+    },
+  ]
+
+  const sections = sectionDefs
+    .filter(section => section.items.length > 0)
+    .map(section => ({
+      ...section,
+      count: section.items.length,
+    }))
+
+  return {
+    sections,
+    commandCount: sections.find(section => section.key === "command")?.count || 0,
+    autoCount: sections.find(section => section.key === "auto")?.count || 0,
   }
+}
+
+function groupByPlugin(items, pluginMetaMap) {
+  const map = new Map()
   for (const it of items) {
     const p = it.plugin || "unknown"
     if (!map.has(p)) map.set(p, { name: p, commands: [] })
@@ -283,55 +588,112 @@ function groupByPlugin(pluginNames, items) {
   const list = [...map.values()]
   for (const p of list) {
     p.commands.sort((a, b) => {
+      if (a.mode !== b.mode) return a.mode === "command" ? -1 : 1
       if (a.priority !== b.priority) return a.priority - b.priority
+      if (a.event !== b.event) return a.event.localeCompare(b.event)
       return a.example.localeCompare(b.example)
+    })
+    Object.assign(p, buildPluginSections(p.commands))
+    p.count = p.commands.length
+    const meta = pluginMetaMap.get(p.name) || normalizePluginMeta({ name: p.name })
+    p.title = meta?.title || p.name
+    p.shortName = meta?.shortName || p.title
+    p.aliases = meta?.aliases || [p.name]
+    p.aliasText = uniqueTextList((p.aliases || []).filter(alias => alias !== p.title)).join(" / ")
+    p.detailHint = buildPluginDetailHint(meta)
+    const summaryParts = []
+    if (p.commandCount) summaryParts.push(`${p.commandCount} 条消息指令`)
+    if (p.autoCount) summaryParts.push(`${p.autoCount} 项自动触发`)
+    p.summaryText = summaryParts.join(" / ") || "暂无功能"
+  }
+
+  return list.sort((a, b) => String(a.title || a.name).localeCompare(String(b.title || b.name)))
+}
+
+function buildPluginOverview(pluginMetaMap, groupedPlugins) {
+  const groupedMap = new Map(groupedPlugins.map(item => [item.name, item]))
+  const cards = []
+
+  for (const meta of pluginMetaMap.values()) {
+    if (meta.helpHidden) continue
+    const grouped = groupedMap.get(meta.name)
+    cards.push({
+      name: meta.name,
+      title: meta.title,
+      shortName: meta.shortName,
+      aliases: meta.aliases,
+      aliasText: uniqueTextList((meta.aliases || []).filter(alias => alias !== meta.title)).join(" / "),
+      count: grouped?.count || 0,
+      commandCount: grouped?.commandCount || 0,
+      autoCount: grouped?.autoCount || 0,
+      summaryText: grouped?.summaryText || "暂无可展示功能",
+      detailHint: buildPluginDetailHint(meta),
     })
   }
 
-  return list.sort((a, b) => a.name.localeCompare(b.name))
+  return cards.sort((a, b) => String(a.title || a.name).localeCompare(String(b.title || b.name)))
 }
 
-function filterByQuery(items, query, pluginNamesSet) {
+function filterByQuery(items, query, pluginMetaMap) {
   const q = String(query || "").trim()
   if (!q) return { type: "all", query: "", items }
 
-  const lower = q.toLowerCase()
-  if (pluginNamesSet.has(lower)) {
-    return { type: "plugin", query: q, items: items.filter(i => String(i.plugin).toLowerCase() === lower) }
+  const pluginMeta = resolvePluginQuery(q, pluginMetaMap)
+  if (pluginMeta) {
+    return {
+      type: "plugin",
+      query: pluginMeta.title,
+      plugin: pluginMeta,
+      items: items.filter(i => String(i.plugin).toLowerCase() === String(pluginMeta.name).toLowerCase()),
+    }
   }
 
+  const lower = q.toLowerCase()
   return {
     type: "search",
     query: q,
     items: items.filter(i => {
       const ex = String(i.example || "").toLowerCase()
       const desc = String(i.desc || "").toLowerCase()
-      return ex.includes(lower) || desc.includes(lower) || String(i.plugin || "").toLowerCase().includes(lower)
+      const extra = [i.eventTitle, i.eventCategory, i.event].map(v => String(v || "").toLowerCase()).join(" ")
+      return (
+        ex.includes(lower) ||
+        desc.includes(lower) ||
+        extra.includes(lower) ||
+        [i.pluginTitle, i.pluginShortName, ...(i.pluginAliases || [])]
+          .map(v => String(v || "").toLowerCase())
+          .join(" ")
+          .includes(lower) ||
+        String(i.plugin || "").toLowerCase().includes(lower)
+      )
     }),
   }
 }
 
-async function replyHelp(ctx, query) {
+async function replyHelp(ctx, query, options = {}) {
   const rawList = typeof ctx?.listCommands === "function" ? ctx.listCommands() : []
   const items = Array.isArray(rawList) ? rawList.map(normalizeHelpItem).filter(Boolean) : []
+  const rawPlugins = typeof ctx?.listPlugins === "function" ? ctx.listPlugins() : []
+  const pluginMetaMap = buildPluginMetaMap(rawPlugins, items)
+  const filtered = filterByQuery(items, query, pluginMetaMap)
 
-  const pluginNames = listPluginNamesFromFs()
-  const pluginNamesSet = new Set(pluginNames.map(n => String(n).toLowerCase()))
-  const filtered = filterByQuery(items, query, pluginNamesSet)
+  if (options.strictPluginOnly && filtered.type !== "plugin") return false
 
-  let grouped = groupByPlugin(pluginNames, filtered.items)
-  if (filtered.type !== "all") {
-    grouped = grouped.filter(p => Array.isArray(p.commands) && p.commands.length > 0)
-  }
-  const pluginCount = grouped.length
-  const commandCount = grouped.reduce((sum, p) => sum + (p.commands?.length || 0), 0)
+  const groupedAll = groupByPlugin(items, pluginMetaMap)
+  const grouped = groupByPlugin(filtered.items, pluginMetaMap)
+  const overviewPlugins = buildPluginOverview(pluginMetaMap, groupedAll)
+  const summaryMode = filtered.type === "all"
+  const pluginCount = summaryMode ? overviewPlugins.length : grouped.length
+  const featureCount = grouped.reduce((sum, p) => sum + (p.count || 0), 0)
+  const messageCount = grouped.reduce((sum, p) => sum + (p.commandCount || 0), 0)
+  const autoCount = grouped.reduce((sum, p) => sum + (p.autoCount || 0), 0)
 
   const headerLine =
-    filtered.type === "all"
-      ? `插件帮助（共 ${pluginCount} 个插件 / ${commandCount} 条指令）`
+    summaryMode
+      ? `插件总览（共 ${pluginCount} 个大插件）`
       : filtered.type === "plugin"
-        ? `插件帮助：${filtered.query}（${commandCount} 条指令）`
-        : `搜索：${filtered.query}（${commandCount} 条匹配）`
+        ? `插件帮助：${filtered.query}（${featureCount} 项功能）`
+        : `搜索：${filtered.query}（${featureCount} 项匹配）`
 
   const data = {
     title: "插件帮助",
@@ -339,17 +701,18 @@ async function replyHelp(ctx, query) {
     generatedAt: nowText(),
     query: filtered.query,
     queryType: filtered.type,
+    summaryMode,
     pluginCount,
-    commandCount,
-    plugins: grouped.map(p => ({
-      name: p.name,
-      count: p.commands.length,
-      commands: p.commands,
-    })),
+    featureCount,
+    messageCount,
+    autoCount,
+    plugins: summaryMode ? overviewPlugins : grouped,
 
     // 截图分页（列表很长时）
     multiPage: true,
-    multiPageHeight: 3800,
+    multiPageHeight: 4200,
+    viewportWidth: 1680,
+    viewportHeight: 1280,
   }
 
   try {
@@ -360,12 +723,23 @@ async function replyHelp(ctx, query) {
   }
 
   // 降级文本输出（simulate 环境通常会走这里）
-  const lines = [headerLine, "", "用法：", "- 帮助", "- 帮助 <插件名>", "- 帮助 <关键词>", ""]
+  const lines = [headerLine, "", "用法：", "- 帮助", "- 帮助 <插件名或简称>", "- <插件名或简称>帮助", "- 帮助 <关键词>", ""]
+  if (summaryMode) {
+    for (const p of overviewPlugins) {
+      const short = p.shortName && p.shortName !== p.title ? `，简称：${p.shortName}` : ""
+      lines.push(`- ${p.title}${short}（${p.summaryText}）`)
+    }
+    return await ctx.reply(lines.join("\n").trim())
+  }
+
   for (const p of grouped) {
     if (!Array.isArray(p.commands) || p.commands.length === 0) continue
-    lines.push(`[${p.name}]`)
+    lines.push(`[${p.title}] ${p.summaryText}`)
+    if (p.aliasText) lines.push(`别名：${p.aliasText}`)
+    if (p.detailHint) lines.push(`查看：${p.detailHint}`)
     for (const c of p.commands.slice(0, 12)) {
-      lines.push(`- ${c.example}：${c.desc}`)
+      const label = [c.triggerLabel, c.eventCategory].filter(Boolean).join("·")
+      lines.push(`- [${label}] ${c.example}：${c.desc}`)
     }
     if (p.commands.length > 12) lines.push(`- ...(共 ${p.commands.length} 条)`)
     lines.push("")
@@ -376,14 +750,23 @@ async function replyHelp(ctx, query) {
 export function register(bot) {
   if (!bot || typeof bot.registerCommand !== "function") return
 
-  // 帮助 / 帮助 <插件名|关键词>
+  // 帮助 / 帮助 <插件名|简称|关键词>
   bot.registerCommand(
     ["^帮助(\\s+.*)?$",
-      { example: ["帮助", "帮助 diaoyu", "帮助 签到"], desc: "展示已加载插件的指令示例与说明" }],
+      { example: ["帮助", "帮助 钓鱼", "帮助 鱼"], desc: "默认展示大插件列表，带上插件名或简称可查看详细功能" }],
     async ctx => {
       const raw = String(ctx?.msg || "").trim()
       const rest = raw.replace(/^帮助/, "").trim()
       return await replyHelp(ctx, rest)
+    },
+  )
+
+  bot.registerCommand(
+    ["^([^\\s]{1,24})帮助$", 4500, { example: ["钓鱼帮助", "鱼帮助"], desc: "按插件名或简称查看该插件的详细帮助" }],
+    async ctx => {
+      const raw = String(ctx?.msg || "").trim()
+      const rest = raw.replace(/帮助$/, "").trim()
+      return await replyHelp(ctx, rest, { strictPluginOnly: true })
     },
   )
 }

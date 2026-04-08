@@ -12,6 +12,9 @@ import { createRouter } from "./routes/index.js";
 
 export default {
   name: "pixiv",
+  title: "P站",
+  shortName: "P站",
+  aliases: ["P站", "Pixiv", "pixiv"],
   register: handlers.register,
   apiRoutes(router) {
     router.use(createRouter({ name: "pixiv" }));
