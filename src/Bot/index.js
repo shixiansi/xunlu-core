@@ -891,6 +891,9 @@ export default class BaseBot {
       cfnc: callback,
       endMsg,
       timer: null,
+      isPrivate,
+      contextKey,
+      userId,
     }
 
     storage[contextKey][userId].unshift(newContext)
@@ -903,6 +906,9 @@ export default class BaseBot {
       cfnc: callback,
       endMsg,
       timer: this.setupTimeout(isPrivate, contextKey, userId, endMsg, ctx),
+      isPrivate,
+      contextKey,
+      userId,
     }
 
     storage[contextKey][userId].push(newContext)
@@ -1028,6 +1034,16 @@ export default class BaseBot {
       if (this.isContextValid(context)) {
         let res = await this.executeContextCallback(e, context)
         result.processed = true
+
+        if (!context.endMsg && !res && !context.timer) {
+          context.timer = this.setupTimeout(
+            context.isPrivate,
+            context.contextKey,
+            context.userId,
+            context.endMsg,
+            e,
+          )
+        }
 
         // 检查是否需要结束上下文
         if (this.shouldEndContext(e, context) && res) {

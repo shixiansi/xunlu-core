@@ -1,0 +1,88 @@
+.container {
+  width: 560px;
+  padding: 20px;
+  background:
+    radial-gradient(circle at top left, rgba(255, 244, 214, 0.95), rgba(255, 255, 255, 0.98) 40%),
+    linear-gradient(180deg, #fffdfa 0%, #fff8ef 100%);
+  box-sizing: border-box;
+}
+
+.version {
+  display: none;
+}
+
+.dg-card {
+  border-radius: 22px;
+  padding: 20px;
+  color: #231815;
+  font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(255, 248, 238, 0.98)),
+    #fff;
+  box-shadow: 0 18px 50px rgba(96, 56, 19, 0.12);
+}
+
+.dg-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dg-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 74px;
+  height: 34px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #ff9b54, #ff6b4a);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.dg-id {
+  font-size: 44px;
+  line-height: 1;
+  font-weight: 800;
+  color: #d45500;
+  letter-spacing: 0.02em;
+}
+
+.dg-name {
+  margin-top: 18px;
+  font-size: 34px;
+  line-height: 1.24;
+  font-weight: 800;
+  word-break: break-word;
+}
+
+.dg-artists {
+  margin-top: 10px;
+  font-size: 20px;
+  line-height: 1.4;
+  color: #6d4c41;
+}
+
+.dg-album {
+  margin-top: 8px;
+  font-size: 17px;
+  line-height: 1.4;
+  color: #8a6d63;
+}
+
+.dg-cover-wrap {
+  margin-top: 18px;
+  border-radius: 18px;
+  overflow: hidden;
+  background: #f6ede6;
+}
+
+.dg-cover {
+  display: block;
+  width: 100%;
+  max-height: 520px;
+  object-fit: cover;
+}

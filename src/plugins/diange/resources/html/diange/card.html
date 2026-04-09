@@ -1,0 +1,51 @@
+{{extend defaulthtml}}
+
+{{block 'css'}}
+<link rel="stylesheet" href="{{_res_path}}/html/diange/card.css" />
+{{/block}}
+
+{{block 'main'}}
+<div class="dg-card">
+  <div class="dg-head">
+    <div class="dg-badge">{{sourceLabel || "点歌"}}</div>
+    <div class="dg-id">{{songId}}</div>
+  </div>
+
+  <div class="dg-name">{{songName}}</div>
+  {{if artists}}
+  <div class="dg-artists">{{artists}}</div>
+  {{/if}}
+  {{if album}}
+  <div class="dg-album">《{{album}}》</div>
+  {{/if}}
+
+  {{if cover}}
+  <div class="dg-cover-wrap">
+    <img class="dg-cover" src="{{cover}}" alt="cover" />
+  </div>
+  {{/if}}
+</div>
+<script>
+  ;(function () {
+    const markReady = function () {
+      document.body.dataset.renderReady = "1"
+    }
+    const images = Array.from(document.images || [])
+    if (!images.length) {
+      markReady()
+      return
+    }
+    let left = images.length
+    const done = function () {
+      left -= 1
+      if (left <= 0) markReady()
+    }
+    images.forEach(function (img) {
+      if (img.complete) return done()
+      img.addEventListener("load", done, { once: true })
+      img.addEventListener("error", done, { once: true })
+    })
+    setTimeout(markReady, 3000)
+  })()
+</script>
+{{/block}}

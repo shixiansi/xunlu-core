@@ -1,0 +1,49 @@
+{{extend defaulthtml}}
+
+{{block 'css'}}
+<link rel="stylesheet" href="{{_res_path}}/html/diange/list.css" />
+{{/block}}
+
+{{block 'main'}}
+<div class="dg-list-card">
+  <div class="dg-list-head">
+    <div>
+      <div class="dg-list-badge">点歌候选</div>
+      <div class="dg-list-keyword">{{keyword}}</div>
+    </div>
+    <div class="dg-list-total">{{total}} 首</div>
+  </div>
+
+  <div class="dg-list-body">
+    {{each songs song}}
+    <div class="dg-song-item">
+      <div class="dg-song-index">{{song.index}}</div>
+      <div class="dg-song-main">
+        <div class="dg-song-title">
+          <div class="dg-song-name">{{song.name}}</div>
+          {{if song.sourceLabel}}
+          <div class="dg-song-source">{{song.sourceLabel}}</div>
+          {{/if}}
+        </div>
+        {{if song.artists}}
+        <div class="dg-song-meta">歌手：{{song.artists}}</div>
+        {{/if}}
+        {{if song.album}}
+        <div class="dg-song-meta">专辑：{{song.album}}</div>
+        {{/if}}
+        {{if song.songId}}
+        <div class="dg-song-id">ID {{song.songId}}</div>
+        {{/if}}
+      </div>
+    </div>
+    {{/each}}
+  </div>
+
+  {{if prompt}}
+  <div class="dg-list-foot">{{prompt}}</div>
+  {{/if}}
+</div>
+<script>
+  document.body.dataset.renderReady = "1"
+</script>
+{{/block}}
