@@ -1,4 +1,4 @@
-import { MilkyClient } from "@saltify/milky-node-sdk"
+﻿import { MilkyClient } from "@saltify/milky-node-sdk"
 // 导入通用消息类型（用于兼容判断）
 import { UniversalMessage, UniversalSegmentType } from "../message/universal-message.js"
 
@@ -837,14 +837,18 @@ class MilkyAdapter {
       return this.dealMilkyMsg(patched)
     }
 
+    const fallbackUserIdRaw = this.loginInfo?.uin ?? this.loginInfo?.user_id ?? globalThis.Bot?.uin ?? 10001
+    const fallbackUserId = Number(fallbackUserIdRaw)
+    const safeFallbackUserId = Number.isFinite(fallbackUserId) && fallbackUserId >= 10001 ? fallbackUserId : 10001
+
     return [
       {
         type: "forward",
         data: {
           messages: await Promise.all(list.map(async item => {
-            const uidRaw = item?.user_id ?? item?.uin ?? item?.id
+            const uidRaw = item?.user_id ?? item?.uin ?? item?.sender_id ?? item?.id
             const uid = Number(uidRaw)
-            const user_id = Number.isFinite(uid) && uid > 0 ? uid : 0
+            const user_id = Number.isFinite(uid) && uid >= 10001 ? uid : safeFallbackUserId
 
             const sender_name = String(item?.nickname ?? item?.sender_name ?? item?.name ?? "未知发送者")
 
@@ -893,3 +897,4 @@ class MilkyAdapter {
 }
 
 export default MilkyAdapter
+

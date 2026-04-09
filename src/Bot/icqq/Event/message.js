@@ -1,4 +1,4 @@
-import EventListener from "../EventListener.js"
+﻿import EventListener from "../EventListener.js"
 import GroupMessageDB from "../../../db/MessageDB.js"
 /**
  * 监听群聊消息
@@ -37,12 +37,14 @@ export default class messageEvent extends EventListener {
 
   async addMessage(e) {
     if (!e.group_id) return false
+    const rawMessage = Array.isArray(e?.segments) && e.segments.length ? e.segments : e.message
     await GroupMessageDB.saveMessage(e.group_id, {
       message_id: e.message_id,
       user_id: e.user_id,
-      message: e.message,
+      message: rawMessage,
       time: e.time,
       sender: e?.sender,
     })
   }
 }
+

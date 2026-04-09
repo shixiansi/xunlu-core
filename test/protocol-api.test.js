@@ -1,4 +1,4 @@
-import assert from "node:assert/strict"
+﻿import assert from "node:assert/strict"
 import path from "node:path"
 import test from "node:test"
 import { fileURLToPath } from "node:url"
@@ -9,6 +9,10 @@ import {
   sendLearningSegments,
 } from "../src/plugins/learning_chat/controllers/handlers.js"
 import { applyDerivedFieldsFromUniversalSegments } from "../src/Bot/message/context.js"
+import { UniversalMessage } from "../src/Bot/message/universal-message.js"
+import BaseBot from "../src/Bot/index.js"
+import IcqqMessageEvent from "../src/Bot/icqq/Event/message.js"
+import MessageDB from "../src/db/MessageDB.js"
 import { createProtocolMock } from "../src/dev/protocol-mock.js"
 import { installTestRuntime } from "./helpers/test-runtime.js"
 
@@ -131,6 +135,38 @@ test("protocol mocks expose unified calls for core APIs", async () => {
   }
 })
 
+test("synthetic command events prefer takeover protocol over local icqq adapter fallback", async () => {
+  const previousBot = globalThis.Bot
+  globalThis.Bot = {
+    self_id: 10000,
+    uin: 10000,
+    __xunlu_takeover_state: {
+      protocol: "milky",
+    },
+  }
+
+  try {
+    const bot = new BaseBot({ adapter: "icqqbot" })
+    const event = await bot.buildSyntheticCommandEvent({
+      baseMessageRecord: {
+        user_id: 10001,
+        sender_id: 10001,
+        group_id: 123,
+        message_scene: "group",
+        protocol: "",
+      },
+      rawCommand: "#点赞",
+      userId: 10001,
+      groupId: 123,
+      scene: "group",
+    })
+
+    assert.equal(event.protocol, "milky")
+  } finally {
+    globalThis.Bot = previousBot
+  }
+})
+
 test("forward passthrough stays protocol-native", async () => {
   const milky = createProtocolMock({ protocol: "milky", selfId: 10000 })
   await milky.bot.sendMsg(
@@ -167,6 +203,139 @@ test("forward passthrough stays protocol-native", async () => {
   await icqq.bot.sendMsg({ group_id: 123 }, forward)
   assert.equal(icqq.calls.at(-1)?.name, "sendMsg")
   assert.equal(icqq.calls.at(-1)?.params?.message?.[0]?.type, "node")
+})
+
+test("forward metadata survives protocol parsing across milky, onebot, and icqq", () => {
+  const embeddedMessages = [
+    {
+      type: "node",
+      data: {
+        uin: 10001,
+        name: "mock",
+        content: [{ type: "text", data: { text: "hello" } }],
+      },
+    },
+  ]
+
+  const milkyForward = UniversalMessage.fromMilky([
+    {
+      type: "forward",
+      data: {
+        forward_id: "milky-fwd-1",
+        title: "群聊的聊天记录",
+        summary: "查看2条转发消息",
+        preview: ["纳西妲: 测试转发"],
+        messages: [
+          {
+            user_id: 10001,
+            sender_name: "纳西妲",
+            segments: [{ type: "text", data: { text: "测试转发" } }],
+          },
+        ],
+      },
+    },
+  ]).segments[0]
+  assert.equal(milkyForward?.data?.id, "milky-fwd-1")
+  assert.equal(milkyForward?.data?.forward_id, "milky-fwd-1")
+  assert.equal(milkyForward?.data?.messages?.length, 1)
+
+  const onebotForward = UniversalMessage.fromOnebotV11([
+    {
+      type: "forward",
+      data: {
+        id: "onebot-fwd-1",
+        title: "群聊的聊天记录",
+        summary: "查看2条转发消息",
+        preview: ["纳西妲: 测试转发"],
+        messages: embeddedMessages,
+      },
+    },
+  ]).segments[0]
+  assert.equal(onebotForward?.data?.id, "onebot-fwd-1")
+  assert.equal(onebotForward?.data?.forward_id, "onebot-fwd-1")
+  assert.equal(onebotForward?.data?.messages?.length, 1)
+
+  const icqqForward = UniversalMessage.fromICQQ([
+    {
+      type: "node",
+      resid: "icqq-fwd-1",
+      title: "群聊的聊天记录",
+      summary: "查看2条转发消息",
+      preview: ["纳西妲: 测试转发"],
+      messages: embeddedMessages,
+    },
+  ]).segments[0]
+  assert.equal(icqqForward?.data?.id, "icqq-fwd-1")
+  assert.equal(icqqForward?.data?.forward_id, "icqq-fwd-1")
+  assert.equal(icqqForward?.data?.messages?.length, 1)
+})
+
+test("icqq message storage prefers raw protocol segments when takeover provides both message and segments", async () => {
+  const listener = new IcqqMessageEvent()
+  let captured = null
+  const originalSave = MessageDB.saveMessage.bind(MessageDB)
+  MessageDB.saveMessage = async (groupId, payload) => {
+    captured = { groupId, payload }
+    return true
+  }
+
+  try {
+    await listener.addMessage({
+      group_id: 123,
+      message_id: "1",
+      user_id: 10001,
+      time: 1710000000,
+      message: [{ type: "text", data: { content: "[forward]" } }],
+      segments: [{ type: "forward", data: { forward_id: "milky-fwd-1", summary: "[聊天记录]" } }],
+      sender: { user_id: 10001, nickname: "mock" },
+    })
+
+    assert.equal(captured?.groupId, 123)
+    assert.deepEqual(captured?.payload?.message, [
+      { type: "forward", data: { forward_id: "milky-fwd-1", summary: "[聊天记录]" } },
+    ])
+  } finally {
+    MessageDB.saveMessage = originalSave
+  }
+})
+
+test("MessageDB.saveMessage strips unknown columns before persisting", async () => {
+  const originalGetGroupTable = MessageDB.getGroupTable.bind(MessageDB)
+  let created = null
+  MessageDB.getGroupTable = async () => ({
+    COLUMNS: {
+      message_id: {},
+      user_id: {},
+      message: {},
+      time: {},
+      sender: {},
+    },
+    async create(payload) {
+      created = payload
+      return payload
+    },
+    async findByPk() {
+      return null
+    },
+  })
+
+  try {
+    await MessageDB.saveMessage(123, {
+      message_id: "1",
+      user_id: 10001,
+      message: [],
+      time: 1710000000,
+      sender: { user_id: 10001 },
+      universal_message: [{ type: "forward", data: { forward_id: "should-drop" } }],
+      forward_meta: [{ forward_id: "should-drop" }],
+    })
+
+    assert.deepEqual(Object.keys(created || {}).sort(), ["message", "message_id", "sender", "time", "user_id"])
+    assert.equal(created?.forward_meta, undefined)
+    assert.equal(created?.universal_message, undefined)
+  } finally {
+    MessageDB.getGroupTable = originalGetGroupTable
+  }
 })
 
 test("quote segments map correctly across protocols", async () => {
@@ -299,3 +468,4 @@ test("takeover milky raw segments stay authoritative for at-bot commands", async
     await harness.dispose()
   }
 })
+

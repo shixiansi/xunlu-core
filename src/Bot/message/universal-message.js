@@ -1,4 +1,4 @@
-import { OnebotV11Converter, MilkyConverter, ICQQConverter } from "./message-converters.js"
+﻿import { OnebotV11Converter, MilkyConverter, ICQQConverter } from "./message-converters.js"
 import { pickPrimaryMediaReference, resolveMediaReferenceFields } from "./media-reference.js"
 
 const UniversalSegmentType = Object.freeze({
@@ -131,6 +131,13 @@ function applyCompatAliases(type, data, raw = {}) {
       if (data.uri === undefined && data.file !== undefined) data.uri = data.file
       if (data.temp_url === undefined && data.url !== undefined) data.temp_url = data.url
       break
+    case UniversalSegmentType.FORWARD:
+      if (data.id !== undefined) data.forward_id = data.id
+      if (data.resid === undefined) {
+        const resid = toOptionalString(raw.resid, { trim: true })
+        if (resid !== undefined) data.resid = resid
+      }
+      break
     default:
       break
   }
@@ -262,7 +269,13 @@ function normalizeForwardData(raw = {}) {
     [raw.id, raw.forward_id, raw.resid],
     value => toOptionalString(value, { trim: true }),
   )
-  if (id !== undefined) data.id = id
+  if (id !== undefined) {
+    data.id = id
+    data.forward_id = id
+  }
+
+  const resid = pickFirstValue([raw.resid], value => toOptionalString(value, { trim: true }))
+  if (resid !== undefined) data.resid = resid
 
   const title = pickFirstValue([raw.title], value => toOptionalString(value, { trim: false }))
   if (title !== undefined) data.title = title
@@ -360,10 +373,11 @@ function fromOnebotV11Segment(segment) {
       })
     case "forward":
       return UniversalMessageSegment.forward({
-        id: data.id,
+        id: data.id ?? data.forward_id ?? segment.id ?? segment.forward_id,
         title: data.title,
         preview: data.preview,
         summary: data.summary ?? "forward",
+        messages: data.messages ?? segment.messages,
       })
     default:
       return UniversalMessageSegment.text(JSON.stringify(segment))
@@ -425,11 +439,11 @@ function fromMilkySegment(segment) {
       })
     case "forward":
       return UniversalMessageSegment.forward({
-        id: data.id,
+        id: data.forward_id ?? data.id ?? segment.forward_id ?? segment.id,
         title: data.title,
         preview: data.preview,
         summary: data.summary,
-        messages: data.messages,
+        messages: data.messages ?? segment.messages,
       })
     default:
       return UniversalMessageSegment.text(JSON.stringify(segment))
@@ -764,3 +778,4 @@ export {
   normalizeUniversalSegmentType,
   isUniversalSegmentType,
 }
+

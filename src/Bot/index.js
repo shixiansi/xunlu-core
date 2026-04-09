@@ -50,6 +50,33 @@ function normalizeOptionalString(value) {
   return text || ""
 }
 
+function normalizeProtocolName(value) {
+  const text = String(value ?? "")
+    .trim()
+    .toLowerCase()
+  if (!text) return ""
+  if (text.includes("milky")) return "milky"
+  if (text.includes("onebot")) return "onebotv11"
+  if (text.includes("icqq")) return "icqq"
+  return text
+}
+
+function resolveSyntheticProtocol({ protocol, baseMessageRecord, adapter, runtimeBot } = {}) {
+  const explicit = normalizeProtocolName(protocol)
+  if (explicit) return explicit
+
+  const fromBase = normalizeProtocolName(baseMessageRecord?.protocol)
+  if (fromBase) return fromBase
+
+  const takeoverProtocol = normalizeProtocolName(runtimeBot?.__xunlu_takeover_state?.protocol)
+  if (takeoverProtocol) return takeoverProtocol
+
+  const runtimeAdapter = normalizeProtocolName(runtimeBot?.adapterType)
+  if (runtimeAdapter) return runtimeAdapter
+
+  return normalizeProtocolName(adapter)
+}
+
 function normalizeEventTargetFields(e) {
   if (!e || typeof e !== "object") return
 
@@ -620,11 +647,17 @@ export default class BaseBot {
       runtimeBot?.self_id ??
       runtimeBot?.uin ??
       runtimeBot?.user_id
+    const resolvedProtocol = resolveSyntheticProtocol({
+      protocol,
+      baseMessageRecord,
+      adapter: this.adapter,
+      runtimeBot,
+    })
 
     const event = {
       ...(this.bindEvent && typeof this.bindEvent === "object" ? this.bindEvent : {}),
       adapterType: this.adapter,
-      protocol: String(protocol || baseMessageRecord?.protocol || this.adapter || "").toLowerCase(),
+      protocol: resolvedProtocol,
       post_type: "message",
       message_type: isGroup ? "group" : "private",
       sub_type: "normal",

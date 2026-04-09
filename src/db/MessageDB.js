@@ -1,4 +1,4 @@
-import { BaseModel, Types } from "./base/BaseModel.js"
+﻿import { BaseModel, Types } from "./base/BaseModel.js"
 import { Op } from "sequelize"
 import moment from "moment"
 
@@ -26,6 +26,40 @@ const MESSAGE_COLUMNS = {
   },
 }
 
+function sanitizeMessageData(table, messageData = {}) {
+  const allowedKeys = Object.keys(table?.COLUMNS || MESSAGE_COLUMNS)
+  const payload = {}
+  for (const key of allowedKeys) {
+    if (Object.prototype.hasOwnProperty.call(messageData || {}, key)) {
+      payload[key] = messageData[key]
+    }
+  }
+  return payload
+}
+
+function messageContainsForwardId(message, forwardId, visited = new Set()) {
+  const target = String(forwardId || "").trim()
+  if (!target || message === undefined || message === null) return false
+  if (typeof message !== "object") return false
+  if (visited.has(message)) return false
+  visited.add(message)
+
+  if (Array.isArray(message)) {
+    return message.some(item => messageContainsForwardId(item, target, visited))
+  }
+
+  const type = String(message?.type || "").toLowerCase()
+  const data = message?.data && typeof message.data === "object" ? message.data : {}
+  const candidate =
+    data.forward_id ?? data.id ?? data.resid ?? message.forward_id ?? message.id ?? message.resid ?? ""
+  if (["forward", "multimsg", "long_msg"].includes(type) && String(candidate).trim() === target) {
+    return true
+  }
+
+  return [message.data, message.message, message.messages, message.content, message.segments, message.universal_message]
+    .filter(Boolean)
+    .some(next => messageContainsForwardId(next, target, visited))
+}
 // 群聊消息数据库管理类
 class GroupMessageDB {
   constructor() {
@@ -47,13 +81,14 @@ class GroupMessageDB {
   // 保存消息到指定群的表
   async saveMessage(groupId, messageData) {
     const table = await this.getGroupTable(groupId)
+    const payload = sanitizeMessageData(table, messageData)
     try {
-      return await table.create(messageData)
+      return await table.create(payload)
     } catch (err) {
       // idempotent: ignore duplicate inserts for the same message_id
       if (err?.name === "SequelizeUniqueConstraintError") {
         try {
-          const message_id = messageData?.message_id
+          const message_id = payload?.message_id
           if (message_id !== undefined && message_id !== null && String(message_id).trim()) {
             return await table.findByPk(String(message_id))
           }
@@ -155,6 +190,30 @@ class GroupMessageDB {
     )
   }
 
+  async getMessageByForwardId(forwardId, { limitPerGroup = 500 } = {}) {
+    const target = String(forwardId || "").trim()
+    if (!target) return null
+
+    for (const groupId of this.groupTables.keys()) {
+      const table = await this.getGroupTable(groupId)
+      let rows = []
+      try {
+        rows = BaseModel.getObjectData(
+          await table.findAll({
+            order: [["time", "DESC"]],
+            limit: Math.max(1, Math.floor(Number(limitPerGroup) || 500)),
+          }),
+        )
+      } catch {
+        rows = []
+      }
+
+      const hit = (Array.isArray(rows) ? rows : []).find(row => messageContainsForwardId(row?.message, target))
+      if (hit) return hit
+    }
+
+    return null
+  }
   // 删除指定天数前的消息
   async deleteMessageByTime(groupId, day = 7) {
     // 计算7天前此刻的秒级时间戳（10位）
@@ -180,3 +239,6 @@ class GroupMessageDB {
 }
 
 export default new GroupMessageDB()
+
+
+

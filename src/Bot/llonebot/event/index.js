@@ -1,4 +1,4 @@
-import LLoneBot from "../index.js"
+﻿import LLoneBot from "../index.js"
 import MilkyAdapter from "../milky-adapter.js"
 import config from "../../../lib/config.js"
 import MessageDB from "../../../db/MessageDB.js"
@@ -9,6 +9,47 @@ import { applyUniversalBotApi } from "../../api/universal-bot-api.js"
 import {
   UniversalMessage,
 } from "../../message/universal-message.js"
+
+function findForwardMetaInRecord(record, forwardId) {
+  const target = String(forwardId || "").trim()
+  if (!target) return null
+
+  const visit = (input, visited = new Set()) => {
+    if (input === undefined || input === null || typeof input !== "object") return null
+    if (visited.has(input)) return null
+    visited.add(input)
+
+    if (Array.isArray(input)) {
+      for (const item of input) {
+        const found = visit(item, visited)
+        if (found) return found
+      }
+      return null
+    }
+
+    const type = String(input?.type || "").toLowerCase()
+    const data = input?.data && typeof input.data === "object" ? input.data : {}
+    const candidate =
+      data.forward_id ?? data.id ?? data.resid ?? input.forward_id ?? input.id ?? input.resid ?? ""
+    if (["forward", "multimsg", "long_msg"].includes(type) && String(candidate).trim() === target) {
+      return {
+        forward_id: target,
+        title: data.title || input.title || "",
+        summary: data.summary || input.summary || "",
+        preview: data.preview || input.preview || [],
+      }
+    }
+
+    for (const next of [input.data, input.message, input.messages, input.content, input.segments, input.universal_message]) {
+      const found = visit(next, visited)
+      if (found) return found
+    }
+
+    return null
+  }
+
+  return visit(record)
+}
 
 /**
  * LLoneBot事件监听处理类
@@ -446,11 +487,12 @@ export default class LLoneBotEventListener {
       // 降级：从数据库查询缓存的转发元数据
       const cachedMsg = await MessageDB.getMessageByForwardId(forward_id)
       if (cachedMsg) {
+        const meta = findForwardMetaInRecord(cachedMsg, forward_id) || {}
         return {
           forward_id,
-          title: cachedMsg.forward_meta?.title || "",
-          summary: cachedMsg.forward_meta?.summary || "",
-          preview: cachedMsg.forward_meta?.preview || [],
+          title: meta.title || "",
+          summary: meta.summary || "",
+          preview: meta.preview || [],
           messages: [],
           raw: null,
           cached: true,
@@ -461,7 +503,7 @@ export default class LLoneBotEventListener {
   }
 
   async #saveGroupMessage(eventData) {
-    const { message_seq, sender_id, time, segments, group_member, peer_id, forwardMeta } = eventData
+    const { message_seq, sender_id, time, segments, group_member, peer_id } = eventData
     if (!peer_id || !message_seq || !sender_id || !time) {
       console.warn("[MessageDB] 群消息存储参数缺失，跳过存储：", {
         peer_id,
@@ -473,30 +515,16 @@ export default class LLoneBotEventListener {
     }
 
     try {
-      // 安全转换为通用格式
-      const universalMsg = this.#safeConvertToUniversal("milky", segments || [])
-
-      await MessageDB.saveMessage(peer_id, {
-        message_id: message_seq,
-        user_id: sender_id,
-        time: time,
-        message: segments, // 保留Milky原生格式（含完整forward元数据）
-        universal_message: universalMsg.segments, // 通用格式
-        forward_meta: forwardMeta, // 单独存储转发元数据（方便查询）
-        sender: group_member,
-      })
-      console.debug(`[MessageDB] 群消息 ${message_seq} 已存储（含转发元数据）`)
-    } catch (error) {
-      // 降级存储：至少保留核心数据和转发元数据
       await MessageDB.saveMessage(peer_id, {
         message_id: message_seq,
         user_id: sender_id,
         time: time,
         message: segments,
-        forward_meta: forwardMeta,
         sender: group_member,
       })
-      console.warn(`[MessageDB] 群消息 ${message_seq} 降级存储（通用格式失败）：`, error)
+      console.debug(`[MessageDB] 群消息 ${message_seq} 已存储`)
+    } catch (error) {
+      console.error(`[MessageDB] 群消息 ${message_seq} 存储失败：`, error)
     }
   }
 
@@ -665,3 +693,6 @@ export default class LLoneBotEventListener {
     return await this.#milkyAdapter.sendMsg(target, processedSegments)
   }
 }
+
+
+

@@ -1,4 +1,4 @@
-import _ from "lodash"
+﻿import _ from "lodash"
 import moment from "moment"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
@@ -142,6 +142,19 @@ function normalizeNotifyPayloads(message) {
 }
 
 async function sendMasterPayload(ctx, uid, message) {
+  if (isNoticeForwardRelayPayload(message)) {
+    const sent = await sendForwardRelayToMaster(ctx, uid, message).catch(err => {
+      console.warn("[group] notify master forward relay failed:", err?.message || err)
+      return false
+    })
+    if (sent) return sent
+    return false
+  }
+
+  return await sendMasterRawPayload(ctx, uid, message)
+}
+
+async function sendMasterRawPayload(ctx, uid, message) {
   if (ctx && typeof ctx.sendMessage === "function") {
     return await ctx.sendMessage(String(uid), message)
   }
@@ -453,6 +466,29 @@ function normalizeNoticeMessageSegments(input) {
   }
 }
 
+function collectNoticeMessageSegmentCandidates(input) {
+  if (Array.isArray(input)) return [input]
+  if (!input || typeof input !== "object") return []
+
+  const candidates = []
+  const push = value => {
+    if (!Array.isArray(value) || !value.length) return
+    if (candidates.includes(value)) return
+    candidates.push(value)
+  }
+
+  // 优先保留原始 message/segments，避免 universal_message 先把转发细节降级掉。
+  push(input.message)
+  push(input.rawSegments)
+  push(input.raw_segments)
+  push(input.segments)
+  push(input.universal_message)
+  push(input.universalMessage?.segments)
+  push(input.universalMessage)
+
+  return candidates
+}
+
 function extractNoticeText(segments) {
   return (Array.isArray(segments) ? segments : [])
     .filter(seg => seg?.type === "text")
@@ -503,6 +539,25 @@ function getRuntimeBotSafe() {
   }
 }
 
+function getContextApiCall(ctx) {
+  const runtimeBot = getRuntimeBotSafe()
+  return (
+    (ctx &&
+      (typeof ctx.callApi === "function"
+        ? ctx.callApi
+        : typeof ctx.sendApi === "function"
+          ? ctx.sendApi
+          : null)) ||
+    (runtimeBot &&
+      (typeof runtimeBot.callApi === "function"
+        ? runtimeBot.callApi.bind(runtimeBot)
+        : typeof runtimeBot.sendApi === "function"
+          ? runtimeBot.sendApi.bind(runtimeBot)
+          : null)) ||
+    null
+  )
+}
+
 function normalizeForwardSenderName(name, userId) {
   const text = String(name || "").trim()
   if (text) return text
@@ -510,7 +565,18 @@ function normalizeForwardSenderName(name, userId) {
   return uid ? String(uid) : "用户"
 }
 
-function normalizeForwardApiMessages(messages, { rkeySuffix } = {}) {
+function normalizeForwardUserId(candidates = [], fallbackUserId) {
+  for (const value of Array.isArray(candidates) ? candidates : [candidates]) {
+    const uid = toInt(value)
+    if (uid !== undefined && uid >= 10001) return uid
+  }
+
+  const fallback = toInt(fallbackUserId)
+  if (fallback !== undefined && fallback >= 10001) return fallback
+  return 10001
+}
+
+function normalizeForwardApiMessages(messages, { rkeySuffix, fallbackUserId } = {}) {
   const list = Array.isArray(messages) ? messages : []
   const out = []
 
@@ -519,7 +585,10 @@ function normalizeForwardApiMessages(messages, { rkeySuffix } = {}) {
 
     if (item.type === "node") {
       const data = item.data && typeof item.data === "object" ? item.data : {}
-      const userId = data.uin ?? data.user_id ?? item.user_id
+      const userId = normalizeForwardUserId(
+        [data.uin, data.user_id, item.user_id, item.uin, item.sender_id, item.senderId],
+        fallbackUserId,
+      )
       const nickname = normalizeForwardSenderName(data.name, userId)
       const content = toForwardSafeSegments(normalizeNoticeMessageSegments(data.content ?? []), {
         rkeySuffix,
@@ -535,7 +604,10 @@ function normalizeForwardApiMessages(messages, { rkeySuffix } = {}) {
       continue
     }
 
-    const userId = item.user_id ?? item.uin ?? item.qq ?? item.sender_id ?? item.senderId
+    const userId = normalizeForwardUserId(
+      [item.user_id, item.uin, item.qq, item.sender_id, item.senderId, item.sender?.user_id, item.sender?.id],
+      fallbackUserId,
+    )
     const nickname = normalizeForwardSenderName(
       item.nickname ?? item.sender_name ?? item.name ?? item.sender?.name,
       userId,
@@ -562,8 +634,152 @@ function normalizeForwardApiMessages(messages, { rkeySuffix } = {}) {
 function getForwardSegmentId(seg) {
   const data = seg?.data && typeof seg.data === "object" ? seg.data : {}
   const raw =
-    data.forward_id ?? data.id ?? data.message_id ?? data.messageId ?? seg?.forward_id ?? seg?.id
+    data.forward_id ??
+    data.id ??
+    data.resid ??
+    data.message_id ??
+    data.messageId ??
+    seg?.forward_id ??
+    seg?.id ??
+    seg?.resid
   return raw !== undefined && raw !== null ? String(raw).trim() : ""
+}
+
+function findStandaloneForwardSegment(message) {
+  for (const candidate of collectNoticeMessageSegmentCandidates(message)) {
+    const list = Array.isArray(candidate) ? candidate : []
+    if (list.length !== 1) continue
+    const seg = list[0]
+    const type = String(seg?.type || "").toLowerCase()
+    if (!["forward", "multimsg", "long_msg"].includes(type)) continue
+    const forwardId = getForwardSegmentId(seg)
+    if (!forwardId) continue
+    return seg
+  }
+
+  const forwardMetaList = Array.isArray(message?.forward_meta)
+    ? message.forward_meta
+    : message?.forward_meta
+      ? [message.forward_meta]
+      : []
+  const meta = forwardMetaList.find(item => String(item?.forward_id || "").trim())
+  if (meta) {
+    return {
+      type: "forward",
+      data: {
+        forward_id: meta.forward_id,
+        title: meta.title,
+        preview: meta.preview,
+        summary: meta.summary,
+      },
+    }
+  }
+
+  return null
+}
+
+function buildNoticeForwardRelayPayload(ctx, { title, message } = {}) {
+  const seg = findStandaloneForwardSegment(message)
+  const forwardId = getForwardSegmentId(seg)
+  if (!forwardId) return null
+
+  return {
+    __xunlu_notice_forward_relay__: true,
+    title: String(title || "").trim(),
+    forward_id: forwardId,
+  }
+}
+
+function isNoticeForwardRelayPayload(payload) {
+  return Boolean(payload?.__xunlu_notice_forward_relay__ && payload?.forward_id)
+}
+
+async function makePrivateForwardPayloadForUser(userId, msgList = []) {
+  const runtimeBot = getRuntimeBotSafe()
+  const takeoverState = runtimeBot?.__xunlu_takeover_state
+  const takeoverUser =
+    takeoverState && typeof takeoverState.getUser === "function"
+      ? takeoverState.getUser(userId)
+      : null
+
+  if (typeof takeoverUser?.makeForwardMsg === "function") {
+    return await takeoverUser.makeForwardMsg(msgList)
+  }
+
+  if (typeof runtimeBot?.pickFriend === "function") {
+    const friend = runtimeBot.pickFriend(userId)
+    if (typeof friend?.makeForwardMsg === "function") {
+      return await friend.makeForwardMsg(msgList)
+    }
+  }
+
+  if (typeof runtimeBot?.pickUser === "function") {
+    const user = runtimeBot.pickUser(userId)
+    if (typeof user?.makeForwardMsg === "function") {
+      return await user.makeForwardMsg(msgList)
+    }
+  }
+
+  if (typeof runtimeBot?.makePrivateForwardMsg === "function") {
+    return await runtimeBot.makePrivateForwardMsg(msgList, userId)
+  }
+
+  throw new Error("private forward API not available")
+}
+
+async function sendForwardRelayToMaster(ctx, uid, payload) {
+  const forwardId = String(payload?.forward_id || "").trim()
+  if (!forwardId) return false
+
+  const fetched = await fetchForwardMessagesBySegment(ctx, {
+    type: "forward",
+    data: { forward_id: forwardId },
+  })
+
+  const rkeySuffix = await getNoticeRkeySuffix(ctx)
+  const msgList = normalizeForwardApiMessages(fetched, {
+    rkeySuffix,
+    fallbackUserId: ctx?.user_id ?? ctx?.sender_id ?? ctx?.self_id ?? uid,
+  })
+  if (!msgList.length) {
+    throw new Error(`forward ${forwardId} resolved to empty messages`)
+  }
+
+  const forwardPayload = await makePrivateForwardPayloadForUser(uid, msgList)
+  await sendMasterRawPayload(ctx, uid, forwardPayload)
+  return true
+}
+
+async function expandNoticeForwardSegments(ctx, segments, { rkeySuffix } = {}) {
+  const list = Array.isArray(segments) ? segments : []
+  if (!list.length) return []
+
+  const types = list.map(item => String(item?.type || "").toLowerCase())
+  if (types.length && types.every(type => type === "node")) {
+    const normalized = normalizeForwardApiMessages(list, { rkeySuffix })
+    if (normalized.length) return normalized
+  }
+
+  if (list.length !== 1) return []
+
+  const seg = list[0]
+  const type = String(seg?.type || "").toLowerCase()
+  if (type === "node") {
+    const normalized = normalizeForwardApiMessages(list, { rkeySuffix })
+    if (normalized.length) return normalized
+    return []
+  }
+
+  const embedded = normalizeForwardApiMessages(seg?.data?.messages ?? seg?.messages, { rkeySuffix })
+  if (embedded.length) return embedded
+
+  if (!["forward", "multimsg", "long_msg"].includes(type)) return []
+
+  const fetched = await fetchForwardMessagesBySegment(ctx, seg)
+  const expanded = normalizeForwardApiMessages(fetched, { rkeySuffix })
+  if (expanded.length) return expanded
+
+  return []
 }
 
 async function fetchForwardMessagesBySegment(ctx, seg) {
@@ -589,19 +805,7 @@ async function fetchForwardMessagesBySegment(ctx, seg) {
     } catch {}
   }
 
-  const apiCall =
-    (ctx &&
-      (typeof ctx.callApi === "function"
-        ? ctx.callApi
-        : typeof ctx.sendApi === "function"
-          ? ctx.sendApi
-          : null)) ||
-    (runtimeBot &&
-      (typeof runtimeBot.callApi === "function"
-        ? runtimeBot.callApi.bind(runtimeBot)
-        : typeof runtimeBot.sendApi === "function"
-          ? runtimeBot.sendApi.bind(runtimeBot)
-          : null))
+  const apiCall = getContextApiCall(ctx)
 
   if (typeof apiCall !== "function") return []
 
@@ -625,18 +829,18 @@ async function fetchForwardMessagesBySegment(ctx, seg) {
 }
 
 async function buildNoticeForwardMsgList(ctx, { sender, message, time } = {}) {
+  const rkeySuffix = await getNoticeRkeySuffix(ctx)
+
+  for (const candidate of collectNoticeMessageSegmentCandidates(message)) {
+    const expanded = await expandNoticeForwardSegments(ctx, candidate, { rkeySuffix })
+    if (expanded.length) return expanded
+  }
+
   const rawSegments = normalizeNoticeMessageSegments(message)
   if (!rawSegments.length) return []
 
-  const rkeySuffix = await getNoticeRkeySuffix(ctx)
-  if (rawSegments.length === 1 && String(rawSegments[0]?.type || "") === "forward") {
-    const embedded = normalizeForwardApiMessages(rawSegments[0]?.data?.messages, { rkeySuffix })
-    if (embedded.length) return embedded
-
-    const fetched = await fetchForwardMessagesBySegment(ctx, rawSegments[0])
-    const expanded = normalizeForwardApiMessages(fetched, { rkeySuffix })
-    if (expanded.length) return expanded
-  }
+  const expanded = await expandNoticeForwardSegments(ctx, rawSegments, { rkeySuffix })
+  if (expanded.length) return expanded
 
   const content = toForwardSafeSegments(rawSegments, { rkeySuffix })
   const senderId = toInt(sender?.userId) ?? toInt(ctx?.user_id) ?? toInt(ctx?.self_id) ?? 0
@@ -733,12 +937,18 @@ async function createMessageAwareNotice(
   const forceForward =
     alwaysForward || /撤回/.test(String(title || "")) || /撤回/.test(String(forwardTitle || ""))
   if (analyzed.hasContent && (forceForward || analyzed.requiresForward)) {
-    const forward = await buildNoticeForwardPayload(ctx, {
+    const relay = buildNoticeForwardRelayPayload(ctx, {
       title: forwardTitle || title,
-      sender: resolvedUsers[0],
-      message: segments,
-      time,
+      message,
     })
+    const forward =
+      relay ||
+      (await buildNoticeForwardPayload(ctx, {
+        title: forwardTitle || title,
+        sender: resolvedUsers[0],
+        message: segments,
+        time,
+      }))
     if (forward) payloads.push(forward)
   }
 
@@ -787,6 +997,86 @@ function getRecallMessageRef(ctx) {
     msgId: msgIdRaw !== undefined && msgIdRaw !== null ? String(msgIdRaw) : "",
     seq: toInt(seqRaw) ?? toInt(msgIdRaw),
   }
+}
+
+function hasForwardLikeSegments(input) {
+  return collectNoticeMessageSegmentCandidates(input).some(candidate =>
+    (Array.isArray(candidate) ? candidate : []).some(seg =>
+      ["forward", "node", "multimsg", "long_msg"].includes(String(seg?.type || "").toLowerCase()),
+    ),
+  )
+}
+
+function isDegradedForwardPlaceholderRecord(record) {
+  if (!record || typeof record !== "object") return false
+  if (hasForwardLikeSegments(record)) return false
+
+  const text = String(record?.raw_message || extractNoticeText(normalizeNoticeMessageSegments(record)) || "")
+    .trim()
+    .toLowerCase()
+  if (!text) return false
+
+  return ["[forward]", "[转发]", "[转发消息]"].includes(text)
+}
+
+async function fetchRecalledMessageViaApi(ctx, ref = {}) {
+  const apiCall = getContextApiCall(ctx)
+  if (typeof apiCall !== "function") return null
+
+  const proto = String(ctx?.protocol || "").toLowerCase()
+  if (proto === "milky") {
+    const seq = toInt(ref.seq ?? ref.msgId)
+    const peer_id = toInt(ctx?.group_id ?? ctx?.user_id)
+    const message_scene = ctx?.group_id ? "group" : String(ctx?.message_scene || "friend")
+    if (!seq || !peer_id) return null
+
+    const res = await withTimeout(
+      Promise.resolve().then(() => apiCall("get_message", { message_scene, peer_id, message_seq: seq })),
+      2500,
+      null,
+    ).catch(() => null)
+
+    const msgObj = res?.message ?? res?.data?.message ?? (res && typeof res === "object" ? res : null)
+    const rawSegments = Array.isArray(msgObj?.segments) ? msgObj.segments : []
+    if (!rawSegments.length) return null
+
+    return {
+      ...(msgObj && typeof msgObj === "object" ? msgObj : {}),
+      protocol: "milky",
+      message_scene: msgObj?.message_scene ?? message_scene,
+      peer_id: msgObj?.peer_id ?? peer_id,
+      message_seq: msgObj?.message_seq ?? seq,
+      seq: msgObj?.message_seq ?? seq,
+      raw_message: msgObj?.raw_message ?? "",
+      segments: rawSegments,
+      universal_message: normalizeNoticeMessageSegments(rawSegments),
+      message: rawSegments,
+    }
+  }
+
+  if (proto === "onebotv11") {
+    const msgId = ref.msgId !== undefined && ref.msgId !== null ? String(ref.msgId) : ""
+    if (!msgId) return null
+
+    const res = await withTimeout(
+      Promise.resolve().then(() => apiCall("get_msg", { message_id: msgId })),
+      2500,
+      null,
+    ).catch(() => null)
+
+    const rawSegments = res?.message ?? res?.data?.message
+    if (!Array.isArray(rawSegments) || !rawSegments.length) return null
+
+    return {
+      ...(res && typeof res === "object" ? res : {}),
+      protocol: "onebotv11",
+      raw_message: res?.raw_message ?? "",
+      segments: rawSegments,
+      message: rawSegments,
+    }
+  }
+
+  return null
 }
 
 async function findRecalledMessageFromDbFallback(ctx, { groupId, senderId, ref } = {}) {
@@ -844,6 +1134,7 @@ async function getRecalledMessageSafe(ctx) {
   const senderId = ctx?.user_id ?? ctx?.sender_id ?? ctx?.operator_id
   const ref = getRecallMessageRef(ctx)
   const candidates = []
+  let cachedRecord = null
   if (ref.seq !== undefined) candidates.push(String(ref.seq))
   if (ref.msgId) candidates.push(ref.msgId)
 
@@ -851,9 +1142,16 @@ async function getRecalledMessageSafe(ctx) {
     for (const id of _.uniq(candidates.filter(Boolean))) {
       try {
         const record = await MessageDB.getMessageById(groupId, id)
-        if (record) return record
+        if (!record) continue
+        if (!isDegradedForwardPlaceholderRecord(record)) return record
+        cachedRecord = record
       } catch {}
     }
+  }
+
+  if (String(ctx?.protocol || "").toLowerCase() === "milky" && (cachedRecord || ref.msgId || ref.seq !== undefined)) {
+    const apiRecord = await fetchRecalledMessageViaApi(ctx, ref)
+    if (apiRecord) return apiRecord
   }
 
   if (ctx && typeof ctx.getMessage === "function" && (ref.msgId || ref.seq !== undefined)) {
@@ -863,21 +1161,23 @@ async function getRecalledMessageSafe(ctx) {
         2000,
         null,
       )
-      if (direct) return direct
+      if (direct && !isDegradedForwardPlaceholderRecord(direct)) return direct
     } catch {}
     if (ref.msgId) {
       try {
         const byMsgId = await withTimeout(ctx.getMessage({ msgId: ref.msgId }), 2000, null)
-        if (byMsgId) return byMsgId
+        if (byMsgId && !isDegradedForwardPlaceholderRecord(byMsgId)) return byMsgId
       } catch {}
     }
     if (ref.seq !== undefined) {
       try {
         const bySeq = await withTimeout(ctx.getMessage({ seq: ref.seq }), 2000, null)
-        if (bySeq) return bySeq
+        if (bySeq && !isDegradedForwardPlaceholderRecord(bySeq)) return bySeq
       } catch {}
     }
   }
+
+  if (cachedRecord) return cachedRecord
 
   if (groupId) {
     const approx = await findRecalledMessageFromDbFallback(ctx, {
@@ -2225,3 +2525,30 @@ export function register(bot) {
 export function onBotEvent(event) {
   console.log("[example-plugin] received bot event:", event)
 }
+
+export const __test = {
+  collectNoticeMessageSegmentCandidates,
+  normalizeNoticeMessageSegments,
+  normalizeForwardApiMessages,
+  getForwardSegmentId,
+  findStandaloneForwardSegment,
+  buildNoticeForwardRelayPayload,
+  isNoticeForwardRelayPayload,
+  isDegradedForwardPlaceholderRecord,
+  async buildNoticeForwardMsgList(ctx, payload) {
+    return await buildNoticeForwardMsgList(ctx, payload)
+  },
+  async sendMasterPayload(ctx, uid, payload) {
+    return await sendMasterPayload(ctx, uid, payload)
+  },
+  async getRecalledMessageSafe(ctx) {
+    return await getRecalledMessageSafe(ctx)
+  },
+  async fetchRecalledMessageViaApi(ctx, ref) {
+    return await fetchRecalledMessageViaApi(ctx, ref)
+  },
+}
+
+
+
+
