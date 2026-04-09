@@ -25,3 +25,26 @@ test("word stats strip embedded json fragments before tokenizing", () => {
   assert.equal(words.includes("meta"), false)
   assert.equal(words.includes("直播"), true)
 })
+
+test("word stats filter common miniapp card noise words", () => {
+  const result = buildWordStatsFromMessages([
+    {
+      message: [
+        {
+          type: "text",
+          data: {
+            text: "app type com tencent appid ctime data desc meta config token forward lua ai normal tuwen miniapp_01 面板 喵哩 更新 真正词条 直播",
+          },
+        },
+      ],
+    },
+  ])
+
+  const words = result.topWords.map(item => item.word)
+  assert.equal(words.includes("app"), false)
+  assert.equal(words.includes("type"), false)
+  assert.equal(words.includes("tencent"), false)
+  assert.equal(words.includes("miniapp_01"), false)
+  assert.equal(words.includes("面板"), false)
+  assert.equal(words.includes("直播"), true)
+})

@@ -97,6 +97,23 @@ const STOP_WORDS = new Set([
   "tag",
   "extra",
   "view",
+  "app",
+  "type",
+  "miniapp_01",
+  "miniapp",
+  "ctime",
+  "tencent",
+  "com",
+  "data",
+  "token",
+  "forward",
+  "normal",
+  "tuwen",
+  "lua",
+  "ai",
+  "面板",
+  "喵哩",
+  "更新",
 ])
 
 function stripUrlLikeText(text) {

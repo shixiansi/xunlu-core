@@ -8,6 +8,8 @@ import {
 import { buildWordStatsFromMessages, rankWordCounts } from "./words.js"
 import { getDateKeysForRange, readDailyStats, toDateKey, writeDailyStats } from "./store.js"
 
+const DAILY_STATS_CACHE_VERSION = 2
+
 function safeSegments(value) {
   return Array.isArray(value) ? value : []
 }
@@ -97,6 +99,12 @@ function shouldRebuildCommandUsage(cached, { forceCommandUsageRebuild = false } 
   return Number(cached.commandUsage.version || 0) !== COMMAND_USAGE_CACHE_VERSION
 }
 
+function shouldRebuildWordStats(cached, { forceWordStatsRebuild = false } = {}) {
+  if (forceWordStatsRebuild) return true
+  if (!cached || typeof cached !== "object") return true
+  return Number(cached.version || 0) !== DAILY_STATS_CACHE_VERSION
+}
+
 export async function buildDailyGroupStats(groupId, dateKeyInput) {
   const dateKey = toDateKey(dateKeyInput)
   const messages = await MessageDB.getGroupMsgByDay(groupId, dateKey).catch(() => [])
@@ -146,7 +154,7 @@ export async function buildDailyGroupStats(groupId, dateKeyInput) {
   )
 
   return {
-    version: 1,
+    version: DAILY_STATS_CACHE_VERSION,
     groupId: String(groupId),
     date: dateKey,
     generatedAt: new Date().toISOString(),
@@ -172,8 +180,19 @@ export async function getOrBuildDailyGroupStats(groupId, dateKeyInput, options =
     (Boolean(options.forceToday) && String(dateKey) === String(todayDateKey))
 
   const cached = forceRebuild ? null : readDailyStats(groupId, dateKey)
-  if (cached && !shouldRebuildCommandUsage(cached, options)) return cached
+  if (
+    cached &&
+    !shouldRebuildWordStats(cached, options) &&
+    !shouldRebuildCommandUsage(cached, options)
+  ) {
+    return cached
+  }
   if (cached) {
+    if (shouldRebuildWordStats(cached, options)) {
+      const rebuilt = await buildDailyGroupStats(groupId, dateKey)
+      writeDailyStats(groupId, dateKey, rebuilt)
+      return rebuilt
+    }
     cached.commandUsage = await buildDailyCommandUsageStats(groupId, dateKey).catch(() =>
       createEmptyCommandUsageStats(),
     )
@@ -297,7 +316,7 @@ export async function buildRangeGroupStats(groupId, endDateKeyInput, days = 1, o
   })
 
   return {
-    version: 1,
+    version: DAILY_STATS_CACHE_VERSION,
     groupId: String(groupId),
     generatedAt: new Date().toISOString(),
     range: {
