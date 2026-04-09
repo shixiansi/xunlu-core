@@ -8,6 +8,7 @@ import { createPluginTestHarness } from "../src/dev/plugin-test-harness.js"
 import bilibiliPlugin from "../src/plugins/bilibili/index.js"
 import Bili from "../src/plugins/bilibili/model/Bilili.js"
 import ffmpeg from "../src/component/ffmpeg/ffmpeg.js"
+import Download from "../src/utils/download.js"
 import { installTestRuntime } from "./helpers/test-runtime.js"
 
 const __filename = fileURLToPath(import.meta.url)
@@ -228,6 +229,98 @@ test("invalid bilibili short links reply gracefully", async () => {
   )
 })
 
+test("bilibili video links reply with rendered image card", async () => {
+  await withPatchedMethods(
+    Bili,
+    {
+      async getVideoInfo() {
+        return {
+          bvid: "BV1xx411c7mD",
+          ctime: 1710000000,
+          pic: "https://example.com/video-cover.jpg",
+          title: "测试视频标题",
+          desc: "测试视频简介",
+          duration: 123,
+          owner: {
+            name: "测试UP主",
+          },
+          stat: {
+            view: 123456,
+            danmaku: 7890,
+            like: 4567,
+            coin: 345,
+            favorite: 678,
+            share: 90,
+          },
+        }
+      },
+      async getQnVideo() {
+        return {
+          qn: 80,
+          audio: "https://example.com/audio.mp3",
+          duration: 123,
+          audioBandwidth: 128000,
+          videoStreams: [
+            {
+              qn: 80,
+              url: "https://example.com/video.mp4",
+              bandwidth: 800000,
+            },
+          ],
+        }
+      },
+    },
+    async () => {
+      await withPatchedMethods(
+        ffmpeg,
+        {
+          VideoComposite(_videoPath, _audioPath, outputPath, suc) {
+            fs.writeFileSync(outputPath, Buffer.from("fake-video"))
+            void suc()
+          },
+        },
+        async () => {
+          await withPatchedMethods(
+            Download.prototype,
+            {
+              async downloadFile(_url, savePath) {
+                const full = path.resolve(repoRoot, savePath)
+                fs.mkdirSync(path.dirname(full), { recursive: true })
+                fs.writeFileSync(full, Buffer.from("fake-media"))
+                return true
+              },
+            },
+            async () => {
+              await withHarness({}, async harness => {
+                const res = await harness.emitMessage({
+                  scene: "group",
+                  text: "https://www.bilibili.com/video/BV1xx411c7mD",
+                  group_id: 991006,
+                  user_id: 10001,
+                })
+
+                assert.equal(res.ok, true)
+                const hasImageReply = res.replies.some(item =>
+                  Array.isArray(item?.message)
+                    ? item.message.some(seg => String(seg?.type || "").toLowerCase() === "image")
+                    : false,
+                )
+                const hasVideoReply = res.replies.some(item =>
+                  Array.isArray(item?.message)
+                    ? item.message.some(seg => String(seg?.type || "").toLowerCase() === "video")
+                    : false,
+                )
+                assert.equal(hasImageReply, true)
+                assert.equal(hasVideoReply, true)
+              })
+            },
+          )
+        },
+      )
+    },
+  )
+})
+
 test("latest dynamic query falls back to text when render fails", async () => {
   await withPatchedMethods(
     Bili,
@@ -265,17 +358,7 @@ test("latest dynamic query falls back to text when render fails", async () => {
   )
 })
 
-test("bilibili live room links reply with room info and a 10-second clip", async () => {
-  const liveClipPath = path.resolve(
-    repoRoot,
-    "src",
-    "plugins",
-    "bilibili",
-    "resources",
-    "video",
-    "live_test_clip.mp4",
-  )
-
+test("bilibili live room links reply with rendered image card", async () => {
   await withPatchedMethods(
     Bili,
     {
@@ -334,21 +417,21 @@ test("bilibili live room links reply with room info and a 10-second clip", async
             })
 
             assert.equal(res.ok, true)
-            assert.match(res.replies[0]?.text || "", /测试主播/)
-            assert.match(res.replies[0]?.text || "", /今晚直播测试/)
+            const hasImageReply = res.replies.some(item =>
+              Array.isArray(item?.message)
+                ? item.message.some(seg => String(seg?.type || "").toLowerCase() === "image")
+                : false,
+            )
             const hasVideoReply = res.replies.some(item =>
               Array.isArray(item?.message)
                 ? item.message.some(seg => String(seg?.type || "").toLowerCase() === "video")
                 : false,
             )
+            assert.equal(hasImageReply, true)
             assert.equal(hasVideoReply, true)
           })
         },
       )
     },
   )
-
-  try {
-    fs.unlinkSync(liveClipPath)
-  } catch {}
 })

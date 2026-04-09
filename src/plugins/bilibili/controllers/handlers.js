@@ -414,6 +414,84 @@ function buildDynamicFallbackMessage(result = {}) {
   return message
 }
 
+function buildBilibiliCardFallback(card = {}) {
+  const lines = []
+  const cardTypeLabel = card?.cardType === "live" ? "直播解析" : "视频解析"
+  lines.push(`B站${cardTypeLabel}`)
+  lines.push(`作者：${card?.nickname || "B站用户"}`)
+  if (card?.title) lines.push(`标题：${card.title}`)
+  if (card?.desc) lines.push(`简介：${card.desc}`)
+  if (card?.statText) lines.push(`数据：${card.statText}`)
+  if (card?.publishedAt) lines.push(`时间：${card.publishedAt}`)
+  if (card?.link) lines.push(`链接：${card.link}`)
+
+  const message = []
+  if (card?.cover) message.push(segment.image(card.cover))
+  message.push(lines.join("\n"))
+  return message
+}
+
+async function renderBilibiliCard(renderer, card = {}) {
+  if (renderer && typeof renderer.renderImg === "function") {
+    try {
+      const rendered = await renderer.renderImg(
+        "bilibili",
+        {
+          nickname: String(card?.nickname || "B站用户").trim() || "B站用户",
+          avatar: card?.avatar || card?.cover || "",
+          publishedAt: card?.publishedAt || "",
+          nowText: new Date().toISOString().replace("T", " ").slice(0, 19),
+          title: card?.title || "",
+          desc: card?.desc || "",
+          cover: card?.cover || card?.avatar || "",
+          cardType: card?.cardType === "live" ? "live" : "video",
+          statText: card?.statText || "",
+          link: card?.link || "",
+          saveId: `bilibili_${card?.saveId || Date.now()}`,
+        },
+        {
+          tpl: "card",
+        },
+      )
+      if (rendered) return rendered
+    } catch (err) {
+      logger.warn?.(`[Bilibili] 卡片渲染失败，改用文本降级：${err?.message || err}`)
+    }
+  }
+
+  return buildBilibiliCardFallback(card)
+}
+
+async function sendBilibiliLiveClip(ctx, roomInfo = {}) {
+  if (Number(roomInfo?.live_status) !== 1) return null
+
+  const playInfo = await Bili.getLivePlayInfo(roomInfo.room_id)
+  if (playInfo?.code) {
+    throw new Error(playInfo.message || "获取直播流失败")
+  }
+
+  const selectedStream = pickLiveStream(playInfo)
+  if (!selectedStream?.url) {
+    throw new Error("未找到可用的直播流")
+  }
+
+  const clipPath = getLiveClipPath(roomInfo.room_id)
+  try {
+    await ffmpeg.saveVideoClip(selectedStream.url, clipPath, {
+      durationSec: BILIBILI_LIVE_CLIP_DURATION_SEC,
+    })
+
+    const clipSize = fs.statSync(clipPath).size
+    if (clipSize > BILIBILI_LIVE_CLIP_MAX_RESULT_BYTES) {
+      throw createVideoTooLargeError("live_clip", clipSize, BILIBILI_LIVE_CLIP_MAX_RESULT_BYTES)
+    }
+
+    return await ctx.reply(segment.video(clipPath))
+  } finally {
+    cleanupTempFiles([clipPath], "直播切片")
+  }
+}
+
 async function renderDynamicMessage(renderer, result = {}) {
   if (renderer && typeof renderer.renderImg === "function") {
     try {
@@ -457,36 +535,6 @@ async function resolveBiliUserId(keyword) {
   }
 }
 
-async function sendBilibiliLiveClip(ctx, roomInfo = {}) {
-  if (Number(roomInfo?.live_status) !== 1) return null
-
-  const playInfo = await Bili.getLivePlayInfo(roomInfo.room_id)
-  if (playInfo?.code) {
-    throw new Error(playInfo.message || "获取直播流失败")
-  }
-
-  const selectedStream = pickLiveStream(playInfo)
-  if (!selectedStream?.url) {
-    throw new Error("未找到可用的直播流")
-  }
-
-  const clipPath = getLiveClipPath(roomInfo.room_id)
-  try {
-    await ffmpeg.saveVideoClip(selectedStream.url, clipPath, {
-      durationSec: BILIBILI_LIVE_CLIP_DURATION_SEC,
-    })
-
-    const clipSize = fs.statSync(clipPath).size
-    if (clipSize > BILIBILI_LIVE_CLIP_MAX_RESULT_BYTES) {
-      throw createVideoTooLargeError("live_clip", clipSize, BILIBILI_LIVE_CLIP_MAX_RESULT_BYTES)
-    }
-
-    return await ctx.reply(segment.video(clipPath))
-  } finally {
-    cleanupTempFiles([clipPath], "直播切片")
-  }
-}
-
 async function handleBilibiliLiveUrl(ctx, inputUrl) {
   let url = String(inputUrl || "").trim()
   let roomId = extractLiveRoomId(url)
@@ -505,25 +553,27 @@ async function handleBilibiliLiveUrl(ctx, inputUrl) {
   }
 
   const authorInfo = await Bili.getUserBaseInfo(roomInfo?.uid).catch(() => null)
-  const lines = [
-    `主播：${authorInfo?.name || roomInfo?.uid || "未知主播"}`,
-    `状态：${formatLiveStatus(roomInfo?.live_status)}`,
-    `标题：${roomInfo?.title || "暂无标题"}`,
-    `分区：${roomInfo?.area_name || "未分区"}`,
-    `关注：${computew(roomInfo?.attention || 0)}`,
-    `在线：${computew(roomInfo?.online || 0)}`,
-    `开播时间：${roomInfo?.live_time || "暂无"}`,
-    `直播间：https://live.bilibili.com/${roomId}`,
+  const statParts = [
+    `状态 ${formatLiveStatus(roomInfo?.live_status)}`,
+    `分区 ${roomInfo?.area_name || "未分区"}`,
+    `关注 ${computew(roomInfo?.attention || 0)}`,
+    `在线 ${computew(roomInfo?.online || 0)}`,
   ]
-  if (roomInfo?.description) {
-    lines.splice(lines.length - 1, 0, `简介：${String(roomInfo.description).trim().slice(0, 120)}`)
-  }
+  if (roomInfo?.live_time) statParts.push(`开播 ${roomInfo.live_time}`)
 
-  const cover = roomInfo?.user_cover || authorInfo?.face || ""
-  const message = []
-  if (cover) message.push(segment.image(cover))
-  message.push(lines.join("\n"))
-  await ctx.reply(message)
+  const rendered = await renderBilibiliCard(ctx, {
+    nickname: authorInfo?.name || roomInfo?.uid || "未知主播",
+    avatar: authorInfo?.face || roomInfo?.user_cover || "",
+    publishedAt: roomInfo?.live_time || "",
+    title: roomInfo?.title || "暂无标题",
+    desc: String(roomInfo?.description || "").trim().slice(0, 160),
+    cover: roomInfo?.user_cover || authorInfo?.face || "",
+    cardType: "live",
+    statText: statParts.join(" | "),
+    link: `https://live.bilibili.com/${roomId}`,
+    saveId: `live_${roomId}`,
+  })
+  await ctx.reply(rendered)
 
   if (Number(roomInfo?.live_status) !== 1) return true
 
@@ -873,11 +923,38 @@ export function register(bot) {
     if (videoInfo?.code && videoInfo?.code != 0) {
       return await ctx.reply(`查询失败！${videoInfo.message}`)
     }
+    const videoStat = videoInfo?.stat || {}
+    const statParts = [
+      `播放 ${computew(videoStat.view || 0)}`,
+      `弹幕 ${computew(videoStat.danmaku || 0)}`,
+      `点赞 ${computew(videoStat.like || 0)}`,
+      `投币 ${computew(videoStat.coin || 0)}`,
+      `收藏 ${computew(videoStat.favorite || 0)}`,
+      `转发 ${computew(videoStat.share || 0)}`,
+    ]
+    if (videoInfo?.duration) statParts.push(`时长 ${videoInfo.duration}s`)
+
+    const rendered = await renderBilibiliCard(ctx, {
+      nickname: videoInfo?.owner?.name || "B站用户",
+      avatar: videoInfo?.owner?.face || videoInfo?.pic || "",
+      publishedAt: videoInfo?.ctime
+        ? moment(Number(videoInfo.ctime) * 1000).format("YYYY-MM-DD HH:mm:ss")
+        : "",
+      title: videoInfo?.title || "",
+      desc: String(videoInfo?.desc || "").trim().slice(0, 180),
+      cover: videoInfo?.pic || "",
+      cardType: "video",
+      statText: statParts.join(" | "),
+      link: videoInfo?.bvid ? `https://www.bilibili.com/video/${videoInfo.bvid}` : url,
+      saveId: videoInfo?.bvid || bv,
+    })
+    await ctx.reply(rendered)
+
     if (videoInfo.duration >= 1800) {
-      return ctx.reply("视频太长了，还是去b站去看吧!")
+      return await ctx.reply("视频太长了，还是去b站去看吧!")
     }
 
-    const autoQuality = async (duration, ctx) => {
+    const autoQuality = async (duration, currentCtx) => {
       let qn = 80
       if (duration < 120) {
         qn = 120
@@ -886,97 +963,26 @@ export function register(bot) {
       } else if (duration >= 180 && duration < 300) {
         qn = 80
       } else if (duration >= 300 && duration < 480) {
-        await ctx.reply("视频时长超过5分钟，已将视频画质降低至720p")
+        await currentCtx.reply("视频时长超过5分钟，已将视频画质降低至720p")
         qn = 64
       } else if (duration >= 480 && duration < 720) {
-        await ctx.reply("视频时长超过8分钟，已将视频画质降低至480p")
+        await currentCtx.reply("视频时长超过8分钟，已将视频画质降低至480p")
         qn = 32
       } else if (duration >= 720) {
-        await ctx.reply("视频时长超过12分钟，已将视频画质降低至360p")
+        await currentCtx.reply("视频时长超过12分钟，已将视频画质降低至360p")
         qn = 16
       }
       return qn
     }
 
-    let qn = await autoQuality(videoInfo.duration, ctx)
-
-    const addnull = (str, target, centerIndex = 14) => {
-      let idx = str.indexOf(target)
-      let strlist = str.split(`${target}`)
-      let replaceStr = "  "
-      if (idx == centerIndex) {
-        return str
-      } else if (idx < 7) {
-        replaceStr = "ㅤ"
-      }
-      let arr = Array.from(str)
-      let index = centerIndex - strlist[0].length
-      for (let i = 0; i < index; i++) {
-        if (/^[a-zA-Z]*$/.test(strlist[0].trim())) {
-          arr.splice(idx, 0, " ")
-        }
-        arr.splice(idx, 0, replaceStr)
-      }
-      return arr.join("")
-    }
-
-    const videoStat = videoInfo?.stat || {}
-    const videoInfoMessage = []
-    if (videoInfo?.pic) {
-      videoInfoMessage.push(segment.image(videoInfo.pic))
-    }
-    videoInfoMessage.push(
-      `标题: ${videoInfo.title}\n`,
-      `作者: ${videoInfo.owner.name}\n`,
-      `${addnull(`播放量: ${computew(videoStat.view || 0)} 弹幕: ${computew(videoStat.danmaku || 0)}`, "弹")}\n`,
-      `${addnull(`点赞: ${computew(videoStat.like || 0)}投币: ${computew(videoStat.coin || 0)}`, "投")}`,
-      `\n${addnull(`收藏: ${computew(videoStat.favorite || 0)}转发: ${computew(videoStat.share || 0)}`, "转")}`,
-    )
-    await ctx.reply(videoInfoMessage)
     const videoLink = videoInfo?.bvid ? `https://www.bilibili.com/video/${videoInfo.bvid}` : url
+    const qn = await autoQuality(videoInfo.duration, ctx)
     const qnPlayInfo = await Bili.getQnVideo(qn, bv)
-    if (false && qnPlayInfo?.code) {
+    if (qnPlayInfo?.code) {
       return await ctx.reply(`视频发送失败：${qnPlayInfo.message || "获取视频信息失败"}`)
     }
-    if (qnPlayInfo?.code) {
-      return await ctx.reply(`瑙嗛鍙戦€佸け璐ワ細${qnPlayInfo.message || "鑾峰彇瑙嗛淇℃伅澶辫触"}`)
-    }
 
-    /*
     const selectedStream = pickEstimatedSendableStream(qnPlayInfo, qn)
-    if (false && !selectedStream?.url) {
-      return await ctx.reply("瑙嗛鍙戦€佸け璐ワ細鏈壘鍒板彲鐢ㄧ殑瑙嗛娓?）
-    }
-    if (selectedStream.exceedsLimit) {
-      logger.warn?.(
-        `[Bilibili] 视频预估大小超限，改为发送链接：${selectedStream.estimatedBytes} > ${BILIBILI_VIDEO_MAX_RESULT_BYTES}`,
-      )
-      return await ctx.reply(
-        `视频文件预估过大，已改为发送视频链接。\n标题：${videoInfo.title}\n预估大小：${formatBytes(selectedStream.estimatedBytes)}\n链接：${videoLink}`,
-      )
-    }
-    if (selectedStream.exceedsLimit) {
-      logger.warn?.(
-        `[Bilibili] 瑙嗛棰勪及澶у皬瓒呴檺锛屾敼涓哄彂閫侀摼鎺ワ細${selectedStream.estimatedBytes} > ${BILIBILI_VIDEO_MAX_RESULT_BYTES}`,
-      )
-      return await ctx.reply(
-        `瑙嗛鏂囦欢棰勪及杩囧ぇ锛屽凡鏀逛负鍙戦€佽棰戦摼鎺ャ€俓n鏍囬锛?{videoInfo.title}\n棰勪及澶у皬锛?{formatBytes(selectedStream.estimatedBytes)}\n閾炬帴锛?{videoLink}`,
-      )
-    }
-    if (Number(selectedStream.qn) !== Number(qn)) {
-      await ctx.reply(
-        `鏍规嵁棰勪及瑙嗛澶у皬锛屽凡鑷姩灏嗙敾璐ㄨ皟鏁翠负 ${formatVideoQuality(selectedStream.qn)}锛堥浼板ぇ灏?{formatBytes(selectedStream.estimatedBytes)}锛?`,
-      )
-    }
-
-    */
-    const selectedStream = pickEstimatedSendableStream(qnPlayInfo, qn)
-    if (false && !selectedStream?.url) {
-      return await ctx.reply("视频发送失败：未找到可用的视频流")
-    }
-    if (!selectedStream?.url) {
-      return await ctx.reply("视频发送失败：未找到可用的视频流")
-    }
     if (!selectedStream?.url) {
       return await ctx.reply("视频发送失败：未找到可用的视频流")
     }
@@ -994,23 +1000,20 @@ export function register(bot) {
       )
     }
 
-    const changeVideo = async (streamPlan, playInfo, bv, e) => {
-      const { videoPath, audioPath, resultPath } = getVideoCachePaths(bv)
+    const changeVideo = async (streamPlan, playInfo, currentBv, currentCtx) => {
+      const { videoPath, audioPath, resultPath } = getVideoCachePaths(currentBv)
       const cleanupPaths = [videoPath, audioPath, resultPath]
 
       try {
         const videoUrl = streamPlan?.url
         const audio = playInfo?.audio
-        if (false) {
-          throw new Error(message || "获取视频下载地址失败")
-        }
         if (!videoUrl || !audio) {
           throw new Error("获取视频下载地址失败")
         }
 
         const videoOk = await download.downloadFile(
           videoUrl,
-          `src/plugins/bilibili/resources/video/source_${bv}.mp4`,
+          `src/plugins/bilibili/resources/video/source_${currentBv}.mp4`,
           {
             headers: {
               referer: "https://www.bilibili.com",
@@ -1020,7 +1023,7 @@ export function register(bot) {
         )
         const audioOk = await download.downloadFile(
           audio,
-          `src/plugins/bilibili/resources/video/source_${bv}.mp3`,
+          `src/plugins/bilibili/resources/video/source_${currentBv}.mp3`,
           {
             headers: {
               referer: "https://www.bilibili.com",
@@ -1037,7 +1040,7 @@ export function register(bot) {
         if (resultSize > BILIBILI_VIDEO_MAX_RESULT_BYTES) {
           throw createVideoTooLargeError("result", resultSize, BILIBILI_VIDEO_MAX_RESULT_BYTES)
         }
-        const sendRes = await e.reply(segment.video(resultPath))
+        const sendRes = await currentCtx.reply(segment.video(resultPath))
         if (!sendRes) {
           throw new Error("视频发送失败")
         }
@@ -1064,6 +1067,8 @@ export function register(bot) {
       logger.error?.(`[Bilibili] 视频解析发送失败：${err?.message || err}`)
       return await ctx.reply(`视频发送失败：${err?.message || "未知错误"}`)
     }
+
+    return true
   })
 
   bot.registerCommand("^(|#)b站扫码$", async ctx => {
@@ -1197,14 +1202,26 @@ export function register(bot) {
           if (roomInfo?.code) continue
 
           if (roomInfo && roomInfo?.live_status == 1 && !item?.live?.live_time) {
-            let { title, user_cover, area_name, live_time } = roomInfo
-            let content = [
-              `${item.nickname}开播啦！小伙伴们快去围观吧！`,
-              segment.image(user_cover),
-              `标题：${title}\n分区：${area_name}\n开播时间：${live_time}\n直播间地址：https://live.bilibili.com/${room_id}`,
-            ]
+            const authorInfo = await Bili.getUserBaseInfo(roomInfo?.uid).catch(() => null)
+            const rendered = await renderBilibiliCard(runtimeBot, {
+              nickname: item.nickname || authorInfo?.name || "B站主播",
+              avatar: authorInfo?.face || roomInfo?.user_cover || "",
+              publishedAt: roomInfo?.live_time || "",
+              title: roomInfo?.title || "暂无标题",
+              desc: String(roomInfo?.description || "").trim().slice(0, 160),
+              cover: roomInfo?.user_cover || authorInfo?.face || "",
+              cardType: "live",
+              statText: [
+                "状态 直播中",
+                `分区 ${roomInfo?.area_name || "未分区"}`,
+                `关注 ${computew(roomInfo?.attention || 0)}`,
+                `在线 ${computew(roomInfo?.online || 0)}`,
+              ].join(" | "),
+              link: `https://live.bilibili.com/${room_id}`,
+              saveId: `push_live_${room_id}`,
+            })
 
-            let res = await runtimeBot.sendMessage({ group_id: g }, content)
+            let res = await runtimeBot.sendMessage({ group_id: g }, rendered)
             if (!res) throw new Error("直播推送消息失败")
 
             logger.info(`[Bilibili] 直播推送成功，房间ID：${room_id}，群ID：${g}`)

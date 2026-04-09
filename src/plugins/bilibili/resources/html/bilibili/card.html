@@ -1,0 +1,74 @@
+{{extend defaulthtml}}
+
+{{block 'css'}}
+<link rel="stylesheet" href="{{_res_path}}/html/bilibili/card.css" />
+{{/block}}
+
+{{block 'main'}}
+<div class="bl-card {{cardType}}">
+  <div class="bl-header">
+    <div class="bl-user">
+      <img class="bl-avatar" src="{{avatar || cover}}" alt="avatar" />
+      <div class="bl-meta">
+        <div class="bl-name">{{nickname}}</div>
+        <div class="bl-time">{{publishedAt || nowText}}</div>
+      </div>
+    </div>
+    <div class="bl-brand">
+      <div class="bl-brand-icon">B</div>
+      <div class="bl-brand-text">哔哩哔哩</div>
+    </div>
+  </div>
+
+  {{if title}}
+  <div class="bl-title">{{title}}</div>
+  {{/if}}
+
+  {{if desc}}
+  <div class="bl-desc">{{desc}}</div>
+  {{/if}}
+
+  {{if statText}}
+  <div class="bl-stat">{{statText}}</div>
+  {{/if}}
+
+  <div class="bl-media {{cardType}}">
+    <img class="bl-media-img" src="{{cover}}" alt="cover" />
+    {{if cardType === 'video'}}
+    <div class="bl-play">
+      <div class="bl-play-triangle"></div>
+    </div>
+    {{/if}}
+    {{if cardType === 'live'}}
+    <div class="bl-live-badge">LIVE</div>
+    {{/if}}
+  </div>
+
+  {{if link}}
+  <div class="bl-link">{{link}}</div>
+  {{/if}}
+</div>
+<script>
+  ;(function () {
+    const markReady = function () {
+      document.body.dataset.renderReady = "1"
+    }
+    const images = Array.from(document.images || [])
+    if (!images.length) {
+      markReady()
+      return
+    }
+    let left = images.length
+    const done = function () {
+      left -= 1
+      if (left <= 0) markReady()
+    }
+    images.forEach(function (img) {
+      if (img.complete) return done()
+      img.addEventListener("load", done, { once: true })
+      img.addEventListener("error", done, { once: true })
+    })
+    setTimeout(markReady, 3000)
+  })()
+</script>
+{{/block}}
