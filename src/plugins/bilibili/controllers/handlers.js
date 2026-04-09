@@ -28,7 +28,9 @@ const dynamicType = {
 const GROUP_DATA_DIR = "src/plugins/bilibili/data/group"
 const BILIBILI_BG_DIR = "src/plugins/bilibili/resources/html/bilibili/bg"
 const BILIBILI_VIDEO_HOSTS = ["b23.tv", "m.bilibili.com", "www.bilibili.com", "bilibili.com"]
+const BILIBILI_LIVE_HOSTS = ["live.bilibili.com"]
 const BV_ID_REG = /\bBV[0-9A-Za-z]{10}\b/
+const URL_REGEXP = /https?:\/\/[^\s]+/gi
 const dynamicTypeKeys = Object.keys(dynamicType)
 const BILIBILI_VIDEO_QUALITY_LABELS = {
   120: "4K",
@@ -42,6 +44,8 @@ const BILIBILI_VIDEO_QUALITY_LABELS = {
 }
 const BILIBILI_VIDEO_MAX_SOURCE_BYTES = 80 * 1024 * 1024
 const BILIBILI_VIDEO_MAX_RESULT_BYTES = 70 * 1024 * 1024
+const BILIBILI_LIVE_CLIP_DURATION_SEC = 10
+const BILIBILI_LIVE_CLIP_MAX_RESULT_BYTES = 45 * 1024 * 1024
 
 function formatBytes(bytes = 0) {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B"
@@ -58,6 +62,11 @@ function formatBytes(bytes = 0) {
 function formatVideoQuality(qn) {
   const normalized = Number(qn)
   return BILIBILI_VIDEO_QUALITY_LABELS[normalized] || `QN ${qn}`
+}
+
+function computew(num) {
+  const value = Number(num || 0)
+  return value >= 10000 ? `${(value / 10000).toFixed(1)}w` : value
 }
 
 function createVideoTooLargeError(stage, actualBytes, limitBytes) {
@@ -294,19 +303,75 @@ function isBilibiliVideoUrl(url = "") {
   return BILIBILI_VIDEO_HOSTS.some(host => hostname === host || hostname.endsWith(`.${host}`))
 }
 
+function isBilibiliLiveUrl(url = "") {
+  const hostname = getNormalizedHost(url)
+  return BILIBILI_LIVE_HOSTS.some(host => hostname === host || hostname.endsWith(`.${host}`))
+}
+
+function extractFirstUrlFromText(text = "") {
+  return String(text || "").match(URL_REGEXP)?.[0] || ""
+}
+
 function extractBilibiliUrl(ctx) {
   const directUrl = String(ctx?.url || "").trim()
   if (directUrl) return directUrl
 
   const json = ctx?.json
   if (!json || typeof json !== "object") return ""
-  return String(
+  const jsonUrl = String(
     json?.meta?.detail_1?.qqdocurl ?? json?.meta?.news?.jumpUrl ?? json?.meta?.news?.url ?? "",
   ).trim()
+  if (jsonUrl) return jsonUrl
+
+  return extractFirstUrlFromText(ctx?.msg || "")
 }
 
 function extractBvId(url = "") {
   return String(url || "").match(BV_ID_REG)?.[0] || ""
+}
+
+function extractLiveRoomId(url = "") {
+  try {
+    const target = /^https?:\/\//i.test(url) ? url : `https://${url}`
+    const parsed = new URL(target)
+    if (!isBilibiliLiveUrl(parsed.href)) return ""
+    const matched = parsed.pathname.match(/\/(?:blanc\/)?(\d+)(?:\/|$)/)
+    return matched?.[1] || ""
+  } catch {
+    return ""
+  }
+}
+
+function formatLiveStatus(status) {
+  return Number(status) === 1 ? "直播中" : "未开播"
+}
+
+function getLiveClipPath(roomId) {
+  const basePath = path.join(filemage.RootPath, "src/plugins/bilibili/resources/video")
+  return path.join(basePath, `live_${roomId}_${Date.now()}.mp4`)
+}
+
+function pickLiveStream(playInfo = {}) {
+  const streams = Array.isArray(playInfo?.streams) ? playInfo.streams : []
+  if (streams.length === 0) return null
+
+  const formatPriority = { ts: 3, fmp4: 2, flv: 1 }
+  const protocolPriority = { http_hls: 3, http_stream: 2 }
+
+  return [...streams].sort((a, b) => {
+    const protocolDiff =
+      Number(protocolPriority[b?.protocolName] || 0) - Number(protocolPriority[a?.protocolName] || 0)
+    if (protocolDiff !== 0) return protocolDiff
+
+    const formatDiff =
+      Number(formatPriority[b?.formatName] || 0) - Number(formatPriority[a?.formatName] || 0)
+    if (formatDiff !== 0) return formatDiff
+
+    const httpsDiff = Number(/^https:\/\//i.test(b?.url || "")) - Number(/^https:\/\//i.test(a?.url || ""))
+    if (httpsDiff !== 0) return httpsDiff
+
+    return Number(b?.qn || 0) - Number(a?.qn || 0)
+  })[0]
 }
 
 function pickRandomBilibiliBackground() {
@@ -390,6 +455,92 @@ async function resolveBiliUserId(keyword) {
     mid: String(data.mid),
     user: data,
   }
+}
+
+async function sendBilibiliLiveClip(ctx, roomInfo = {}) {
+  if (Number(roomInfo?.live_status) !== 1) return null
+
+  const playInfo = await Bili.getLivePlayInfo(roomInfo.room_id)
+  if (playInfo?.code) {
+    throw new Error(playInfo.message || "获取直播流失败")
+  }
+
+  const selectedStream = pickLiveStream(playInfo)
+  if (!selectedStream?.url) {
+    throw new Error("未找到可用的直播流")
+  }
+
+  const clipPath = getLiveClipPath(roomInfo.room_id)
+  try {
+    await ffmpeg.saveVideoClip(selectedStream.url, clipPath, {
+      durationSec: BILIBILI_LIVE_CLIP_DURATION_SEC,
+    })
+
+    const clipSize = fs.statSync(clipPath).size
+    if (clipSize > BILIBILI_LIVE_CLIP_MAX_RESULT_BYTES) {
+      throw createVideoTooLargeError("live_clip", clipSize, BILIBILI_LIVE_CLIP_MAX_RESULT_BYTES)
+    }
+
+    return await ctx.reply(segment.video(clipPath))
+  } finally {
+    cleanupTempFiles([clipPath], "直播切片")
+  }
+}
+
+async function handleBilibiliLiveUrl(ctx, inputUrl) {
+  let url = String(inputUrl || "").trim()
+  let roomId = extractLiveRoomId(url)
+  if (!roomId) {
+    const completeUrl = await Bili.getCompleteUrl(url).catch(() => "")
+    url = completeUrl || url
+    roomId = extractLiveRoomId(url)
+  }
+  if (!roomId) {
+    return await ctx.reply("未识别到有效的B站直播间链接，请确认链接后再试。")
+  }
+
+  const roomInfo = await Bili.getRoomInfo(roomId)
+  if (roomInfo?.code && roomInfo?.code != 0) {
+    return await ctx.reply(`查询失败！${roomInfo.message}`)
+  }
+
+  const authorInfo = await Bili.getUserBaseInfo(roomInfo?.uid).catch(() => null)
+  const lines = [
+    `主播：${authorInfo?.name || roomInfo?.uid || "未知主播"}`,
+    `状态：${formatLiveStatus(roomInfo?.live_status)}`,
+    `标题：${roomInfo?.title || "暂无标题"}`,
+    `分区：${roomInfo?.area_name || "未分区"}`,
+    `关注：${computew(roomInfo?.attention || 0)}`,
+    `在线：${computew(roomInfo?.online || 0)}`,
+    `开播时间：${roomInfo?.live_time || "暂无"}`,
+    `直播间：https://live.bilibili.com/${roomId}`,
+  ]
+  if (roomInfo?.description) {
+    lines.splice(lines.length - 1, 0, `简介：${String(roomInfo.description).trim().slice(0, 120)}`)
+  }
+
+  const cover = roomInfo?.user_cover || authorInfo?.face || ""
+  const message = []
+  if (cover) message.push(segment.image(cover))
+  message.push(lines.join("\n"))
+  await ctx.reply(message)
+
+  if (Number(roomInfo?.live_status) !== 1) return true
+
+  try {
+    await sendBilibiliLiveClip(ctx, roomInfo)
+  } catch (err) {
+    err = normalizeVideoSizeError(err)
+    if (err?.code === "BILIBILI_VIDEO_TOO_LARGE") {
+      return await ctx.reply(
+        `直播切片过大，已跳过发送。\n大小：${formatBytes(err.actualBytes)}\n限制：${formatBytes(err.limitBytes)}`,
+      )
+    }
+    logger.warn?.(`[Bilibili] 直播切片发送失败：${err?.message || err}`)
+    await ctx.reply(`直播间信息解析成功，但10秒视频发送失败：${err?.message || "未知错误"}`)
+  }
+
+  return true
 }
 
 async function prepareDynamicForwardImages(baseBot, ctx, dynamicId, msgList = []) {
@@ -700,11 +851,18 @@ export function register(bot) {
   bot.registerCommand(["", 1200], async ctx => {
     const url = extractBilibiliUrl(ctx)
 
-    if (!url || !isBilibiliVideoUrl(url)) return false
+    if (!url) return false
+    if (isBilibiliLiveUrl(url)) {
+      return await handleBilibiliLiveUrl(ctx, url)
+    }
+    if (!isBilibiliVideoUrl(url)) return false
 
     let bv = extractBvId(url)
     if (!bv) {
       const completeUrl = await Bili.getCompleteUrl(url).catch(() => "")
+      if (isBilibiliLiveUrl(completeUrl)) {
+        return await handleBilibiliLiveUrl(ctx, completeUrl)
+      }
       bv = extractBvId(completeUrl)
     }
     if (!bv) {
@@ -760,10 +918,6 @@ export function register(bot) {
         arr.splice(idx, 0, replaceStr)
       }
       return arr.join("")
-    }
-
-    const computew = num => {
-      return num >= 10000 ? (num / 10000).toFixed(1) + "w" : num
     }
 
     const videoStat = videoInfo?.stat || {}

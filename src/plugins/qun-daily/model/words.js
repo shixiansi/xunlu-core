@@ -78,6 +78,25 @@ const STOP_WORDS = new Set([
   "jpeg",
   "gif",
   "webp",
+  "json",
+  "appid",
+  "app",
+  "meta",
+  "config",
+  "desc",
+  "desc1",
+  "desc2",
+  "detail",
+  "detail_1",
+  "jumpurl",
+  "jump_url",
+  "qqdocurl",
+  "prompt",
+  "preview",
+  "news",
+  "tag",
+  "extra",
+  "view",
 ])
 
 function stripUrlLikeText(text) {
@@ -87,7 +106,7 @@ function stripUrlLikeText(text) {
 }
 
 function normalizeText(text) {
-  return stripUrlLikeText(text)
+  return stripJsonLikeFragments(stripUrlLikeText(text))
     .replace(/\s+/g, " ")
     .trim()
 }
@@ -110,6 +129,84 @@ function isJsonLikeText(text) {
 
   const parsed = tryParseJson(raw)
   return Boolean(parsed && typeof parsed === "object")
+}
+
+function findJsonFragmentEnd(text, startIndex) {
+  const startChar = text[startIndex]
+  const expectedEnd = startChar === "{" ? "}" : startChar === "[" ? "]" : ""
+  if (!expectedEnd) return -1
+
+  let depth = 0
+  let inString = false
+  let escaped = false
+
+  for (let index = startIndex; index < text.length; index += 1) {
+    const char = text[index]
+    if (inString) {
+      if (escaped) {
+        escaped = false
+        continue
+      }
+      if (char === "\\") {
+        escaped = true
+        continue
+      }
+      if (char === '"') {
+        inString = false
+      }
+      continue
+    }
+
+    if (char === '"') {
+      inString = true
+      continue
+    }
+    if (char === startChar) {
+      depth += 1
+      continue
+    }
+    if (char === expectedEnd) {
+      depth -= 1
+      if (depth === 0) return index
+    }
+  }
+
+  return -1
+}
+
+function stripJsonLikeFragments(text) {
+  const raw = String(text || "")
+  if (!raw) return ""
+
+  let output = ""
+  let index = 0
+  while (index < raw.length) {
+    const char = raw[index]
+    if (char !== "{" && char !== "[") {
+      output += char
+      index += 1
+      continue
+    }
+
+    const endIndex = findJsonFragmentEnd(raw, index)
+    if (endIndex < 0) {
+      output += char
+      index += 1
+      continue
+    }
+
+    const fragment = raw.slice(index, endIndex + 1)
+    if (isJsonLikeText(fragment)) {
+      output += " "
+      index = endIndex + 1
+      continue
+    }
+
+    output += char
+    index += 1
+  }
+
+  return output
 }
 
 function isNoiseToken(token) {

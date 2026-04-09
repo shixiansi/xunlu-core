@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url"
 import { createPluginTestHarness } from "../src/dev/plugin-test-harness.js"
 import bilibiliPlugin from "../src/plugins/bilibili/index.js"
 import Bili from "../src/plugins/bilibili/model/Bilili.js"
+import ffmpeg from "../src/component/ffmpeg/ffmpeg.js"
 import { installTestRuntime } from "./helpers/test-runtime.js"
 
 const __filename = fileURLToPath(import.meta.url)
@@ -262,4 +263,92 @@ test("latest dynamic query falls back to text when render fails", async () => {
       })
     },
   )
+})
+
+test("bilibili live room links reply with room info and a 10-second clip", async () => {
+  const liveClipPath = path.resolve(
+    repoRoot,
+    "src",
+    "plugins",
+    "bilibili",
+    "resources",
+    "video",
+    "live_test_clip.mp4",
+  )
+
+  await withPatchedMethods(
+    Bili,
+    {
+      async getRoomInfo(roomId) {
+        return {
+          uid: "12345",
+          room_id: Number(roomId),
+          area_name: "虚拟主播",
+          attention: 32000,
+          online: 8800,
+          description: "直播间简介",
+          live_status: 1,
+          user_cover: "https://example.com/live-cover.jpg",
+          live_time: "2026-04-09 12:00:00",
+          title: "今晚直播测试",
+        }
+      },
+      async getUserBaseInfo(uid) {
+        return {
+          mid: uid,
+          name: "测试主播",
+          face: "https://example.com/avatar.png",
+        }
+      },
+      async getLivePlayInfo() {
+        return {
+          roomId: "778899",
+          streams: [
+            {
+              url: "https://example.com/live.m3u8",
+              protocolName: "http_hls",
+              formatName: "ts",
+              codecName: "avc",
+              qn: 10000,
+            },
+          ],
+        }
+      },
+    },
+    async () => {
+      await withPatchedMethods(
+        ffmpeg,
+        {
+          async saveVideoClip(_input, output) {
+            fs.writeFileSync(output, Buffer.from("fake-live-clip"))
+            return true
+          },
+        },
+        async () => {
+          await withHarness({}, async harness => {
+            const res = await harness.emitMessage({
+              scene: "group",
+              text: "https://live.bilibili.com/778899",
+              group_id: 991005,
+              user_id: 10001,
+            })
+
+            assert.equal(res.ok, true)
+            assert.match(res.replies[0]?.text || "", /测试主播/)
+            assert.match(res.replies[0]?.text || "", /今晚直播测试/)
+            const hasVideoReply = res.replies.some(item =>
+              Array.isArray(item?.message)
+                ? item.message.some(seg => String(seg?.type || "").toLowerCase() === "video")
+                : false,
+            )
+            assert.equal(hasVideoReply, true)
+          })
+        },
+      )
+    },
+  )
+
+  try {
+    fs.unlinkSync(liveClipPath)
+  } catch {}
 })

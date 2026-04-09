@@ -770,6 +770,64 @@ class Bilibili {
     }
   }
 
+  async getLivePlayInfo(room_id, qn = 10000) {
+    try {
+      const query = new URLSearchParams({
+        room_id: String(room_id || ""),
+        protocol: "0,1",
+        format: "0,1,2",
+        codec: "0,1",
+        qn: String(Number(qn) || 10000),
+        platform: "web",
+        ptype: "8",
+      })
+      const url = `${Bapi("livePlayInfo")}?${query.toString()}`
+      const { data } = await this.fetchWithHeaders(url, {
+        Referer: `https://live.bilibili.com/${room_id}`,
+        Origin: "https://live.bilibili.com",
+      })
+      return this.parseLivePlayInfoData(data)
+    } catch (error) {
+      console.error("[ERROR] 获取直播播放信息失败:", error.message)
+      return this.buildErrorResult(error)
+    }
+  }
+
+  parseLivePlayInfoData(data) {
+    const streamList = data?.playurl_info?.playurl?.stream || []
+    const streams = []
+
+    for (const stream of Array.isArray(streamList) ? streamList : []) {
+      for (const format of Array.isArray(stream?.format) ? stream.format : []) {
+        for (const codec of Array.isArray(format?.codec) ? format.codec : []) {
+          const baseUrl = String(codec?.base_url || "")
+          for (const info of Array.isArray(codec?.url_info) ? codec.url_info : []) {
+            const host = String(info?.host || "")
+            const extra = String(info?.extra || "")
+            const url = `${host}${baseUrl}${extra}`.trim()
+            if (!url) continue
+            streams.push({
+              url,
+              protocolName: String(stream?.protocol_name || ""),
+              formatName: String(format?.format_name || ""),
+              codecName: String(codec?.codec_name || ""),
+              qn: Number(codec?.current_qn || 0),
+              host,
+            })
+          }
+        }
+      }
+    }
+
+    return {
+      roomId: String(data?.room_id || ""),
+      streams,
+      acceptQn: Array.isArray(data?.playurl_info?.playurl?.g_qn_desc)
+        ? data.playurl_info.playurl.g_qn_desc
+        : [],
+    }
+  }
+
   async getCompleteUrl(url) {
     try {
       const rep = await fetch(url)
