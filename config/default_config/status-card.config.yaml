@@ -1,0 +1,19 @@
+commands:
+  aliases:
+    - 系统状态
+    - 状态卡片
+    - 运行状态
+
+theme:
+  title: 系统状态
+  badge_mode: adapter
+  background: builtin:sunset
+  avatar: bot
+  doodle: builtin:cat
+  footer_signature: Kawaii Status
+
+display:
+  show_gpu: true
+  show_network: true
+  disk_path: auto
+  net_sample_ms: 1000

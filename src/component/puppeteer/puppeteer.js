@@ -221,13 +221,14 @@ class Puppeteer extends Renderer {
 
       // 跳转页面（核心修复：使用正确的file路径）
       await page.goto(fileUrl, pageGotoParams)
+      const renderReadyTimeout = Math.max(0, Number(data.renderReadyTimeout || 3000) || 3000)
       await page
         .waitForFunction(
           () =>
             document?.body?.dataset?.renderReady === "1" ||
             window.__renderReady === true ||
             document?.documentElement?.dataset?.renderReady === "1",
-          { timeout: 3000 },
+          { timeout: renderReadyTimeout },
         )
         .catch(() => {})
       let body = (await page.$("#container")) || (await page.$("body"))

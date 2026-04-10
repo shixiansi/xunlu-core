@@ -1,0 +1,132 @@
+﻿{{extend defaulthtml}}
+
+{{block 'css'}}
+<link rel="stylesheet" href="{{_res_path}}/html/status-card/status-card.css" />
+{{/block}}
+
+{{block 'main'}}
+<div
+  class="status-card"
+  data-background-src="{{if heroBackground.isBuiltin}}{{_res_path}}/{{heroBackground.path}}{{else}}{{heroBackground.src}}{{/if}}"
+  style="--status-card-image:url('{{if heroBackground.isBuiltin}}{{_res_path}}/{{heroBackground.path}}{{else}}{{heroBackground.src}}{{/if}}')"
+>
+  <div
+    class="status-hero"
+  >
+    <div class="status-hero-glow"></div>
+  </div>
+
+  <div class="status-body">
+    <div class="status-header">
+      <div class="status-profile">
+        <div class="status-avatar-shell">
+          <img
+            class="status-avatar"
+            src="{{if avatarImage.isBuiltin}}{{_res_path}}/{{avatarImage.path}}{{else}}{{avatarImage.src}}{{/if}}"
+            alt="avatar"
+          />
+        </div>
+        <div class="status-heading">
+          <div class="status-name">{{displayName}}</div>
+          <div class="status-title">{{cardTitle}}</div>
+        </div>
+        {{if badgeText}}
+        <div class="status-badge">{{badgeText}}</div>
+        {{/if}}
+      </div>
+
+      <div class="status-doodle">
+        <img
+          src="{{if doodleImage.isBuiltin}}{{_res_path}}/{{doodleImage.path}}{{else}}{{doodleImage.src}}{{/if}}"
+          alt="doodle"
+        />
+      </div>
+    </div>
+
+    <div class="status-metrics">
+      {{each metrics item}}
+      <div class="status-metric status-metric-{{item.tone}}">
+        <div class="status-metric-icon"><span>{{item.shortLabel}}</span></div>
+        <div class="status-metric-copy">
+          <div class="status-metric-label">{{item.label}}</div>
+          <div class="status-metric-value">{{item.value}}</div>
+          <div class="status-metric-note">{{item.note}}</div>
+        </div>
+      </div>
+      {{/each}}
+    </div>
+
+    <div class="status-meta">
+      {{each metaRows row}}
+      <div class="status-meta-row">
+        <div class="status-meta-key">{{row.label}}</div>
+        <div class="status-meta-value">{{row.value}}</div>
+      </div>
+      {{/each}}
+    </div>
+
+    <div class="status-footer">
+      <div class="status-footer-signature">{{footerSignature}}</div>
+      <div class="status-footer-meta">{{footerMeta}}</div>
+    </div>
+  </div>
+</div>
+<script>
+  ;(async () => {
+    const card = document.querySelector(".status-card")
+    const backgroundSrc = card?.dataset?.backgroundSrc || ""
+
+    const waitForElementImage = element =>
+      new Promise(resolve => {
+        if (!element || element.complete) {
+          resolve()
+          return
+        }
+
+        const done = () => resolve()
+        element.addEventListener("load", done, { once: true })
+        element.addEventListener("error", done, { once: true })
+      })
+
+    const waitForBackground = (element, src) =>
+      new Promise(resolve => {
+        if (!element || !src) {
+          resolve()
+          return
+        }
+
+        let settled = false
+        const finish = shouldApply => {
+          if (settled) return
+          settled = true
+          if (shouldApply) {
+            element.style.setProperty("--status-card-image", `url("${src}")`)
+          }
+          resolve()
+        }
+
+        const image = new Image()
+        image.decoding = "async"
+        image.referrerPolicy = "no-referrer"
+        image.onload = () => finish(true)
+        image.onerror = () => finish(false)
+        image.src = src
+
+        if (image.complete) {
+          finish(image.naturalWidth !== 0)
+        }
+      })
+
+    try {
+      await Promise.all([
+        waitForBackground(card, backgroundSrc),
+        ...Array.from(document.querySelectorAll(".status-card img")).map(waitForElementImage),
+      ])
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    } finally {
+      document.body.dataset.renderReady = "1"
+      window.__renderReady = true
+    }
+  })()
+</script>
+{{/block}}

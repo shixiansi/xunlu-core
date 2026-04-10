@@ -1,0 +1,23 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" fill="none">
+  <defs>
+    <linearGradient id="avatarBg" x1="30" x2="210" y1="20" y2="220" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#EFF8FF"/>
+      <stop offset="0.55" stop-color="#FFD1C2"/>
+      <stop offset="1" stop-color="#FFD58C"/>
+    </linearGradient>
+    <linearGradient id="avatarHair" x1="72" x2="180" y1="42" y2="182" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6B7FB6"/>
+      <stop offset="1" stop-color="#5C506D"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="240" height="240" rx="120" fill="url(#avatarBg)"/>
+  <circle cx="120" cy="120" r="90" fill="#FFFFFF" fill-opacity="0.26"/>
+  <path d="M72 188C82 154 102 128 132 112C158 98 180 100 196 110C180 126 168 154 166 188H72Z" fill="#F0C2A8" fill-opacity="0.92"/>
+  <path d="M78 182C80 146 92 112 118 86C144 60 176 50 206 60C186 70 170 86 158 108C148 128 144 152 142 182H78Z" fill="url(#avatarHair)" fill-opacity="0.98"/>
+  <path d="M102 86C118 72 138 68 156 72C174 78 186 92 190 112C176 102 160 98 142 100C124 102 110 106 96 116C96 106 98 94 102 86Z" fill="#738ED0" fill-opacity="0.92"/>
+  <path d="M102 116C120 102 138 96 154 98C168 100 176 112 176 130C176 154 166 174 146 186C126 198 106 196 92 182C98 162 102 138 102 116Z" fill="#F7DCC7" fill-opacity="0.96"/>
+  <path d="M130 128C138 126 146 130 150 138C142 136 136 136 130 138V128Z" fill="#5F5562" fill-opacity="0.86"/>
+  <circle cx="134" cy="136" r="4" fill="#4F4650"/>
+  <path d="M122 154C130 160 140 162 152 160C144 168 134 172 122 170V154Z" fill="#F1B49E" fill-opacity="0.86"/>
+</svg>

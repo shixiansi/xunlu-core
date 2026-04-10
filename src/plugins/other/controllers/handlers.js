@@ -342,21 +342,4 @@ export function register(bot) {
     }
   })
 
-  bot.setTask("0 15 16 * * *", () => {
-    void Bot.sendMessage(
-      {
-        group_id: 428596438,
-      },
-      "这tm是一条16点15分发送的定时消息！我将会调用来张色图这个指令",
-    ).catch(err => console.warn("[other] schedule sendMessage failed:", err?.message || err))
-
-    void bot
-      .callFnc("pixiv-1", {
-        user_id: 1765629830,
-        group_id: 428596438,
-        isMaster: true,
-        msg: "随机图",
-      })
-      .catch(err => console.warn("[other] schedule callFnc pixiv failed:", err?.message || err))
-  })
 }
