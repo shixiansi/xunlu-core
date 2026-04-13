@@ -1,4 +1,4 @@
-import fs from "node:fs"
+﻿import fs from "node:fs"
 import { randomUUID } from "node:crypto"
 import path from "node:path"
 import { createRequire } from "node:module"
@@ -703,24 +703,167 @@ function pickLastUrl(value) {
 
 function pickVideoUrl(video = {}) {
   const source = video && typeof video === "object" ? video : {}
-  const directCandidates = [
-    source?.play_addr_h264,
-    source?.play_addr,
-    source?.play_addr_265,
-    source?.play_addr_lowbr,
-    source?.play_api,
-    source?.playApi,
-    source?.play_url,
-    source?.playUrl,
-    source?.download_addr,
-    source?.downloadAddr,
-    source?.src,
-    source?.url,
-  ]
+  return normalizeVideoStreams(source)[0]?.url || ""
+}
 
+function normalizePositiveNumber(value) {
+  const num = Number(value)
+  return Number.isFinite(num) && num > 0 ? num : 0
+}
+
+function normalizeVideoDurationSeconds(value) {
+  const num = normalizePositiveNumber(value)
+  if (!num) return 0
+  if (num >= 10000) return Math.max(1, Math.round(num / 1000))
+  if (num >= 1000 && num % 1000 === 0) return Math.max(1, Math.round(num / 1000))
+  return Math.floor(num)
+}
+
+function inferVideoHeight(...values) {
+  for (const value of values) {
+    const num = Math.floor(normalizePositiveNumber(value))
+    if (num > 0) return num
+
+    const text = normalizeString(value).toLowerCase()
+    if (!text) continue
+
+    const heightMatch = text.match(/(?:^|[^0-9])(2160|1440|1080|960|720|540|480|360|240)p(?:[^0-9]|$)/i)
+    if (heightMatch) return Number(heightMatch[1])
+
+    const resolutionMatch = text.match(/(\d{3,4})[x*](\d{3,4})/)
+    if (resolutionMatch) {
+      return Math.min(Number(resolutionMatch[1]), Number(resolutionMatch[2]))
+    }
+  }
+  return 0
+}
+
+function buildVideoStreamLabel(stream = {}, fallback = "") {
+  const labels = [
+    stream?.qualityLabel,
+    stream?.quality_label,
+    stream?.quality_name,
+    stream?.qualityName,
+    stream?.quality_desc,
+    stream?.qualityDesc,
+    stream?.gear_name,
+    stream?.gearName,
+    fallback,
+  ]
+  for (const item of labels) {
+    const label = normalizeString(item)
+    if (label) return label
+  }
+
+  const height = inferVideoHeight(
+    stream?.height,
+    stream?.max_height,
+    stream?.maxHeight,
+    stream?.quality_type,
+    stream?.qualityType,
+    stream?.resolution,
+  )
+  if (height > 0) return `${height}P`
+
+  const bitRate = Math.floor(
+    normalizePositiveNumber(
+      stream?.bit_rate ?? stream?.bitRate ?? stream?.bandwidth ?? stream?.bps ?? stream?.br,
+    ),
+  )
+  if (bitRate > 0) return `${Math.round(bitRate / 1000)}K`
+
+  return "默认"
+}
+
+function pushVideoStream(streams, seenUrls, stream = {}, { fallbackLabel = "", scoreBoost = 0 } = {}) {
+  const url =
+    pickFirstUrl(stream?.play_addr_h264) ||
+    pickFirstUrl(stream?.playAddrH264) ||
+    pickFirstUrl(stream?.play_addr) ||
+    pickFirstUrl(stream?.playAddr) ||
+    pickFirstUrl(stream?.play_addr_265) ||
+    pickFirstUrl(stream?.playAddr265) ||
+    pickFirstUrl(stream?.play_addr_lowbr) ||
+    pickFirstUrl(stream?.playAddrLowbr) ||
+    pickFirstUrl(stream?.play_api) ||
+    pickFirstUrl(stream?.playApi) ||
+    pickFirstUrl(stream?.play_url) ||
+    pickFirstUrl(stream?.playUrl) ||
+    pickFirstUrl(stream?.download_addr) ||
+    pickFirstUrl(stream?.downloadAddr) ||
+    pickFirstUrl(stream?.src) ||
+    pickFirstUrl(stream?.url) ||
+    pickFirstUrl(stream)
+  if (!url || seenUrls.has(url)) return
+
+  const height = inferVideoHeight(
+    stream?.height,
+    stream?.max_height,
+    stream?.maxHeight,
+    stream?.quality_name,
+    stream?.qualityName,
+    stream?.quality_desc,
+    stream?.qualityDesc,
+    stream?.gear_name,
+    stream?.gearName,
+    stream?.resolution,
+    stream?.quality_type,
+    stream?.qualityType,
+  )
+  const width = Math.floor(normalizePositiveNumber(stream?.width))
+  const bitRate = Math.floor(
+    normalizePositiveNumber(
+      stream?.bit_rate ?? stream?.bitRate ?? stream?.bandwidth ?? stream?.bps ?? stream?.br,
+    ),
+  )
+  const dataSize = Math.floor(
+    normalizePositiveNumber(
+      stream?.data_size ??
+        stream?.dataSize ??
+        stream?.play_addr?.data_size ??
+        stream?.playAddr?.data_size,
+    ),
+  )
+  const qualityType = Math.floor(
+    normalizePositiveNumber(stream?.quality_type ?? stream?.qualityType ?? stream?.id),
+  )
+  const label = buildVideoStreamLabel(stream, fallbackLabel)
+  const score = height * 1000000000 + bitRate * 1000 + dataSize + qualityType + scoreBoost
+
+  seenUrls.add(url)
+  streams.push({
+    url,
+    width,
+    height,
+    bitRate,
+    dataSize,
+    qualityType,
+    qualityLabel: label,
+    codec: normalizeString(
+      stream?.codec_type ?? stream?.codecType ?? stream?.codecs ?? stream?.file_hash ?? "",
+    ),
+    score,
+  })
+}
+
+function normalizeVideoStreams(video = {}) {
+  const source = video && typeof video === "object" ? video : {}
+  const streams = []
+  const seenUrls = new Set()
+
+  const directCandidates = [
+    { value: source?.play_addr_h264, fallbackLabel: "H264", scoreBoost: 50 },
+    { value: source?.play_addr, fallbackLabel: "默认", scoreBoost: 40 },
+    { value: source?.play_addr_265, fallbackLabel: "H265", scoreBoost: 30 },
+    { value: source?.play_api, fallbackLabel: "播放源", scoreBoost: 20 },
+    { value: source?.play_url, fallbackLabel: "播放源", scoreBoost: 15 },
+    { value: source?.download_addr, fallbackLabel: "下载源", scoreBoost: 10 },
+    { value: source?.src, fallbackLabel: "源地址", scoreBoost: 5 },
+    { value: source?.url, fallbackLabel: "源地址", scoreBoost: 5 },
+    { value: source?.play_addr_lowbr, fallbackLabel: "低码率", scoreBoost: -1000 },
+  ]
   for (const item of directCandidates) {
-    const url = pickFirstUrl(item)
-    if (url) return url
+    pushVideoStream(streams, seenUrls, item.value, item)
   }
 
   const bitRates = Array.isArray(source?.bit_rate)
@@ -729,33 +872,36 @@ function pickVideoUrl(video = {}) {
       ? source.bitRate
       : []
   for (const item of bitRates) {
-    const url =
-      pickFirstUrl(item?.play_addr) ||
-      pickFirstUrl(item?.playAddr) ||
-      pickFirstUrl(item?.play_addr_h264) ||
-      pickFirstUrl(item?.playAddrH264) ||
-      pickFirstUrl(item?.play_api) ||
-      pickFirstUrl(item?.playApi)
-    if (url) return url
+    pushVideoStream(streams, seenUrls, item, {
+      fallbackLabel: normalizeString(item?.gear_name ?? item?.gearName),
+    })
   }
 
-  return ""
+  return streams.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score
+    if (b.height !== a.height) return b.height - a.height
+    if (b.bitRate !== a.bitRate) return b.bitRate - a.bitRate
+    if (b.dataSize !== a.dataSize) return b.dataSize - a.dataSize
+    return String(a.qualityLabel || "").localeCompare(String(b.qualityLabel || ""))
+  })
 }
 
 function normalizeVideoData(candidate = {}) {
   const source = candidate && typeof candidate === "object" ? candidate : {}
   const video = source?.video && typeof source.video === "object" ? source.video : source
-  const playUrl = pickVideoUrl(video)
+  const streams = normalizeVideoStreams(video)
+  const playUrl = streams[0]?.url || ""
   const cover =
     pickFirstUrl(video?.cover) ||
     pickFirstUrl(video?.dynamic_cover) ||
     pickFirstUrl(video?.origin_cover) ||
     ""
-  const duration = Number(video?.duration)
+  const duration = normalizeVideoDurationSeconds(video?.duration)
   return {
     url: playUrl,
     cover,
-    duration: Number.isFinite(duration) && duration > 0 ? Math.floor(duration) : 0,
+    duration,
+    streams,
   }
 }
 
@@ -2155,16 +2301,21 @@ class DouyinService {
     this.ensureTempDirs()
     const safeId = normalizeString(awemeId || Date.now()).replace(/[^\w-]/g, "_") || `douyin_${Date.now()}`
     const relativePath = path.posix.join("temp", "douyin", "video", `${safeId}.mp4`)
+    const absolutePath = path.join(ROOT_PATH, relativePath)
 
-    await this.downloader.downloadFile(targetUrl, relativePath, {
-      headers: {
-        referer: WEB_REFERER,
-        "user-agent": USER_AGENT,
-      },
-      maxBytes: this.videoMaxBytes,
-    })
-
-    return path.join(ROOT_PATH, relativePath)
+    try {
+      await this.downloader.downloadFile(targetUrl, relativePath, {
+        headers: {
+          referer: WEB_REFERER,
+          "user-agent": USER_AGENT,
+        },
+        maxBytes: this.videoMaxBytes,
+      })
+      return absolutePath
+    } catch (err) {
+      cleanupFile(absolutePath)
+      throw err
+    }
   }
 
   cleanupFiles(paths = []) {
@@ -2210,3 +2361,4 @@ export {
 }
 
 export default new DouyinService()
+

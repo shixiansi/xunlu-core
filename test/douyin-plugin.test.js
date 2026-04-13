@@ -137,6 +137,22 @@ function createMockVideoAweme() {
   }
 }
 
+function createMockStreamedVideoAweme({ duration = 600, streams = [], video = {}, ...overrides } = {}) {
+  const base = createMockVideoAweme()
+  const normalizedStreams = Array.isArray(streams) ? streams.filter(item => item?.url) : []
+  return {
+    ...base,
+    ...overrides,
+    video: {
+      ...base.video,
+      duration,
+      streams: normalizedStreams,
+      url: normalizedStreams[0]?.url || base.video.url,
+      ...video,
+    },
+  }
+}
+
 function createMockNoteAweme() {
   return {
     id: "7599999999999999999",
@@ -363,6 +379,50 @@ test("douyin aweme normalization picks video url from fallback fields", () => {
   assert.equal(video.cover, "https://example.com/video-fallback-cover.jpg")
 })
 
+test("douyin aweme normalization keeps ordered streams for video downgrade", () => {
+  const video = normalizeDouyinAweme(
+    {
+      aweme_id: "70004",
+      desc: "多档视频",
+      author: {
+        nickname: "视频作者 3",
+      },
+      video: {
+        duration: 600000,
+        bit_rate: [
+          {
+            gear_name: "1080p",
+            bit_rate: 1800000,
+            play_addr: {
+              url_list: ["https://example.com/video-1080.mp4"],
+            },
+          },
+          {
+            gear_name: "720p",
+            bit_rate: 900000,
+            play_addr: {
+              url_list: ["https://example.com/video-720.mp4"],
+            },
+          },
+          {
+            gear_name: "480p",
+            bit_rate: 500000,
+            play_addr: {
+              url_list: ["https://example.com/video-480.mp4"],
+            },
+          },
+        ],
+      },
+    },
+    { sourceUrl: "https://www.douyin.com/video/70004" },
+  )
+
+  assert.equal(video.video.duration, 600)
+  assert.equal(video.video.url, "https://example.com/video-1080.mp4")
+  assert.equal(video.video.streams.length, 3)
+  assert.equal(video.video.streams[1].qualityLabel, "720p")
+})
+
 test("douyin launch options support sandbox override for container environments", () => {
   const previous = process.env.PUPPETEER_DISABLE_SANDBOX
   process.env.PUPPETEER_DISABLE_SANDBOX = "true"
@@ -444,6 +504,109 @@ test("douyin video parse sends summary, video media and comment forward", async 
             JSON.stringify(res.apiCalls).includes("评论内容 1"),
         )
       })
+    },
+  )
+})
+
+test("douyin video helper auto selects lower quality for longer videos", async () => {
+  const replies = []
+  const requestedUrls = []
+  const videoPath = ensureFile(path.join(tempDouyinDir, "video", "downgraded-video.mp4"), "video")
+  const ctx = {
+    async reply(message) {
+      replies.push(message)
+      return true
+    },
+  }
+
+  await withPatchedMethods(
+    DouyinService,
+    {
+      async downloadVideoFile(url) {
+        requestedUrls.push(url)
+        return videoPath
+      },
+      cleanupFiles() {},
+    },
+    async () => {
+      const ok = await sendVideoMedia(
+        ctx,
+        createMockStreamedVideoAweme({
+          duration: 600,
+          streams: [
+            {
+              url: "https://example.com/video-1080.mp4",
+              qualityLabel: "1080p",
+              height: 1080,
+            },
+            {
+              url: "https://example.com/video-720.mp4",
+              qualityLabel: "720p",
+              height: 720,
+            },
+            {
+              url: "https://example.com/video-480.mp4",
+              qualityLabel: "480p",
+              height: 480,
+            },
+          ],
+        }),
+      )
+      assert.equal(ok, true)
+      assert.equal(requestedUrls[0], "https://example.com/video-480.mp4")
+      assert.ok(replies.some(item => typeof item === "string" && /视频时长超过8分钟/.test(item)))
+    },
+  )
+})
+
+test("douyin video helper retries with lower quality when current stream is oversized", async () => {
+  const replies = []
+  const requestedUrls = []
+  const videoPath = ensureFile(path.join(tempDouyinDir, "video", "retry-video.mp4"), "video")
+  const ctx = {
+    async reply(message) {
+      replies.push(message)
+      return true
+    },
+  }
+
+  await withPatchedMethods(
+    DouyinService,
+    {
+      async downloadVideoFile(url) {
+        requestedUrls.push(url)
+        if (requestedUrls.length === 1) {
+          throw new Error("download size exceeds limit: 100 > 10")
+        }
+        return videoPath
+      },
+      cleanupFiles() {},
+    },
+    async () => {
+      const ok = await sendVideoMedia(
+        ctx,
+        createMockStreamedVideoAweme({
+          duration: 60,
+          streams: [
+            {
+              url: "https://example.com/video-1080.mp4",
+              qualityLabel: "1080p",
+              height: 1080,
+            },
+            {
+              url: "https://example.com/video-720.mp4",
+              qualityLabel: "720p",
+              height: 720,
+            },
+          ],
+        }),
+      )
+      assert.equal(ok, true)
+      assert.deepEqual(requestedUrls, [
+        "https://example.com/video-1080.mp4",
+        "https://example.com/video-720.mp4",
+      ])
+      assert.ok(replies.some(item => typeof item === "string" && /当前画质下载超限/.test(item)))
     },
   )
 })
@@ -546,6 +709,66 @@ test("douyin note helper falls back to first image when image sending fails", as
   const ok = await sendNoteMedia(ctx, createMockNoteAweme())
   assert.equal(ok, false)
   assert.ok(String(calls[0]?.[1] || calls[0]).includes("已改为发送首图和原链接"))
+})
+
+test("douyin parse skips videos longer than 30 minutes", async () => {
+  let fetchCommentsCalled = false
+
+  await withPatchedMethods(
+    DouyinService,
+    {
+      async ensureAuthorizedSession() {
+        return {
+          ok: true,
+          auth: {
+            cookieHeader: "sessionid=abc",
+          },
+        }
+      },
+      async getAwemeDetail() {
+        return createMockStreamedVideoAweme({
+          duration: 1801,
+          streams: [
+            {
+              url: "https://example.com/video-1080.mp4",
+              qualityLabel: "1080p",
+              height: 1080,
+            },
+          ],
+        })
+      },
+      async downloadVideoFile() {
+        throw new Error("should not download")
+      },
+      async fetchHotComments() {
+        fetchCommentsCalled = true
+        return []
+      },
+      cleanupFiles() {},
+    },
+    async () => {
+      await withHarness({}, async harness => {
+        const res = await harness.emitMessage({
+          scene: "group",
+          text: "看看这个 https://v.douyin.com/iTooLong/",
+          group_id: 998,
+          user_id: 10001,
+        })
+
+        assert.equal(res.ok, true)
+        assert.equal(fetchCommentsCalled, false)
+        assert.ok(res.replies.some(item => /超过30分钟/.test(item?.text || "")))
+        assert.equal(
+          res.replies.some(item =>
+            Array.isArray(item?.message)
+              ? item.message.some(seg => seg?.type === "video")
+              : false,
+          ),
+          false,
+        )
+      })
+    },
+  )
 })
 
 test("douyin parse stays silent when hot comments fetch fails", async () => {
