@@ -1,4 +1,4 @@
-﻿import fs from "node:fs"
+import fs from "node:fs"
 import { randomUUID } from "node:crypto"
 import path from "node:path"
 import { createRequire } from "node:module"
@@ -178,9 +178,7 @@ function getLoginQrEndpoints() {
   const customUrl =
     normalizeString(readQrApiConfig()?.get_qrcode_url) ||
     normalizeString(process.env.DOUYIN_QR_API_URL)
-  return customUrl
-    ? [{ url: customUrl, query: {} }, ...LOGIN_QR_ENDPOINTS]
-    : LOGIN_QR_ENDPOINTS
+  return customUrl ? [{ url: customUrl, query: {} }, ...LOGIN_QR_ENDPOINTS] : LOGIN_QR_ENDPOINTS
 }
 
 function getLoginQrPollEndpoints() {
@@ -286,7 +284,8 @@ function shouldBlockLoginRequest(request) {
 
   if (/(\.mp4|\.m3u8|\.mp3)(\?|$)/i.test(url)) return true
   if (/(?:^|\/)(?:aweme|feed)\/v\d+\/(?:web\/)?feed/i.test(url)) return true
-  if (/\/recommend\//i.test(url) || /webcast/i.test(url) || /live\.douyin\.com/i.test(url)) return true
+  if (/\/recommend\//i.test(url) || /webcast/i.test(url) || /live\.douyin\.com/i.test(url))
+    return true
 
   return false
 }
@@ -632,7 +631,12 @@ function normalizeStats(stats = {}) {
   }
 
   return {
-    diggCount: pickNumber(source?.digg_count, source?.diggCount, source?.like_count, source?.likeCount),
+    diggCount: pickNumber(
+      source?.digg_count,
+      source?.diggCount,
+      source?.like_count,
+      source?.likeCount,
+    ),
     commentCount: pickNumber(source?.comment_count, source?.commentCount),
     collectCount: pickNumber(source?.collect_count, source?.collectCount, source?.collects),
     shareCount: pickNumber(source?.share_count, source?.shareCount),
@@ -711,12 +715,87 @@ function normalizePositiveNumber(value) {
   return Number.isFinite(num) && num > 0 ? num : 0
 }
 
+function normalizeDurationSecondsByScale(value, scale = 1) {
+  const num = normalizePositiveNumber(value)
+  const divisor = normalizePositiveNumber(scale) || 1
+  if (!num) return 0
+  return Math.max(1, Math.round(num / divisor))
+}
+
 function normalizeVideoDurationSeconds(value) {
   const num = normalizePositiveNumber(value)
   if (!num) return 0
-  if (num >= 10000) return Math.max(1, Math.round(num / 1000))
-  if (num >= 1000 && num % 1000 === 0) return Math.max(1, Math.round(num / 1000))
+  if (num >= 1000000000) return normalizeDurationSecondsByScale(num, 1000000)
+  if (num >= 10000000 && num % 1000 !== 0) return normalizeDurationSecondsByScale(num, 1000000)
+  if (num >= 10000) return normalizeDurationSecondsByScale(num, 1000)
+  if (num >= 1000 && num % 1000 === 0) return normalizeDurationSecondsByScale(num, 1000)
   return Math.floor(num)
+}
+
+function shouldPreferMusicDuration(videoDuration = 0, musicDuration = 0) {
+  const videoSec = Math.floor(normalizePositiveNumber(videoDuration))
+  const musicSec = Math.floor(normalizePositiveNumber(musicDuration))
+  if (!videoSec || !musicSec) return false
+  const larger = Math.max(videoSec, musicSec)
+  const smaller = Math.min(videoSec, musicSec)
+  return smaller > 0 && larger / smaller >= 900
+}
+
+function normalizeMusicData(candidate = {}) {
+  const source = candidate && typeof candidate === "object" ? candidate : {}
+  const music =
+    (source?.music && typeof source.music === "object" ? source.music : null) ||
+    (source?.music_info && typeof source.music_info === "object" ? source.music_info : null) ||
+    (source?.musicInfo && typeof source.musicInfo === "object" ? source.musicInfo : null) ||
+    {}
+
+  return {
+    id: normalizeString(music?.id ?? music?.mid ?? music?.music_id ?? music?.musicId),
+    title: normalizeString(music?.title ?? music?.music_name ?? music?.musicName ?? music?.name),
+    author: normalizeString(
+      music?.author ?? music?.owner_nickname ?? music?.ownerNickname ?? music?.artist,
+    ),
+    duration: Math.floor(
+      normalizePositiveNumber(
+        music?.duration ?? music?.duration_s ?? music?.durationSec ?? music?.duration_sec,
+      ),
+    ),
+  }
+}
+
+function pickVideoDurationSeconds(source = {}, video = {}, musicDuration = 0) {
+  const addressDurationFields = [
+    video?.download_addr?.duration,
+    video?.downloadAddr?.duration,
+    video?.play_addr?.duration,
+    video?.playAddr?.duration,
+    video?.play_addr_h264?.duration,
+    video?.playAddrH264?.duration,
+    video?.play_addr_lowbr?.duration,
+    video?.playAddrLowbr?.duration,
+  ]
+
+  let duration = 0
+
+  // Prefer asset-side duration when available. Some detail payloads expose a
+  // noisy top-level video.duration, which can incorrectly trip the 30-minute guard.
+  for (const value of addressDurationFields) {
+    duration = normalizeDurationSecondsByScale(value, 1000)
+    if (duration > 0) break
+  }
+
+  if (!duration) {
+    for (const value of [video?.duration, source?.duration]) {
+      duration = normalizeVideoDurationSeconds(value)
+      if (duration > 0) break
+    }
+  }
+
+  if (shouldPreferMusicDuration(duration, musicDuration)) {
+    return Math.floor(normalizePositiveNumber(musicDuration))
+  }
+
+  return duration
 }
 
 function inferVideoHeight(...values) {
@@ -727,7 +806,9 @@ function inferVideoHeight(...values) {
     const text = normalizeString(value).toLowerCase()
     if (!text) continue
 
-    const heightMatch = text.match(/(?:^|[^0-9])(2160|1440|1080|960|720|540|480|360|240)p(?:[^0-9]|$)/i)
+    const heightMatch = text.match(
+      /(?:^|[^0-9])(2160|1440|1080|960|720|540|480|360|240)p(?:[^0-9]|$)/i,
+    )
     if (heightMatch) return Number(heightMatch[1])
 
     const resolutionMatch = text.match(/(\d{3,4})[x*](\d{3,4})/)
@@ -775,7 +856,12 @@ function buildVideoStreamLabel(stream = {}, fallback = "") {
   return "默认"
 }
 
-function pushVideoStream(streams, seenUrls, stream = {}, { fallbackLabel = "", scoreBoost = 0 } = {}) {
+function pushVideoStream(
+  streams,
+  seenUrls,
+  stream = {},
+  { fallbackLabel = "", scoreBoost = 0 } = {},
+) {
   const url =
     pickFirstUrl(stream?.play_addr_h264) ||
     pickFirstUrl(stream?.playAddrH264) ||
@@ -886,7 +972,7 @@ function normalizeVideoStreams(video = {}) {
   })
 }
 
-function normalizeVideoData(candidate = {}) {
+function normalizeVideoData(candidate = {}, musicDuration = 0) {
   const source = candidate && typeof candidate === "object" ? candidate : {}
   const video = source?.video && typeof source.video === "object" ? source.video : source
   const streams = normalizeVideoStreams(video)
@@ -896,7 +982,7 @@ function normalizeVideoData(candidate = {}) {
     pickFirstUrl(video?.dynamic_cover) ||
     pickFirstUrl(video?.origin_cover) ||
     ""
-  const duration = normalizeVideoDurationSeconds(video?.duration)
+  const duration = pickVideoDurationSeconds(source, video, musicDuration)
   return {
     url: playUrl,
     cover,
@@ -934,12 +1020,7 @@ function normalizeUserInfo(raw = {}) {
       raw?.userInfo?.nickname,
   )
   const uid = normalizeString(
-    raw?.uid ??
-      raw?.id ??
-      raw?.sec_uid ??
-      raw?.secUid ??
-      raw?.user_info?.uid ??
-      raw?.userInfo?.uid,
+    raw?.uid ?? raw?.id ?? raw?.sec_uid ?? raw?.secUid ?? raw?.user_info?.uid ?? raw?.userInfo?.uid,
   )
   const avatar =
     pickFirstUrl(raw?.avatar_thumb) ||
@@ -952,7 +1033,10 @@ function normalizeUserInfo(raw = {}) {
 }
 
 function formatShortText(text = "", max = 240) {
-  const normalized = String(text || "").replace(/\s+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim()
+  const normalized = String(text || "")
+    .replace(/\s+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
   if (normalized.length <= max) return normalized
   return `${normalized.slice(0, max - 1)}…`
 }
@@ -1018,7 +1102,9 @@ function findCandidateNodes(root) {
 
     if (!Array.isArray(value)) {
       const id = extractAwemeId(value)
-      const hasMedia = Boolean(normalizeVideoData(value).url || normalizeImageList(value).length > 0)
+      const hasMedia = Boolean(
+        normalizeVideoData(value).url || normalizeImageList(value).length > 0,
+      )
       const hasHint = Boolean(id && (hasMedia || normalizeDesc(value) || value?.author))
       if (hasHint) result.push(value)
     }
@@ -1044,13 +1130,22 @@ function normalizeDouyinAweme(candidate = {}, { sourceUrl = "" } = {}) {
   const author = normalizeAuthor(candidate?.author || candidate?.authorInfo || {})
   const stats = normalizeStats(candidate?.statistics || candidate?.stats || {})
   const images = normalizeImageList(candidate)
-  const video = normalizeVideoData(candidate)
+  const music = normalizeMusicData(candidate)
+  const video = normalizeVideoData(candidate, music.duration)
   const cover = video.cover || images[0] || pickFirstUrl(candidate?.cover) || author.avatar || ""
   const desc = normalizeDesc(candidate)
-  const type =
-    video.url ? "video" : images.length > 0 ? "note" : sourceUrl.includes("/note/") ? "note" : "video"
+  const type = video.url
+    ? "video"
+    : images.length > 0
+      ? "note"
+      : sourceUrl.includes("/note/")
+        ? "note"
+        : "video"
   const publishedAt = normalizeTimestamp(
-    candidate?.create_time ?? candidate?.createTime ?? candidate?.publish_time ?? candidate?.publishTime,
+    candidate?.create_time ??
+      candidate?.createTime ??
+      candidate?.publish_time ??
+      candidate?.publishTime,
   )
 
   return {
@@ -1061,6 +1156,7 @@ function normalizeDouyinAweme(candidate = {}, { sourceUrl = "" } = {}) {
     stats,
     cover,
     video,
+    music,
     images,
     link: normalizeLink(sourceUrl, awemeId, type),
     publishedAt,
@@ -1073,7 +1169,9 @@ function extractFirstDouyinUrlFromText(text = "") {
   const unique = []
   const seen = new Set()
   for (const item of matches) {
-    const normalized = String(item || "").replace(/[),。；、]+$/, "").trim()
+    const normalized = String(item || "")
+      .replace(/[),。；、]+$/, "")
+      .trim()
     if (!normalized) continue
     try {
       const url = new URL(normalized)
@@ -1109,7 +1207,11 @@ function extractFirstDouyinUrlFromValue(value) {
 function normalizeComment(comment = {}) {
   const author = normalizeAuthor(comment?.user || comment?.author || {})
   const text = formatShortText(
-    comment?.text ?? comment?.content_text ?? comment?.contentText ?? comment?.reply_comment_total ?? "",
+    comment?.text ??
+      comment?.content_text ??
+      comment?.contentText ??
+      comment?.reply_comment_total ??
+      "",
     1000,
   )
   if (!text) return null
@@ -1125,9 +1227,7 @@ function normalizeComment(comment = {}) {
 
 function looksLikeCommentTimeLine(text = "") {
   const value = normalizeString(text)
-  return /(\d+分钟前|\d+小时前|\d+天前|\d+月前|刚刚|昨天|前·|发布于|\d{4}-\d{2}-\d{2})/.test(
-    value,
-  )
+  return /(\d+分钟前|\d+小时前|\d+天前|\d+月前|刚刚|昨天|前·|发布于|\d{4}-\d{2}-\d{2})/.test(value)
 }
 
 function parseHumanCount(text = "") {
@@ -1301,11 +1401,10 @@ class DouyinService {
       const getText = node => String(node?.innerText || node?.textContent || "").trim()
       const modal =
         document.querySelector(".douyin_login_new_class") ||
-        [...document.querySelectorAll('div[role="dialog"],div[class],section')]
-          .find(node => {
-            const text = getText(node)
-            return text.includes("扫码登录") || text.includes("登录抖音")
-          })
+        [...document.querySelectorAll('div[role="dialog"],div[class],section')].find(node => {
+          const text = getText(node)
+          return text.includes("扫码登录") || text.includes("登录抖音")
+        })
       if (!modal) return { exists: false, text: "", qrDataUrl: "" }
 
       let qrImage = modal.querySelector('#douyin_login_comp_scan_code img[src^="data:image/"]')
@@ -1382,11 +1481,7 @@ class DouyinService {
         const text = String(node?.innerText || node?.textContent || "").trim()
         const id = String(node?.id || "")
         const cls = String(node?.className || "")
-        return (
-          text === "登录" ||
-          /login/i.test(`${id} ${cls}`) ||
-          id === "douyin_login_comp_btn_id"
-        )
+        return text === "登录" || /login/i.test(`${id} ${cls}`) || id === "douyin_login_comp_btn_id"
       })
 
       if (candidate) {
@@ -1404,12 +1499,12 @@ class DouyinService {
 
     const selectors = [
       '#douyin_login_comp_scan_code img[aria-label="二维码"]',
-      '#douyin_login_comp_scan_code img',
-      '#animate_qrcode_container img',
+      "#douyin_login_comp_scan_code img",
+      "#animate_qrcode_container img",
       '.douyin_login_new_class img[aria-label="二维码"]',
-      '#douyin_login_comp_scan_code',
-      '#animate_qrcode_container',
-      '.douyin_login_new_class .pE9ZOPEo',
+      "#douyin_login_comp_scan_code",
+      "#animate_qrcode_container",
+      ".douyin_login_new_class .pE9ZOPEo",
     ]
 
     for (const selector of selectors) {
@@ -1476,14 +1571,11 @@ class DouyinService {
   }
 
   buildLoginApiHeaders(cookieHeader = "") {
-    return buildHeaders(
-      cookieHeader ? { cookieHeader } : null,
-      {
-        accept: "application/json, text/plain, */*",
-        origin: WEB_REFERER.replace(/\/$/, ""),
-        "x-requested-with": "XMLHttpRequest",
-      },
-    )
+    return buildHeaders(cookieHeader ? { cookieHeader } : null, {
+      accept: "application/json, text/plain, */*",
+      origin: WEB_REFERER.replace(/\/$/, ""),
+      "x-requested-with": "XMLHttpRequest",
+    })
   }
 
   buildSignedLoginQuery(extra = {}, cookies = {}) {
@@ -1805,19 +1897,21 @@ class DouyinService {
 
           const state = parseDouyinQrStatus(result.data)
           logger.info?.(
-            `[Douyin] 扫码轮询状态: method=${body ? "POST" : "GET"}, status=${state.status}, raw=${JSON.stringify({
-              status: result?.data?.data?.status ?? result?.data?.status,
-              status_code: result?.data?.data?.status_code ?? result?.data?.status_code,
-              check_status: result?.data?.data?.check_status ?? result?.data?.check_status,
-              message: result?.data?.data?.message ?? result?.data?.message,
-              status_msg: result?.data?.data?.status_msg ?? result?.data?.status_msg,
-              has_redirect_url: Boolean(
-                result?.data?.data?.redirect_url ||
+            `[Douyin] 扫码轮询状态: method=${body ? "POST" : "GET"}, status=${state.status}, raw=${JSON.stringify(
+              {
+                status: result?.data?.data?.status ?? result?.data?.status,
+                status_code: result?.data?.data?.status_code ?? result?.data?.status_code,
+                check_status: result?.data?.data?.check_status ?? result?.data?.check_status,
+                message: result?.data?.data?.message ?? result?.data?.message,
+                status_msg: result?.data?.data?.status_msg ?? result?.data?.status_msg,
+                has_redirect_url: Boolean(
+                  result?.data?.data?.redirect_url ||
                   result?.data?.data?.redirectUrl ||
                   result?.data?.redirect_url ||
                   result?.data?.redirectUrl,
-              ),
-            })}`,
+                ),
+              },
+            )}`,
           )
           if (
             state.status === "pending" &&
@@ -1959,7 +2053,8 @@ class DouyinService {
       throw createError("未识别到有效的抖音链接", "DOUYIN_INVALID_URL")
     }
 
-    const isShortLink = /^v\.douyin\.com$/i.test(target.hostname) || /\/share\//i.test(target.pathname)
+    const isShortLink =
+      /^v\.douyin\.com$/i.test(target.hostname) || /\/share\//i.test(target.pathname)
     if (!isShortLink) return target.toString()
 
     try {
@@ -2028,7 +2123,9 @@ class DouyinService {
         const recommendationTop = [...document.querySelectorAll("*")]
           .find(node => String(node?.innerText || "").trim() === "推荐视频")
           ?.getBoundingClientRect?.().top
-        const maxTop = Number.isFinite(recommendationTop) ? recommendationTop : Number.POSITIVE_INFINITY
+        const maxTop = Number.isFinite(recommendationTop)
+          ? recommendationTop
+          : Number.POSITIVE_INFINITY
         const images = [...document.querySelectorAll("img")]
           .map(img => {
             const rect = img.getBoundingClientRect()
@@ -2056,7 +2153,9 @@ class DouyinService {
           }))
           .find(item => item.text && !/^(登录|我的)$/.test(item.text))
         const description = findMeta(["description", "og:description", "twitter:description"])
-        const title = String(document.title || "").replace(/\s*-\s*抖音$/, "").trim()
+        const title = String(document.title || "")
+          .replace(/\s*-\s*抖音$/, "")
+          .trim()
         const desc = parseDesc(description) || title
         const authorName = userAnchor?.text || parseAuthor(description) || ""
         const publishMatched = bodyText.match(/发布时间[：:]\s*([^\n]+)/)
@@ -2064,7 +2163,9 @@ class DouyinService {
         const videoSrc = String(video?.currentSrc || video?.src || "").trim()
         const poster = String(video?.poster || "").trim()
         const duration = Number(video?.duration || 0)
-        const idMatched = String(currentUrl || document.location.href || "").match(/\/(video|note)\/(\d+)/i)
+        const idMatched = String(currentUrl || document.location.href || "").match(
+          /\/(video|note)\/(\d+)/i,
+        )
         return {
           aweme_id: String(idMatched?.[2] || ""),
           desc,
@@ -2080,7 +2181,8 @@ class DouyinService {
                 cover: {
                   url_list: [poster || uniqueImages[0] || ""],
                 },
-                duration: Number.isFinite(duration) && duration > 0 ? Math.round(duration * 1000) : 0,
+                duration:
+                  Number.isFinite(duration) && duration > 0 ? Math.round(duration * 1000) : 0,
               }
             : undefined,
           image_post_info:
@@ -2162,6 +2264,7 @@ class DouyinService {
 
   async fetchAwemeByReferenceApi(awemeId, auth = null, sourceUrl = "") {
     const url = this.buildReferenceAwemeDetailUrl(awemeId)
+
     const { data } = await requestJson(url, {
       headers: {
         ...buildHeaders(auth, {
@@ -2170,6 +2273,8 @@ class DouyinService {
         "user-agent": MOBILE_DOUYIN_USER_AGENT,
       },
     })
+
+    console.log(data)
 
     const detail = data?.aweme_detail
     if (!detail || typeof detail !== "object") return null
@@ -2185,7 +2290,9 @@ class DouyinService {
     const resultUrl = use265 ? playUrl265 : playUrl
     const images =
       type === "note"
-        ? (Array.isArray(detail?.images) ? detail.images : []).map(item => pickFirstUrl(item?.url_list)).filter(Boolean)
+        ? (Array.isArray(detail?.images) ? detail.images : [])
+            .map(item => pickFirstUrl(item?.url_list))
+            .filter(Boolean)
         : []
 
     const normalized = normalizeDouyinAweme(
@@ -2194,7 +2301,12 @@ class DouyinService {
         images: images.length > 0 ? images : detail?.images,
         video: {
           ...videoSource,
-          play_addr: resultUrl ? { url_list: [resultUrl], data_size: use265 ? playAddr265?.data_size : playAddr?.data_size } : playAddr,
+          play_addr: resultUrl
+            ? {
+                url_list: [resultUrl],
+                data_size: use265 ? playAddr265?.data_size : playAddr?.data_size,
+              }
+            : playAddr,
         },
       },
       { sourceUrl },
@@ -2299,7 +2411,8 @@ class DouyinService {
     if (!targetUrl) throw createError("未找到可下载的视频地址", "DOUYIN_VIDEO_URL_MISSING")
 
     this.ensureTempDirs()
-    const safeId = normalizeString(awemeId || Date.now()).replace(/[^\w-]/g, "_") || `douyin_${Date.now()}`
+    const safeId =
+      normalizeString(awemeId || Date.now()).replace(/[^\w-]/g, "_") || `douyin_${Date.now()}`
     const relativePath = path.posix.join("temp", "douyin", "video", `${safeId}.mp4`)
     const absolutePath = path.join(ROOT_PATH, relativePath)
 
@@ -2361,4 +2474,3 @@ export {
 }
 
 export default new DouyinService()
-

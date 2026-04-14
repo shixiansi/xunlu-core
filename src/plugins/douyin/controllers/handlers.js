@@ -101,18 +101,22 @@ async function renderSummaryCard(aweme = {}) {
 
   const desc = String(aweme?.desc || "").trim()
   const normalizedDesc = desc.length > 140 ? `${desc.slice(0, 139)}…` : desc
-  return await renderImg("douyin", {
-    nickname: String(aweme?.author?.nickname || "抖音用户").trim() || "抖音用户",
-    avatar: aweme?.author?.avatar || aweme?.cover || "",
-    publishedAt: aweme?.publishedAt || "",
-    nowText: new Date().toISOString().replace("T", " ").slice(0, 19),
-    desc: normalizedDesc,
-    cover: aweme?.cover || aweme?.images?.[0] || "",
-    awemeType: aweme?.type === "note" ? "note" : "video",
-    saveId: `douyin_${aweme?.id || Date.now()}`,
-  }, {
-    tpl: "card",
-  })
+  return await renderImg(
+    "douyin",
+    {
+      nickname: String(aweme?.author?.nickname || "抖音用户").trim() || "抖音用户",
+      avatar: aweme?.author?.avatar || aweme?.cover || "",
+      publishedAt: aweme?.publishedAt || "",
+      nowText: new Date().toISOString().replace("T", " ").slice(0, 19),
+      desc: normalizedDesc,
+      cover: aweme?.cover || aweme?.images?.[0] || "",
+      awemeType: aweme?.type === "note" ? "note" : "video",
+      saveId: `douyin_${aweme?.id || Date.now()}`,
+    },
+    {
+      tpl: "card",
+    },
+  )
 }
 
 async function sendSummaryCard(ctx, aweme = {}) {
@@ -170,7 +174,9 @@ function getVideoStreamHeight(stream = {}) {
   const directHeight = Number(stream?.height || stream?.maxHeight || stream?.max_height || 0)
   if (Number.isFinite(directHeight) && directHeight > 0) return Math.floor(directHeight)
 
-  const label = String(stream?.qualityLabel || stream?.quality_label || "").trim().toLowerCase()
+  const label = String(stream?.qualityLabel || stream?.quality_label || "")
+    .trim()
+    .toLowerCase()
   if (!label) return 0
 
   const matched = label.match(/(2160|1440|1080|960|720|540|480|360|240)p/i)
@@ -273,7 +279,10 @@ async function sendVideoMedia(ctx, aweme) {
     for (let index = plan.startIndex; index < plan.streams.length; index += 1) {
       const stream = plan.streams[index]
       try {
-        const videoPath = await DouyinService.downloadVideoFile(stream?.url, `${aweme?.id || "douyin"}_${index}`)
+        const videoPath = await DouyinService.downloadVideoFile(
+          stream?.url,
+          `${aweme?.id || "douyin"}_${index}`,
+        )
         cleanupPaths.push(videoPath)
         await ctx.reply(segment.video(videoPath))
         return true
@@ -283,7 +292,9 @@ async function sendVideoMedia(ctx, aweme) {
           logger.warn?.(
             `[Douyin] 视频体积超限，自动降级到 ${formatVideoStreamQuality(nextStream)}：${err?.message || err}`,
           )
-          await ctx.reply(`当前画质下载超限，已自动降级到 ${formatVideoStreamQuality(nextStream)} 重试。`)
+          await ctx.reply(
+            `当前画质下载超限，已自动降级到 ${formatVideoStreamQuality(nextStream)} 重试。`,
+          )
           continue
         }
         throw err
@@ -325,16 +336,9 @@ async function sendNoteMedia(ctx, aweme) {
       nickname,
       sender_name: nickname,
       name: nickname,
-      content: [
-        segment.image(url),
-        ...(index === 0 && aweme?.link ? [`链接：${aweme.link}`] : []),
-      ],
+      content: [segment.image(url), ...(index === 0 && aweme?.link ? [`链接：${aweme.link}`] : [])],
     }))
-    const forward = await ctx.makeGroupForwardMsg(
-      ctx,
-      nodes,
-      `抖音图文（${imageUrls.length}张）`,
-    )
+    const forward = await ctx.makeGroupForwardMsg(ctx, nodes, `抖音图文（${imageUrls.length}张）`)
     await ctx.reply(forward)
     return true
   } catch (err) {
@@ -438,7 +442,9 @@ async function processQrPoll(key = ACTIVE_SESSION_KEY, { notifyPending = false }
 async function handleQrLoginCommand(ctx) {
   if (!ctx?.isMaster) return false
   if (!ctx?.isPrivate) {
-    return await ctx.reply("请私聊我发送 #抖音登录 <cookie>，或前往 WebUI 的抖音配置页设置 Cookie。")
+    return await ctx.reply(
+      "请私聊我发送 #抖音登录 <cookie>，或前往 WebUI 的抖音配置页设置 Cookie。",
+    )
   }
   clearQrSession(ACTIVE_SESSION_KEY)
   DouyinService.cleanupQrImage()
@@ -491,6 +497,7 @@ async function handleDouyinParse(ctx) {
   let aweme
   try {
     aweme = await DouyinService.getAwemeDetail(url, authState.auth)
+    console.log(aweme)
   } catch (err) {
     await ctx.reply(buildFriendlyErrorMessage(err))
     return true
@@ -498,8 +505,13 @@ async function handleDouyinParse(ctx) {
 
   await sendSummaryCard(ctx, aweme)
 
-  if (aweme?.type === "video" && Number(aweme?.video?.duration || 0) > DOUYIN_VIDEO_MAX_DURATION_SEC) {
-    await ctx.reply(`视频时长超过30分钟，已跳过视频解析，请前往抖音查看原链接。\n链接：${aweme?.link || "无"}`)
+  if (
+    aweme?.type === "video" &&
+    Number(aweme?.video?.duration || 0) > DOUYIN_VIDEO_MAX_DURATION_SEC
+  ) {
+    await ctx.reply(
+      `视频时长超过30分钟，已跳过视频解析，请前往抖音查看原链接。\n链接：${aweme?.link || "无"}`,
+    )
     return true
   }
 

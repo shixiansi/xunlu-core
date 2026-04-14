@@ -423,6 +423,66 @@ test("douyin aweme normalization keeps ordered streams for video downgrade", () 
   assert.equal(video.video.streams[1].qualityLabel, "720p")
 })
 
+test("douyin aweme normalization prefers asset duration over noisy top-level duration", () => {
+  const video = normalizeDouyinAweme(
+    {
+      aweme_id: "70005",
+      desc: "时长纠偏视频",
+      author: {
+        nickname: "视频作者 4",
+      },
+      video: {
+        duration: 3600001,
+        play_addr: {
+          url_list: ["https://example.com/video-corrected.mp4"],
+          duration: 298000,
+        },
+        cover: {
+          url_list: ["https://example.com/video-corrected-cover.jpg"],
+        },
+      },
+    },
+    { sourceUrl: "https://www.douyin.com/video/70005" },
+  )
+
+  assert.equal(video.video.duration, 298)
+  assert.equal(video.video.url, "https://example.com/video-corrected.mp4")
+  assert.equal(video.cover, "https://example.com/video-corrected-cover.jpg")
+})
+
+test("douyin aweme normalization uses music duration when video and music differ by 900x", () => {
+  const video = normalizeDouyinAweme(
+    {
+      aweme_id: "70006",
+      desc: "音频纠偏视频",
+      author: {
+        nickname: "视频作者 5",
+      },
+      music: {
+        id: "music-70006",
+        title: "测试音频",
+        author: "测试歌手",
+        duration: 298,
+      },
+      video: {
+        duration: 268200000,
+        play_addr: {
+          url_list: ["https://example.com/video-music-fallback.mp4"],
+        },
+        cover: {
+          url_list: ["https://example.com/video-music-fallback-cover.jpg"],
+        },
+      },
+    },
+    { sourceUrl: "https://www.douyin.com/video/70006" },
+  )
+
+  assert.equal(video.music.duration, 298)
+  assert.equal(video.music.title, "测试音频")
+  assert.equal(video.video.duration, 298)
+  assert.equal(video.video.url, "https://example.com/video-music-fallback.mp4")
+})
+
 test("douyin launch options support sandbox override for container environments", () => {
   const previous = process.env.PUPPETEER_DISABLE_SANDBOX
   process.env.PUPPETEER_DISABLE_SANDBOX = "true"
