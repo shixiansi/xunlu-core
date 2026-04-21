@@ -1,24 +1,58 @@
 import path from "path"
 import express from "express"
-import { fileURLToPath, pathToFileURL } from "url"
+import { fileURLToPath } from "url"
 import { loadPlugins } from "./pluginLoader.js"
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
-export async function startServer(port = process.env.PORT || 3000) {
-  const app = express()
+let app = null
+let server = null
+
+function getLogger() {
+  const lg = globalThis.logger
+  if (lg && typeof lg === "object") return lg
+  return {
+    info: console.log.bind(console),
+    warn: console.warn.bind(console),
+    error: console.error.bind(console),
+  }
+}
+
+/**
+ * 启动插件 API 服务。
+ *
+ * 新结构下推荐由 Runtime Kernel 显式传入已经加载好的插件列表；
+ * 若仍以旧方式直接调用，则保留“自行发现插件”的兼容路径。
+ */
+export async function startServer(portOrOptions = process.env.PORT || 3000) {
+  if (server) return { app, server }
+
+  const options =
+    portOrOptions && typeof portOrOptions === "object" && !Array.isArray(portOrOptions)
+      ? portOrOptions
+      : { port: portOrOptions }
+  const logger = getLogger()
+
+  app = express()
   app.use(express.json())
 
   // 基本健康检查
   app.get("/health", (req, res) => res.json({ status: "ok" }))
 
-  // 加载本地插件并挂载其 API 路由
-  // src/lib -> src/plugins
-  const plugins = await loadPlugins(path.join(__dirname, "..", "plugins"))
+  // 优先消费 Runtime Kernel 传入的插件列表，避免二次加载和空 bot shim 分叉。
+  const plugins =
+    Array.isArray(options.plugins) && options.plugins.length > 0
+      ? options.plugins
+      : await loadPlugins(path.join(__dirname, "..", "plugins"))
+  const shouldRegisterPlugins =
+    typeof options.registerPlugins === "boolean"
+      ? options.registerPlugins
+      : !(Array.isArray(options.plugins) && options.plugins.length > 0)
+
   for (const p of plugins) {
     const impl = p.implementation
     // 如果插件需要注册 bot，可传入一个简单的 bot shim
-    if (typeof impl.register === "function") {
+    if (shouldRegisterPlugins && typeof impl.register === "function") {
       try {
         impl.register({})
       } catch (e) {
@@ -79,9 +113,10 @@ export async function startServer(port = process.env.PORT || 3000) {
   app.post("/bot/event", (req, res) => {
     const event = req.body
     for (const p of plugins) {
-      if (p.onBotEvent) {
+      const onBotEvent = p.onBotEvent || p?.implementation?.onBotEvent
+      if (typeof onBotEvent === "function") {
         try {
-          p.onBotEvent(event)
+          onBotEvent(event)
         } catch (e) {
           logger.error(e)
         }
@@ -90,6 +125,29 @@ export async function startServer(port = process.env.PORT || 3000) {
     res.json({ ok: true })
   })
 
-  const server = app.listen(port, () => logger.info(`plugin-api listening on ${port}`))
+  const listenPort = options.port || process.env.PORT || 3000
+  const listenHost = String(options.host || process.env.HOST || "0.0.0.0")
+  server = app.listen(listenPort, listenHost, () =>
+    logger.info(`plugin-api listening on http://${listenHost}:${listenPort}`),
+  )
   return { app, server }
+}
+
+export function getPluginApiServer() {
+  return server ? { app, server } : null
+}
+
+export async function stopServer() {
+  if (!server) return false
+
+  const target = server
+  server = null
+  app = null
+  await new Promise((resolve, reject) => {
+    target.close(err => {
+      if (err) return reject(err)
+      resolve(true)
+    })
+  })
+  return true
 }

@@ -66,7 +66,13 @@ function normalizePayload(result) {
   }
 }
 
-export async function startWebuiServer() {
+/**
+ * 启动共享 WebUI。
+ *
+ * 历史实现会在内部自行 discover plugins；重构后允许由 Runtime Kernel
+ * 直接传入已经加载好的插件列表或 registry，避免出现“服务层再次加载插件”的分叉。
+ */
+export async function startWebuiServer(options = {}) {
   if (server) return { app, server }
 
   const logger = getLogger()
@@ -75,12 +81,14 @@ export async function startWebuiServer() {
   const enable = botCfg.webui_enable !== false && process.env.XUNLU_WEBUI_DISABLE !== "1"
   if (!enable) return null
 
-  const host = String(process.env.XUNLU_WEBUI_HOST || botCfg.webui_host || "0.0.0.0")
-  const port = toPort(process.env.XUNLU_WEBUI_PORT || botCfg.webui_port, 3000)
+  const host = String(options.host || process.env.XUNLU_WEBUI_HOST || botCfg.webui_host || "0.0.0.0")
+  const port = toPort(options.port || process.env.XUNLU_WEBUI_PORT || botCfg.webui_port, 3000)
 
-  const pluginsDir = path.join(env.RootPath, "src", "plugins")
-  const plugins = await loadPlugins(pluginsDir)
-  const registry = await createWebUiRegistry(plugins)
+  const plugins =
+    Array.isArray(options.plugins) && options.plugins.length > 0
+      ? options.plugins
+      : await loadPlugins(path.join(env.RootPath, "src", "plugins"))
+  const registry = options.registry || (await createWebUiRegistry(plugins))
 
   app = express()
   app.disable("x-powered-by")
@@ -257,4 +265,19 @@ export async function startWebuiServer() {
 
 export function getWebuiServer() {
   return server ? { app, server } : null
+}
+
+export async function stopWebuiServer() {
+  if (!server) return false
+
+  const target = server
+  server = null
+  app = null
+  await new Promise((resolve, reject) => {
+    target.close(err => {
+      if (err) return reject(err)
+      resolve(true)
+    })
+  })
+  return true
 }

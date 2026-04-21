@@ -100,45 +100,39 @@ export default class LLoneBotEventListener {
   #llbotConfig = config.getConfig("bot") || {}
   #milkyAdapter = new MilkyAdapter({ ...this.#llbotConfig })
   #llbot = new LLoneBot()
+  #options = { manageServices: true }
+
+  constructor(options = {}) {
+    this.#options = {
+      manageServices: options.manageServices !== false,
+    }
+  }
 
   async load() {
     try {
       await this.#initAdapter()
       await this.#initGlobalBot()
 
-      try {
-        await startWebuiServer()
-      } catch (err) {
-        console.warn("[LLoneBotEventListener] webui server start failed:", err)
+      if (this.#options.manageServices) {
+        try {
+          await startWebuiServer()
+        } catch (err) {
+          console.warn("[LLoneBotEventListener] webui server start failed:", err)
+        }
       }
 
       this.#bindAllEvents()
 
-      try {
-        startControlServer({
-          getStatus: () => ({
-            protocol: "milky",
-            adapterType: "Milky",
-            uin: global.Bot?.uin,
-            nickname: global.Bot?.nickname,
-            pluginCount: Object.keys(this.#llbot.plugins || {}).length,
-            plugins: Object.keys(this.#llbot.plugins || {}),
-          }),
-          reloadPlugins: async () => {
-            return await this.#llbot.reloadBotPlugins({ cacheBust: true })
-          },
-          sendMessage: async payload => {
-            return await simulateIncomingMessage({
-              bot: this.#llbot,
-              protocol: "milky",
-              adapterType: "Milky",
-              payload,
-              selfId: global.Bot?.uin,
-            })
-          },
-        })
-      } catch (err) {
-        console.warn("[LLoneBotEventListener] control server start failed:", err)
+      if (this.#options.manageServices) {
+        try {
+          startControlServer({
+            getStatus: () => this.getStatus(),
+            reloadPlugins: async () => await this.reloadPlugins({ cacheBust: true }),
+            sendMessage: async payload => await this.simulateIncoming(payload),
+          })
+        } catch (err) {
+          console.warn("[LLoneBotEventListener] control server start failed:", err)
+        }
       }
       // 挂载获取转发消息的方法到全局Bot
       global.Bot.getForwardMessage = this.getForwardMessage.bind(this)
@@ -146,6 +140,50 @@ export default class LLoneBotEventListener {
     } catch (error) {
       console.error("[LLoneBotEventListener] 初始化失败：", error)
       throw error
+    }
+  }
+
+  /**
+   * 对 Runtime Kernel 暴露当前协议 Bot 核心。
+   */
+  getBotCore() {
+    return this.#llbot
+  }
+
+  getRuntimeBot() {
+    return globalThis.Bot || null
+  }
+
+  getStatus() {
+    return {
+      protocol: "milky",
+      adapterType: "Milky",
+      uin: globalThis.Bot?.uin,
+      nickname: globalThis.Bot?.nickname,
+      pluginCount: Object.keys(this.#llbot.plugins || {}).length,
+      plugins: Object.keys(this.#llbot.plugins || {}),
+    }
+  }
+
+  async reloadPlugins(options = {}) {
+    return await this.#llbot.reloadBotPlugins(options)
+  }
+
+  async simulateIncoming(payload) {
+    return await simulateIncomingMessage({
+      bot: this.#llbot,
+      protocol: "milky",
+      adapterType: "Milky",
+      payload,
+      selfId: globalThis.Bot?.uin,
+    })
+  }
+
+  dispose() {
+    try {
+      this.#milkyAdapter.dispose?.()
+    } catch (err) {
+      console.warn("[LLoneBotEventListener] dispose failed:", err?.message || err)
     }
   }
 

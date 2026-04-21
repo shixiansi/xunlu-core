@@ -38,6 +38,13 @@ export default class OneBotV11EventListener {
   #oneBotAdapter = new OneBotV11Adapter(this.#adapterConfig) // 适配器实例
 
   #oneBot = new OneBot() // OneBot核心实例
+  #options = { manageServices: true }
+
+  constructor(options = {}) {
+    this.#options = {
+      manageServices: options.manageServices !== false,
+    }
+  }
 
   /**
    * 初始化入口方法
@@ -53,46 +60,77 @@ export default class OneBotV11EventListener {
       // 2. 初始化全局Bot对象
       await this.#initGlobalBot()
 
-      try {
-        await startWebuiServer()
-      } catch (err) {
-        console.warn("[OneBotV11EventListener] webui server start failed:", err)
+      if (this.#options.manageServices) {
+        try {
+          await startWebuiServer()
+        } catch (err) {
+          console.warn("[OneBotV11EventListener] webui server start failed:", err)
+        }
       }
 
       // 3. 绑定所有事件监听
       this.#bindAllEvents()
 
-      try {
-        startControlServer({
-          getStatus: () => ({
-            protocol: "onebotv11",
-            adapterType: "OneBotV11",
-            uin: global.Bot?.uin,
-            nickname: global.Bot?.nickname,
-            pluginCount: Object.keys(this.#oneBot.plugins || {}).length,
-            plugins: Object.keys(this.#oneBot.plugins || {}),
-          }),
-          reloadPlugins: async () => {
-            return await this.#oneBot.reloadBotPlugins({ cacheBust: true })
-          },
-          sendMessage: async payload => {
-            return await simulateIncomingMessage({
-              bot: this.#oneBot,
-              protocol: "onebotv11",
-              adapterType: "OneBotV11",
-              payload,
-              selfId: global.Bot?.uin,
-            })
-          },
-        })
-      } catch (err) {
-        console.warn("[OneBotV11EventListener] control server start failed:", err)
+      if (this.#options.manageServices) {
+        try {
+          startControlServer({
+            getStatus: () => this.getStatus(),
+            reloadPlugins: async () => await this.reloadPlugins({ cacheBust: true }),
+            sendMessage: async payload => await this.simulateIncoming(payload),
+          })
+        } catch (err) {
+          console.warn("[OneBotV11EventListener] control server start failed:", err)
+        }
       }
 
       console.log("[OneBotV11EventListener] 初始化完成，已绑定所有事件监听")
     } catch (error) {
       console.error("[OneBotV11EventListener] 初始化失败：", error)
       throw error // 抛出错误，让上层感知
+    }
+  }
+
+  /**
+   * 对 Runtime Kernel 暴露当前协议 Bot 核心。
+   */
+  getBotCore() {
+    return this.#oneBot
+  }
+
+  getRuntimeBot() {
+    return globalThis.Bot || null
+  }
+
+  getStatus() {
+    return {
+      protocol: "onebotv11",
+      adapterType: "OneBotV11",
+      uin: globalThis.Bot?.uin,
+      nickname: globalThis.Bot?.nickname,
+      pluginCount: Object.keys(this.#oneBot.plugins || {}).length,
+      plugins: Object.keys(this.#oneBot.plugins || {}),
+    }
+  }
+
+  async reloadPlugins(options = {}) {
+    return await this.#oneBot.reloadBotPlugins(options)
+  }
+
+  async simulateIncoming(payload) {
+    return await simulateIncomingMessage({
+      bot: this.#oneBot,
+      protocol: "onebotv11",
+      adapterType: "OneBotV11",
+      payload,
+      selfId: globalThis.Bot?.uin,
+    })
+  }
+
+  dispose() {
+    try {
+      this.#oneBotAdapter.dispose?.()
+    } catch (err) {
+      console.warn("[OneBotV11EventListener] dispose failed:", err?.message || err)
     }
   }
 

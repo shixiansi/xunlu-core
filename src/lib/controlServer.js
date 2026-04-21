@@ -105,17 +105,24 @@ function filterLogLines(lines, { level, pattern, regex }) {
   return out
 }
 
-export function startControlServer(handlers = {}) {
+/**
+ * 启动控制台服务。
+ *
+ * 这个模块继续保留“进程内单例”的语义，避免历史调用点重复占端口；
+ * 但同时补齐了 stop/get 能力，供 Runtime Kernel 做统一生命周期管理。
+ */
+export function startControlServer(handlers = {}, options = {}) {
   if (server) return server
 
   const botCfg = cfg.getConfig("bot") || {}
   const enable = botCfg.ctl_enable !== false && process.env.XUNLU_CTL_DISABLE !== "1"
   if (!enable) return null
 
-  const port = Number(process.env.XUNLU_CTL_PORT || botCfg.ctl_port || 3081)
+  const port = Number(options.port || process.env.XUNLU_CTL_PORT || botCfg.ctl_port || 3081)
   if (!Number.isFinite(port) || port <= 0) throw new Error(`invalid ctl_port: ${port}`)
 
   const token = process.env.XUNLU_CTL_TOKEN || botCfg.ctl_token || ""
+  const host = String(options.host || "127.0.0.1")
 
   const getStatus =
     typeof handlers.getStatus === "function"
@@ -242,9 +249,32 @@ export function startControlServer(handlers = {}) {
     console.error("[xunlu-core] control server error:", err)
   })
 
-  server.listen(port, "127.0.0.1", () => {
-    console.log(`[xunlu-core] control server listening on http://127.0.0.1:${port}`)
+  server.listen(port, host, () => {
+    console.log(`[xunlu-core] control server listening on http://${host}:${port}`)
   })
 
   return server
+}
+
+export function getControlServer() {
+  return server
+}
+
+/**
+ * 关闭控制台服务。
+ *
+ * 这里使用 Promise 包装 close，方便 Runtime Kernel 在 stop 阶段串行回收服务。
+ */
+export async function stopControlServer() {
+  if (!server) return false
+
+  const target = server
+  server = null
+  await new Promise((resolve, reject) => {
+    target.close(err => {
+      if (err) return reject(err)
+      resolve(true)
+    })
+  })
+  return true
 }

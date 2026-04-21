@@ -288,6 +288,12 @@ export default class EventListener {
  * 加载监听事件
  */
 class ListenerLoader {
+  constructor(options = {}) {
+    this.options = {
+      manageServices: options.manageServices !== false,
+    }
+  }
+
   /**
    * 监听事件加载
    * @param client Bot示例
@@ -342,36 +348,22 @@ class ListenerLoader {
     await pluginLoader.initBot()
     await pluginLoader.runMount()
 
-    try {
-      startControlServer({
-        getStatus: () => ({
-          protocol: botenv === "OneBotv11" ? "onebotv11" : "icqq",
-          adapterType: botenv,
-          pluginCount: Object.keys(pluginLoader.plugins || {}).length,
-          plugins: Object.keys(pluginLoader.plugins || {}),
-        }),
-        reloadPlugins: async () => {
-          return await pluginLoader.reloadBotPlugins({ cacheBust: true })
-        },
-        sendMessage: async payload => {
-          const protocol = botenv === "OneBotv11" ? "onebotv11" : "icqq"
-          return await simulateIncomingMessage({
-            bot: pluginLoader,
-            protocol,
-            adapterType: botenv,
-            payload,
-            selfId: this.client?.uin,
-          })
-        },
-      })
-    } catch (err) {
-      console.warn("[ListenerLoader] control server start failed:", err)
-    }
+    if (this.options.manageServices) {
+      try {
+        startControlServer({
+          getStatus: () => this.getStatus(),
+          reloadPlugins: async () => await this.reloadPlugins({ cacheBust: true }),
+          sendMessage: async payload => await this.simulateIncoming(payload),
+        })
+      } catch (err) {
+        console.warn("[ListenerLoader] control server start failed:", err)
+      }
 
-    try {
-      await startWebuiServer()
-    } catch (err) {
-      console.warn("[ListenerLoader] webui server start failed:", err)
+      try {
+        await startWebuiServer()
+      } catch (err) {
+        console.warn("[ListenerLoader] webui server start failed:", err)
+      }
     }
 
     Bot.sendMessage = sendMessage
@@ -429,6 +421,46 @@ class ListenerLoader {
         logger.error(e)
       }
     }
+  }
+
+  /**
+   * 对 Runtime Kernel 暴露当前协议 Bot 核心。
+   */
+  getBotCore() {
+    return pluginLoader
+  }
+
+  getRuntimeBot() {
+    return globalThis.Bot || this.client || null
+  }
+
+  getStatus() {
+    const protocol = BotEnv === "OneBotv11" ? "onebotv11" : BotEnv === "milky" ? "milky" : "icqq"
+    return {
+      protocol,
+      adapterType: BotEnv,
+      pluginCount: Object.keys(pluginLoader.plugins || {}).length,
+      plugins: Object.keys(pluginLoader.plugins || {}),
+    }
+  }
+
+  async reloadPlugins(options = {}) {
+    return await pluginLoader.reloadBotPlugins(options)
+  }
+
+  async simulateIncoming(payload) {
+    const protocol = BotEnv === "OneBotv11" ? "onebotv11" : BotEnv === "milky" ? "milky" : "icqq"
+    return await simulateIncomingMessage({
+      bot: pluginLoader,
+      protocol,
+      adapterType: BotEnv,
+      payload,
+      selfId: this.client?.uin,
+    })
+  }
+
+  dispose() {
+    return true
   }
 
   checkEnv() {
