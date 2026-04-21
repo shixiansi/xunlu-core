@@ -1,4 +1,5 @@
 import BaseAdapterDriver from "./base-adapter-driver.js"
+import { createIcqqBinding } from "./icqq-binding.js"
 
 export class IcqqDriver extends BaseAdapterDriver {
   async start(runtime) {
@@ -12,6 +13,7 @@ export class IcqqDriver extends BaseAdapterDriver {
     const { ListenerLoader } = await import("../../Bot/icqq/EventListener.js")
     this.listener = new ListenerLoader({
       manageServices: false,
+      binding: createIcqqBinding(),
     })
     await this.listener.load(this.options.globalBot || globalThis.Bot)
     return this.getRuntimeBot()

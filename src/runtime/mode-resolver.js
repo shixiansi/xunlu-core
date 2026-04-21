@@ -138,7 +138,13 @@ export async function resolveRuntimeMode(options = {}) {
     case "api-only":
       return { mode: "api-only", adapter: "api-only", isYunzai: false, globalBot, botConfig: botCfg }
     case "icqq":
-      return { mode: "yunzai-icqq", adapter: "icqq", isYunzai: false, globalBot, botConfig: botCfg }
+      return {
+        mode: "standalone-icqq-unsupported",
+        adapter: "icqq",
+        isYunzai: false,
+        globalBot,
+        botConfig: botCfg,
+      }
     default:
       return { mode: "standalone-auto", adapter: "auto", isYunzai: false, globalBot, botConfig: botCfg }
   }

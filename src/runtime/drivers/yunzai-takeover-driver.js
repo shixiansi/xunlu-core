@@ -1,4 +1,5 @@
 import BaseAdapterDriver from "./base-adapter-driver.js"
+import { createIcqqBinding } from "./icqq-binding.js"
 
 /**
  * takeover 驱动把“外部适配器接入”与“云崽插件消费事件”拼装在一起。
@@ -26,6 +27,7 @@ export class YunzaiTakeoverDriver extends BaseAdapterDriver {
 
     this.listener = new ListenerLoader({
       manageServices: false,
+      binding: createIcqqBinding(),
     })
     await this.listener.load(globalBot)
     return this.getRuntimeBot()

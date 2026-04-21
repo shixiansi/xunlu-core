@@ -9,6 +9,11 @@ import { applyUniversalBotApi } from "../../api/universal-bot-api.js"
 import {
   UniversalMessage,
 } from "../../message/universal-message.js"
+import {
+  createMilkyBinding,
+  preprocessMilkySegments,
+  safeConvertMilkyToUniversal,
+} from "../../../runtime/drivers/milky-binding.js"
 
 function findForwardMetaInRecord(record, forwardId) {
   const target = String(forwardId || "").trim()
@@ -101,11 +106,13 @@ export default class LLoneBotEventListener {
   #milkyAdapter = new MilkyAdapter({ ...this.#llbotConfig })
   #llbot = new LLoneBot()
   #options = { manageServices: true }
+  #binding = createMilkyBinding()
 
   constructor(options = {}) {
     this.#options = {
       manageServices: options.manageServices !== false,
     }
+    if (options.binding) this.#binding = options.binding
   }
 
   async load() {
@@ -201,103 +208,25 @@ export default class LLoneBotEventListener {
       // 新增：绑定获取转发消息的方法
       getForwardMessage: this.getForwardMessage.bind(this),
     }
-    LLoneBotEventListener.bindMilkyFunctions(bindEvent, this.#milkyAdapter, this.#llbot)
+    this.#binding.decorateBindEvent(bindEvent, {
+      adapter: this.#milkyAdapter,
+      botCore: this.#llbot,
+      sendUniversalMessage: this.#sendUniversalMessage.bind(this),
+      getForwardMessage: this.getForwardMessage.bind(this),
+      loginInfo: this.loginInfo,
+    })
     this.#llbot.bindEvent = bindEvent
     await this.#llbot.initBot()
   }
 
   async #initGlobalBot() {
-    if (!global.Bot) {
-      const adapter = this.#milkyAdapter
-
-      // 注意：不能用 `{ ...adapter }`（类方法在 prototype 上，不可枚举），否则会导致通用 API 找不到原生方法
-      global.Bot = {
-        uin: this.loginInfo.uin ?? this.loginInfo.user_id,
-        nickname: this.loginInfo.nickname ?? "",
-        ...adapter,
-        adapterType: adapter.adapterType,
-
-        // passthrough API (doc-friendly): callApi/sendApi
-        callApi: adapter.callApi.bind(adapter),
-        sendApi: (adapter.sendApi ?? adapter.callApi).bind(adapter),
-
-        // milky adapter core (bound): 供通用 API / 插件直接调用（默认抛异常，不吞错）
-        sendMsg: adapter.sendMsg.bind(adapter),
-        recallPrivateMessage: adapter.recallPrivateMessage.bind(adapter),
-        recallGroupMessage: adapter.recallGroupMessage.bind(adapter),
-        getLoginInfo: adapter.getLoginInfo.bind(adapter),
-        getUserProfile: adapter.getUserProfile.bind(adapter),
-        getFriendList: adapter.getFriendList.bind(adapter),
-        getFriendInfo: adapter.getFriendInfo.bind(adapter),
-        acceptFriendRequest: adapter.acceptFriendRequest.bind(adapter),
-        rejectFriendRequest: adapter.rejectFriendRequest.bind(adapter),
-        getGroupList: adapter.getGroupList.bind(adapter),
-        getGroupInfo: adapter.getGroupInfo.bind(adapter),
-        getGroupMemberList: adapter.getGroupMemberList.bind(adapter),
-        getGroupMemberInfo: adapter.getGroupMemberInfo.bind(adapter),
-        setGroupName: adapter.setGroupName.bind(adapter),
-        setGroupMemberCard: adapter.setGroupMemberCard.bind(adapter),
-        setGroupMemberAdmin: adapter.setGroupMemberAdmin.bind(adapter),
-        setGroupMemberSpecialTitle: adapter.setGroupMemberSpecialTitle.bind(adapter),
-        setGroupMemberMute: adapter.setGroupMemberMute.bind(adapter),
-        setGroupWholeMute: adapter.setGroupWholeMute.bind(adapter),
-        kickGroupMember: adapter.kickGroupMember.bind(adapter),
-        quitGroup: adapter.quitGroup.bind(adapter),
-        sendGroupMessageReaction: adapter.sendGroupMessageReaction.bind(adapter),
-        acceptGroupRequest: adapter.acceptGroupRequest.bind(adapter),
-        rejectGroupRequest: adapter.rejectGroupRequest.bind(adapter),
-        pickUser: adapter.pickUser.bind(adapter),
-        pickGroup: adapter.pickGroup.bind(adapter),
-
-        // compatibility aliases
-        sendMessage: adapter.sendMsg.bind(adapter),
-        makeGroupForwardMsg: adapter.makeForwardMsg.bind(adapter),
-
-        // core bot abilities
-        reply: this.#llbot.reply.bind(this.#llbot),
-        getGroupChatHistory: this.#llbot.getGroupHistoryMsg,
-        toUniversalMessage: (protocol, segments) => this.#safeConvertToUniversal(protocol, segments),
-        fromUniversalMessage: (universalMsg, protocol) => universalMsg.convertTo(protocol),
-        // 全局挂载获取转发消息的方法
-        getForwardMessage: this.getForwardMessage.bind(this),
-      }
-      console.log("[GlobalBot] 全局Bot对象初始化完成（含转发消息获取）：", Object.keys(global.Bot))
-    } else {
-      console.warn("[GlobalBot] 全局Bot对象已存在，补充挂载转发消息方法")
-      global.Bot.getForwardMessage = this.getForwardMessage.bind(this)
-    }
-
-    // 全局Bot补齐通用API（注意：仅覆盖群申请 accept/reject 的参数语义）
-    try {
-      applyUniversalBotApi(global.Bot, {
-        bot: this.#llbot,
-        adapterHint: "milky",
-        override: [
-          "getLoginInfo",
-          "getFriendList",
-          "getFriendInfo",
-          "getGroupList",
-          "getGroupInfo",
-          "setGroupName",
-          "setGroupMemberCard",
-          "setGroupMemberAdmin",
-          "setGroupMemberSpecialTitle",
-          "setGroupWholeMute",
-          "kickGroupMember",
-          "quitGroup",
-          "acceptFriendRequest",
-          "rejectFriendRequest",
-          "sendGroupMessageReaction",
-          "acceptGroupRequest",
-          "rejectGroupRequest",
-          "getUserInfo",
-          "getGroupMemberList",
-          "getGroupMemberInfo",
-          "setGroupMemberMute",
-          "pickUser",
-        ],
-      })
-    } catch {}
+    global.Bot = this.#binding.decorateRuntimeBot({
+      currentBot: globalThis.Bot || null,
+      loginInfo: this.loginInfo,
+      adapter: this.#milkyAdapter,
+      botCore: this.#llbot,
+      getForwardMessage: this.getForwardMessage.bind(this),
+    })
     await this.#llbot.runMount()
   }
 
@@ -308,38 +237,25 @@ export default class LLoneBotEventListener {
           const eventName = LLoneBotEventListener.EVENT_TYPE_MAP[eventType] || eventType
           const eventData = data.data
 
-          eventData.adapterType = this.#milkyAdapter.adapterType
-          eventData.protocol = "milky"
-          LLoneBotEventListener.bindMilkyFunctions(eventData, this.#milkyAdapter, this.#llbot)
+          this.#binding.decorateBindEvent(eventData, {
+            adapter: this.#milkyAdapter,
+            botCore: this.#llbot,
+            sendUniversalMessage: this.#sendUniversalMessage.bind(this),
+            getForwardMessage: this.getForwardMessage.bind(this),
+            loginInfo: this.loginInfo,
+          })
+          await this.#binding.normalizeInboundEvent(eventData, {
+            eventType,
+            adapterType: this.#milkyAdapter.adapterType,
+            loginInfo: this.loginInfo,
+            selfId: data.self_id,
+          })
 
           if (eventType === "message_receive") {
-            const originalSegments = Array.isArray(eventData.segments) ? eventData.segments : []
-
-            // 1. 预处理消息段：保留forward类型+补充最小化messages
-            const processedSegments = this.#preprocessMilkySegments(originalSegments)
-            // rawSegments 用于解析 light_app/json 等元数据
-            eventData.rawSegments = originalSegments
-            eventData.segments = processedSegments
-            // 交给 BaseBot.dealMsg 做最终 Universal 转换与派生字段
-            eventData.message = processedSegments
-
-            // 2. 提取转发消息元数据，挂载到eventData供后续使用
-            eventData.forwardMeta = this.#extractForwardMeta(processedSegments)
-
-            // 3. 存储消息（保留完整元数据）
             await this.#saveGroupMessage(eventData)
-          }
-
-          this.#normalizeEventData(eventData, eventType)
-          if (eventData?.message_scene == "group") {
-            eventData.group_id = eventData.peer_id
-            eventData.user_id = eventData.sender_id
-          } else if (eventData?.message_scene == "friend" || eventData?.message_scene == "temp") {
-            eventData.user_id = eventData.sender_id
           }
           await this.#llbot.deal({
             ...eventData,
-            self_id: data.self_id,
           })
 
           console.debug(`[MilkyAdapter] 处理完成事件：${eventName}`)
@@ -508,18 +424,18 @@ export default class LLoneBotEventListener {
       return {
         forward_id,
         title: result.title || "",
-        summary: result.summary || "",
-        preview: result.preview || [],
-        messages: (result.messages || []).map(msg => ({
-          user_id: msg.user_id || "",
-          nickname: msg.sender_name || "",
-          time: msg.time || Date.now(),
-          message: msg.segments || [],
-          // 转换为通用消息格式
-          universal_message: this.#safeConvertToUniversal("milky", msg.segments || []),
-        })),
-        raw: result, // 保留原生返回数据
-      }
+          summary: result.summary || "",
+          preview: result.preview || [],
+          messages: (result.messages || []).map(msg => ({
+            user_id: msg.user_id || "",
+            nickname: msg.sender_name || "",
+            time: msg.time || Date.now(),
+            message: msg.segments || [],
+            // 转换为通用消息格式
+            universal_message: safeConvertMilkyToUniversal("milky", msg.segments || []),
+          })),
+          raw: result, // 保留原生返回数据
+        }
     } catch (error) {
       console.error(`[MilkyAdapter] 获取转发消息${forward_id}失败：`, error)
       // 降级：从数据库查询缓存的转发元数据
@@ -725,7 +641,7 @@ export default class LLoneBotEventListener {
       throw new Error("universalMsg必须是UniversalMessage实例")
     }
     const milkySegments = universalMsg.convertTo("milky")
-    const processedSegments = this.#preprocessMilkySegments(milkySegments)
+    const processedSegments = preprocessMilkySegments(milkySegments, { loginInfo: this.loginInfo })
     const target =
       message_scene === "group" ? { group_id: Number(peer_id) || peer_id } : String(peer_id)
     return await this.#milkyAdapter.sendMsg(target, processedSegments)

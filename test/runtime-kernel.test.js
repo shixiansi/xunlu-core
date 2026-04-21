@@ -5,6 +5,8 @@ import { createBotFacade } from "../src/runtime/bot-facade-factory.js"
 import { resolveRuntimeMode } from "../src/runtime/mode-resolver.js"
 import RuntimeKernel from "../src/runtime/runtime-kernel.js"
 import ServiceRegistry from "../src/runtime/service-registry.js"
+import ApiOnlyDriver from "../src/runtime/drivers/api-only-driver.js"
+import UnsupportedStandaloneIcqqDriver from "../src/runtime/drivers/unsupported-standalone-icqq-driver.js"
 import { installTestRuntime } from "./helpers/test-runtime.js"
 
 installTestRuntime(test)
@@ -38,6 +40,17 @@ test("resolveRuntimeMode falls back to takeover when yunzai bot is offline", asy
 
   assert.equal(mode.mode, "yunzai-takeover")
   assert.equal(mode.adapter, "onebotv11")
+})
+
+test("resolveRuntimeMode marks standalone icqq as unsupported when no global bot exists", async () => {
+  const mode = await resolveRuntimeMode({
+    env: { CurEnv: "xunlu-core" },
+    botConfig: { adapter: "icqq" },
+    globalBot: null,
+  })
+
+  assert.equal(mode.mode, "standalone-icqq-unsupported")
+  assert.equal(mode.adapter, "icqq")
 })
 
 test("ServiceRegistry starts in registration order and stops in reverse order", async () => {
@@ -143,4 +156,50 @@ test("RuntimeKernel delegates status and reload to driver without replacing faca
   } finally {
     globalThis.Bot = previousBot
   }
+})
+
+test("ApiOnlyDriver loads plugin definitions and supports reload without Bot Core", async () => {
+  const driver = new ApiOnlyDriver()
+  await driver.start({})
+
+  try {
+    assert.equal(driver.getRuntimeBot(), null)
+    assert.equal(driver.getBotCore(), null)
+    assert.ok(driver.getLoadedPlugins().length > 0)
+
+    const status = driver.getStatus()
+    assert.equal(status.protocol, "api-only")
+    assert.ok(status.pluginCount > 0)
+
+    const reloaded = await driver.reloadPlugins({ cacheBust: true })
+    assert.ok(Array.isArray(reloaded))
+    assert.ok(reloaded.length > 0)
+  } finally {
+    await driver.stop()
+  }
+})
+
+test("UnsupportedStandaloneIcqqDriver fails fast with a clear standalone guidance", async () => {
+  const driver = new UnsupportedStandaloneIcqqDriver()
+
+  await assert.rejects(
+    async () => await driver.start(),
+    /icqq only works in yunzai plugin mode or takeover mode/i,
+  )
+
+  const status = driver.getStatus()
+  assert.equal(status.supported, false)
+  assert.match(String(status.message || ""), /milky \/ onebotv11 \/ auto/i)
+})
+
+test("RuntimeKernel registers only api service in api-only mode", () => {
+  const kernel = new RuntimeKernel({
+    modeState: {
+      mode: "api-only",
+      adapter: "api-only",
+    },
+  })
+
+  kernel.registerDefaultServices()
+  assert.deepEqual(kernel.services.list(), ["api"])
 })

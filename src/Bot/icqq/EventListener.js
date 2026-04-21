@@ -9,6 +9,7 @@ import { rememberRuntimeLastGroupMessage } from "../runtime-last-message.js"
 import { startControlServer } from "../../lib/controlServer.js"
 import { startWebuiServer } from "../../lib/webuiServer.js"
 import { simulateIncomingMessage } from "../message/cli-simulator.js"
+import { createIcqqBinding } from "../../runtime/drivers/icqq-binding.js"
 let BotEnv
 
 const OUTGOING_GROUP_SEND_MARK = Symbol.for("xunlu.outgoing.group.send.remembered")
@@ -292,6 +293,16 @@ class ListenerLoader {
     this.options = {
       manageServices: options.manageServices !== false,
     }
+    this.binding = options.binding || createIcqqBinding()
+    this.checkEnv = () => this.binding.detectEnv(this.client)
+    this.bindEvent = async (e, env) =>
+      await this.binding.decorateBindEvent(e, {
+        envName: env,
+        client: this.client,
+        pluginLoader,
+        fileManager: filemag,
+        sendMessage,
+      })
   }
 
   /**
@@ -310,7 +321,7 @@ class ListenerLoader {
 
     // 先绑定事件能力，再加载插件（确保 register()/onMount/callFnc 可用）
     const bindEvent = { reply: pluginLoader.reply.bind(pluginLoader) }
-    this.bindEvent(bindEvent, botenv)
+    await this.bindEvent(bindEvent, botenv)
     pluginLoader.bindEvent = bindEvent
 
     // 补齐：bindEvent/bot 全量通用 API
@@ -366,29 +377,13 @@ class ListenerLoader {
       }
     }
 
-    Bot.sendMessage = sendMessage
-    console.log("filepack:" + filemag.package.name)
-
-    Bot.makeGroupForwardMsg = async (msg, group_id) => {
-      if (botenv == "OneBotv11" && filemag.package.name != "trss-yunzai") {
-        let { default: oneBotV11Adapter } = await import("../onebotV11/onebot.js")
-        return new oneBotV11Adapter().makeForwardMsg(msg)
-      } else if (filemag.package.name == "trss-yunzai") {
-        return { type: "node", data: msg }
-      } else {
-        return await Bot.pickGroup(group_id).makeForwardMsg(msg)
-      }
-    }
-
-    Bot.renderImg = pluginLoader.renderImg.bind(pluginLoader)
-    if (!Bot.getGroupMemberList) {
-      Bot.getGroupMemberList = async group_id => {
-        console.log(group_id)
-        return await Bot.pickGroup(Number(group_id)).getMemberMap()
-      }
-    }
-
-    Bot.getGroupChatHistory = pluginLoader.getGroupHistoryMsg
+    this.binding.decorateRuntimeBot({
+      bot: globalThis.Bot,
+      envName: botenv,
+      pluginLoader,
+      fileManager: filemag,
+      sendMessage,
+    })
 
     const files = filemag.GetfileList().filter(file => file.endsWith(".js"))
     for (let File of files) {
@@ -404,15 +399,15 @@ class ListenerLoader {
         if (lodash.isArray(listener.event)) {
           listener.event.forEach(type => {
             const e = listener[type] ? type : "execute"
-            this.client[on](listener.prefix + type, event => {
-              this.bindEvent(event, botenv)
+            this.client[on](listener.prefix + type, async event => {
+              await this.bindEvent(event, botenv)
               return listener[e](event)
             })
           })
         } else {
           const e = listener[listener.event] ? listener.event : "execute"
-          this.client[on](listener.prefix + listener.event, event => {
-            this.bindEvent(event, botenv)
+          this.client[on](listener.prefix + listener.event, async event => {
+            await this.bindEvent(event, botenv)
             return listener[e](event)
           })
         }

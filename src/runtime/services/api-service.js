@@ -10,6 +10,8 @@ export class ApiServiceModule {
     return await startServer({
       plugins: runtime.getLoadedPlugins(),
       registerPlugins: false,
+      port: runtime?.options?.apiService?.port,
+      host: runtime?.options?.apiService?.host,
     })
   }
 

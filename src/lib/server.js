@@ -125,8 +125,8 @@ export async function startServer(portOrOptions = process.env.PORT || 3000) {
     res.json({ ok: true })
   })
 
-  const listenPort = options.port || process.env.PORT || 3000
-  const listenHost = String(options.host || process.env.HOST || "0.0.0.0")
+  const listenPort = options.port ?? process.env.PORT ?? 3000
+  const listenHost = String(options.host ?? process.env.HOST ?? "0.0.0.0")
   server = app.listen(listenPort, listenHost, () =>
     logger.info(`plugin-api listening on http://${listenHost}:${listenPort}`),
   )

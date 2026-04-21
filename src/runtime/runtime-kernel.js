@@ -1,5 +1,4 @@
 import cfg from "../lib/config.js"
-import { startServer } from "../lib/server.js"
 import ServiceRegistry from "./service-registry.js"
 import { createBotFacade } from "./bot-facade-factory.js"
 import { resolveRuntimeMode } from "./mode-resolver.js"
@@ -10,6 +9,8 @@ import MilkyDriver from "./drivers/milky-driver.js"
 import OneBotV11Driver from "./drivers/onebotv11-driver.js"
 import IcqqDriver from "./drivers/icqq-driver.js"
 import YunzaiTakeoverDriver from "./drivers/yunzai-takeover-driver.js"
+import ApiOnlyDriver from "./drivers/api-only-driver.js"
+import UnsupportedStandaloneIcqqDriver from "./drivers/unsupported-standalone-icqq-driver.js"
 
 async function loadRuntimeEnvironment() {
   const { default: logjs } = await import("../component/logger/log.js")
@@ -51,10 +52,13 @@ export class RuntimeKernel {
     if (!this.driver?.__startedByAutoFallback) {
       await this.driver.start(this)
     }
-    this.facade = createBotFacade({
-      driver: this.driver,
-      globalBot: this.modeState?.globalBot,
-    })
+    this.facade =
+      this.mode === "api-only"
+        ? null
+        : createBotFacade({
+            driver: this.driver,
+            globalBot: this.modeState?.globalBot,
+          })
     this.registerDefaultServices()
     await this.services.startAll(this)
     this.started = true
@@ -76,16 +80,13 @@ export class RuntimeKernel {
         return await this.createAutoFallbackDriver()
       case "standalone-milky":
         return new MilkyDriver()
+      case "standalone-icqq-unsupported":
+        return new UnsupportedStandaloneIcqqDriver({
+          mode: this.modeState?.mode,
+          adapter: this.modeState?.adapter,
+        })
       case "api-only":
-        return {
-          getRuntimeBot: () => globalThis.Bot || null,
-          getBotCore: () => null,
-          getStatus: () => ({ protocol: "api-only", adapterType: "api-only" }),
-          getLoadedPlugins: () => [],
-          reloadPlugins: async () => [],
-          simulateIncoming: async payload => payload,
-          stop: async () => true,
-        }
+        return new ApiOnlyDriver()
       default:
         return new MilkyDriver()
     }
@@ -118,19 +119,10 @@ export class RuntimeKernel {
       fallbackReason: lastError?.message || "auto-driver-fallback",
     }
     this.mode = "api-only"
-    return {
-      getRuntimeBot: () => globalThis.Bot || null,
-      getBotCore: () => null,
-      getStatus: () => ({
-        protocol: "api-only",
-        adapterType: "api-only",
-        fallbackReason: this.modeState?.fallbackReason || "",
-      }),
-      getLoadedPlugins: () => [],
-      reloadPlugins: async () => [],
-      simulateIncoming: async payload => payload,
-      stop: async () => true,
-    }
+    return new ApiOnlyDriver({
+      cacheBust: true,
+      fallbackReason: this.modeState?.fallbackReason || "",
+    })
   }
 
   registerDefaultServices() {
@@ -150,10 +142,12 @@ export class RuntimeKernel {
   }
 
   getRuntimeBot() {
+    if (this.mode === "api-only" || this.mode === "standalone-icqq-unsupported") return null
     return this.facade?.runtimeBot || this.driver?.getRuntimeBot?.() || globalThis.Bot || null
   }
 
   getBotCore() {
+    if (this.mode === "api-only" || this.mode === "standalone-icqq-unsupported") return null
     return this.facade?.botCore || this.driver?.getBotCore?.() || null
   }
 
@@ -215,9 +209,9 @@ export async function createRuntimeKernel(options = {}) {
  * 保留这个函数是为了让旧代码逐步迁移，而不是一次性把所有启动姿势都打碎。
  */
 export async function startApiOnlyRuntime() {
-  await loadRuntimeEnvironment()
-  await startServer({ registerPlugins: true })
-  return true
+  const kernel = await createRuntimeKernel({ mode: "api-only" })
+  await kernel.start()
+  return kernel
 }
 
 export default RuntimeKernel
