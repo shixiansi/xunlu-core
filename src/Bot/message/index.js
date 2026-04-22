@@ -9,16 +9,14 @@ export {
   resolveMediaReferenceFields,
   toUniversalMessage,
 } from "./context.js"
-export { segment } from "./legacy-segment.js"
-export {
-  pickPrimaryMediaReference,
-} from "./media-reference.js"
+export { segment } from "./compat/legacy-segment.js"
+export { pickPrimaryMediaReference } from "./core/media-reference.js"
 export {
   BaseConverter,
   ICQQConverter,
   MilkyConverter,
   OnebotV11Converter,
-} from "./message-converters.js"
+} from "./protocol/encoders.js"
 export {
   getSegmentMediaFile,
   getSegmentMediaId,
@@ -37,4 +35,4 @@ export {
   renderUniversalSegments,
   simulateIncomingEvent,
   simulateIncomingMessage,
-} from "./cli-simulator.js"
+} from "./testing/cli-simulator.js"
