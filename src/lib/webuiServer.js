@@ -1,5 +1,6 @@
 import fs from "node:fs"
 import path from "node:path"
+import http from "node:http"
 
 import express from "express"
 
@@ -23,6 +24,7 @@ const WEBUI_STATIC_DIR = path.join(env.RootPath, "src", "resources", "webui")
 
 let app = null
 let server = null
+let startPromise = null
 
 function getLogger() {
   const lg = globalThis.logger
@@ -46,6 +48,47 @@ function exists(filePath) {
 function toPort(value, fallback) {
   const n = Number(value)
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback
+}
+
+function createListeningServer(appInstance, { host, port } = {}) {
+  return new Promise((resolve, reject) => {
+    const instance = http.createServer(appInstance)
+
+    const cleanup = () => {
+      instance.off("error", onError)
+      instance.off("listening", onListening)
+    }
+
+    const onError = err => {
+      cleanup()
+      try {
+        instance.close()
+      } catch {}
+      reject(err)
+    }
+
+    const onListening = () => {
+      cleanup()
+      resolve(instance)
+    }
+
+    instance.once("error", onError)
+    instance.once("listening", onListening)
+    instance.listen(port, host)
+  })
+}
+
+async function bindWebuiServer(appInstance, { host, port, allowPortFallback = true, logger } = {}) {
+  try {
+    return await createListeningServer(appInstance, { host, port })
+  } catch (err) {
+    if (err?.code !== "EADDRINUSE" || !allowPortFallback) throw err
+
+    logger?.warn?.(
+      `[webui] port ${port} is already in use, falling back to a random available port`,
+    )
+    return await createListeningServer(appInstance, { host, port: 0 })
+  }
 }
 
 function sendPage(res, fileName) {
@@ -74,193 +117,216 @@ function normalizePayload(result) {
  */
 export async function startWebuiServer(options = {}) {
   if (server) return { app, server }
+  if (startPromise) return await startPromise
 
-  const logger = getLogger()
-  const botCfg = cfg.getConfig("bot") || {}
+  startPromise = (async () => {
+    const logger = getLogger()
+    const botCfg = cfg.getConfig("bot") || {}
 
-  const enable = botCfg.webui_enable !== false && process.env.XUNLU_WEBUI_DISABLE !== "1"
-  if (!enable) return null
+    const enable = botCfg.webui_enable !== false && process.env.XUNLU_WEBUI_DISABLE !== "1"
+    if (!enable) return null
 
-  const host = String(options.host || process.env.XUNLU_WEBUI_HOST || botCfg.webui_host || "0.0.0.0")
-  const port = toPort(options.port || process.env.XUNLU_WEBUI_PORT || botCfg.webui_port, 3000)
+    const host = String(options.host || process.env.XUNLU_WEBUI_HOST || botCfg.webui_host || "0.0.0.0")
+    const port = toPort(options.port || process.env.XUNLU_WEBUI_PORT || botCfg.webui_port, 3000)
+    const allowPortFallback = options.allowPortFallback !== false
 
-  const plugins =
-    Array.isArray(options.plugins) && options.plugins.length > 0
-      ? options.plugins
-      : await loadPlugins(path.join(env.RootPath, "src", "plugins"))
-  const registry = options.registry || (await createWebUiRegistry(plugins))
+    const plugins =
+      Array.isArray(options.plugins) && options.plugins.length > 0
+        ? options.plugins
+        : await loadPlugins(path.join(env.RootPath, "src", "plugins"))
+    const registry = options.registry || (await createWebUiRegistry(plugins))
 
-  app = express()
-  app.disable("x-powered-by")
-  app.use(express.json({ limit: "2mb" }))
+    const nextApp = express()
+    nextApp.disable("x-powered-by")
+    nextApp.use(express.json({ limit: "2mb" }))
 
-  app.get("/health", (req, res) => res.json({ ok: true, name: "xunlu-webui", pid: process.pid }))
-  app.get("/", (req, res) => res.redirect("/webui"))
+    nextApp.get("/health", (req, res) => res.json({ ok: true, name: "xunlu-webui", pid: process.pid }))
+    nextApp.get("/", (req, res) => res.redirect("/webui"))
 
-  app.use("/webui/static", express.static(WEBUI_STATIC_DIR, { index: false, fallthrough: true }))
-  registry.mount(app, { requireAuth: requireWebuiAuth })
+    nextApp.use("/webui/static", express.static(WEBUI_STATIC_DIR, { index: false, fallthrough: true }))
+    registry.mount(nextApp, { requireAuth: requireWebuiAuth })
 
-  app.get("/webui", (req, res) => sendPage(res, "index.html"))
-  app.get("/webui/login", (req, res) => sendPage(res, "login.html"))
+    nextApp.get("/webui", (req, res) => sendPage(res, "index.html"))
+    nextApp.get("/webui/login", (req, res) => sendPage(res, "login.html"))
 
-  app.get("/webui/api/auth/session", (req, res) => {
-    const safe = getSafeWebuiConfig()
-    const username = String(getWebuiConfig()?.auth?.username || "admin")
-    const info = getWebuiSessionFromRequest(req)
-    const currentUser = info && info.username === username ? info : null
-    res.json({
-      ok: true,
-      authenticated: Boolean(currentUser),
-      user: currentUser ? { username: currentUser.username, exp: currentUser.exp } : null,
-      config: safe,
-    })
-  })
-
-  app.post("/webui/api/auth/login", (req, res) => {
-    const cfgSafe = getSafeWebuiConfig()
-    const cfgRaw = getWebuiConfig()
-    const username = String(req.body?.username || "").trim()
-    const password = String(req.body?.password || "")
-
-    if (!username || !password) {
-      res.status(400).json({ ok: false, error: "Missing username/password", config: cfgSafe })
-      return
-    }
-
-    if (username !== String(cfgRaw?.auth?.username || "")) {
-      res.status(401).json({ ok: false, error: "Invalid credentials", config: cfgSafe })
-      return
-    }
-
-    if (!verifyWebuiPassword(password)) {
-      res.status(401).json({ ok: false, error: "Invalid credentials", config: cfgSafe })
-      return
-    }
-
-    const token = createWebuiAuthToken(username)
-    const ttlHours = Number(cfgRaw?.auth?.token_ttl_hours || 168) || 168
-    setWebuiCookie(res, { value: token, maxAgeSec: Math.max(1, ttlHours) * 3600 })
-    res.json({ ok: true, config: cfgSafe })
-  })
-
-  app.post("/webui/api/auth/logout", (req, res) => {
-    clearWebuiCookie(res)
-    res.json({ ok: true })
-  })
-
-  app.post("/webui/api/auth/update", requireWebuiAuth, async (req, res) => {
-    try {
-      const next = await updateWebuiAuth({
-        username: req.body?.username,
-        password: req.body?.password,
-        rotate_token_secret: Boolean(req.body?.rotate_token_secret),
-        title: req.body?.title,
-      })
-      if (req.body?.rotate_token_secret) clearWebuiCookie(res)
+    nextApp.get("/webui/api/auth/session", (req, res) => {
+      const safe = getSafeWebuiConfig()
+      const username = String(getWebuiConfig()?.auth?.username || "admin")
+      const info = getWebuiSessionFromRequest(req)
+      const currentUser = info && info.username === username ? info : null
       res.json({
         ok: true,
-        config: next,
-        rotated: Boolean(req.body?.rotate_token_secret),
+        authenticated: Boolean(currentUser),
+        user: currentUser ? { username: currentUser.username, exp: currentUser.exp } : null,
+        config: safe,
       })
-    } catch (err) {
-      res.status(500).json({ ok: false, error: err?.message || String(err) })
-    }
-  })
+    })
 
-  app.get("/webui/api/plugins", requireWebuiAuth, async (req, res) => {
-    try {
-      res.json({ ok: true, plugins: registry.list() })
-    } catch (err) {
-      res.status(500).json({ ok: false, error: err?.message || String(err) })
-    }
-  })
+    nextApp.post("/webui/api/auth/login", (req, res) => {
+      const cfgSafe = getSafeWebuiConfig()
+      const cfgRaw = getWebuiConfig()
+      const username = String(req.body?.username || "").trim()
+      const password = String(req.body?.password || "")
 
-  app.get("/webui/api/plugins/:name/definition", requireWebuiAuth, async (req, res) => {
-    try {
-      const definition = await registry.getDefinition(req.params.name)
-      if (!definition) {
-        res.status(404).json({ ok: false, error: "Plugin not found" })
+      if (!username || !password) {
+        res.status(400).json({ ok: false, error: "Missing username/password", config: cfgSafe })
         return
       }
-      res.json({ ok: true, definition })
-    } catch (err) {
-      res.status(500).json({ ok: false, error: err?.message || String(err) })
-    }
-  })
 
-  app.get("/webui/api/plugins/:name/scopes", requireWebuiAuth, async (req, res) => {
-    try {
-      const scopes = await registry.listScopes(req.params.name, req.query?.scope, { req })
-      res.json({ ok: true, scopes })
-    } catch (err) {
-      res.status(500).json({ ok: false, error: err?.message || String(err) })
-    }
-  })
-
-  app.get("/webui/api/plugins/:name/config", requireWebuiAuth, async (req, res) => {
-    try {
-      const result = await registry.getValues(req.params.name, {
-        scope: String(req.query?.scope || "global"),
-        scopeId: req.query?.scope_id ? String(req.query.scope_id) : "",
-        req,
-      })
-      if (!result) {
-        res.status(404).json({ ok: false, error: "Plugin config provider not found" })
+      if (username !== String(cfgRaw?.auth?.username || "")) {
+        res.status(401).json({ ok: false, error: "Invalid credentials", config: cfgSafe })
         return
       }
-      res.json({ ok: true, ...normalizePayload(result) })
-    } catch (err) {
-      res.status(500).json({ ok: false, error: err?.message || String(err) })
-    }
-  })
 
-  app.post("/webui/api/plugins/:name/config", requireWebuiAuth, async (req, res) => {
-    try {
-      const result = await registry.updateValues(req.params.name, {
-        scope: String(req.body?.scope || "global"),
-        scopeId: req.body?.scope_id ? String(req.body.scope_id) : "",
-        values: req.body?.values && typeof req.body.values === "object" ? req.body.values : {},
-        req,
-        user: req.user,
-      })
-      if (!result) {
-        res.status(404).json({ ok: false, error: "Plugin config provider not found" })
+      if (!verifyWebuiPassword(password)) {
+        res.status(401).json({ ok: false, error: "Invalid credentials", config: cfgSafe })
         return
       }
-      res.json({ ok: true, ...normalizePayload(result) })
-    } catch (err) {
-      res.status(500).json({ ok: false, error: err?.message || String(err) })
-    }
-  })
 
-  // keep existing plugin routes for compatibility
-  try {
-    for (const p of plugins) {
-      const impl = p?.implementation
-      if (!impl || typeof impl.apiRoutes !== "function") continue
+      const token = createWebuiAuthToken(username)
+      const ttlHours = Number(cfgRaw?.auth?.token_ttl_hours || 168) || 168
+      setWebuiCookie(res, { value: token, maxAgeSec: Math.max(1, ttlHours) * 3600 })
+      res.json({ ok: true, config: cfgSafe })
+    })
 
-      const router = express.Router()
+    nextApp.post("/webui/api/auth/logout", (req, res) => {
+      clearWebuiCookie(res)
+      res.json({ ok: true })
+    })
+
+    nextApp.post("/webui/api/auth/update", requireWebuiAuth, async (req, res) => {
       try {
-        impl.apiRoutes(router)
+        const next = await updateWebuiAuth({
+          username: req.body?.username,
+          password: req.body?.password,
+          rotate_token_secret: Boolean(req.body?.rotate_token_secret),
+          title: req.body?.title,
+        })
+        if (req.body?.rotate_token_secret) clearWebuiCookie(res)
+        res.json({
+          ok: true,
+          config: next,
+          rotated: Boolean(req.body?.rotate_token_secret),
+        })
       } catch (err) {
-        logger.warn(`[webui] apiRoutes failed for plugin=${p.name}:`, err?.message || err)
-        continue
+        res.status(500).json({ ok: false, error: err?.message || String(err) })
       }
+    })
 
-      app.use(`/${p.name}`, router)
-      app.use(`/plugins/${p.name}`, router)
-      logger.info(`[webui] mounted routes: /${p.name} and /plugins/${p.name}`)
+    nextApp.get("/webui/api/plugins", requireWebuiAuth, async (req, res) => {
+      try {
+        res.json({ ok: true, plugins: registry.list() })
+      } catch (err) {
+        res.status(500).json({ ok: false, error: err?.message || String(err) })
+      }
+    })
+
+    nextApp.get("/webui/api/plugins/:name/definition", requireWebuiAuth, async (req, res) => {
+      try {
+        const definition = await registry.getDefinition(req.params.name)
+        if (!definition) {
+          res.status(404).json({ ok: false, error: "Plugin not found" })
+          return
+        }
+        res.json({ ok: true, definition })
+      } catch (err) {
+        res.status(500).json({ ok: false, error: err?.message || String(err) })
+      }
+    })
+
+    nextApp.get("/webui/api/plugins/:name/scopes", requireWebuiAuth, async (req, res) => {
+      try {
+        const scopes = await registry.listScopes(req.params.name, req.query?.scope, { req })
+        res.json({ ok: true, scopes })
+      } catch (err) {
+        res.status(500).json({ ok: false, error: err?.message || String(err) })
+      }
+    })
+
+    nextApp.get("/webui/api/plugins/:name/config", requireWebuiAuth, async (req, res) => {
+      try {
+        const result = await registry.getValues(req.params.name, {
+          scope: String(req.query?.scope || "global"),
+          scopeId: req.query?.scope_id ? String(req.query.scope_id) : "",
+          req,
+        })
+        if (!result) {
+          res.status(404).json({ ok: false, error: "Plugin config provider not found" })
+          return
+        }
+        res.json({ ok: true, ...normalizePayload(result) })
+      } catch (err) {
+        res.status(500).json({ ok: false, error: err?.message || String(err) })
+      }
+    })
+
+    nextApp.post("/webui/api/plugins/:name/config", requireWebuiAuth, async (req, res) => {
+      try {
+        const result = await registry.updateValues(req.params.name, {
+          scope: String(req.body?.scope || "global"),
+          scopeId: req.body?.scope_id ? String(req.body.scope_id) : "",
+          values: req.body?.values && typeof req.body.values === "object" ? req.body.values : {},
+          req,
+          user: req.user,
+        })
+        if (!result) {
+          res.status(404).json({ ok: false, error: "Plugin config provider not found" })
+          return
+        }
+        res.json({ ok: true, ...normalizePayload(result) })
+      } catch (err) {
+        res.status(500).json({ ok: false, error: err?.message || String(err) })
+      }
+    })
+
+    // keep existing plugin routes for compatibility
+    try {
+      for (const p of plugins) {
+        const impl = p?.implementation
+        if (!impl || typeof impl.apiRoutes !== "function") continue
+
+        const router = express.Router()
+        try {
+          impl.apiRoutes(router)
+        } catch (err) {
+          logger.warn(`[webui] apiRoutes failed for plugin=${p.name}:`, err?.message || err)
+          continue
+        }
+
+        nextApp.use(`/${p.name}`, router)
+        nextApp.use(`/plugins/${p.name}`, router)
+        logger.info(`[webui] mounted routes: /${p.name} and /plugins/${p.name}`)
+      }
+    } catch (err) {
+      logger.warn("[webui] mount plugin routes failed:", err?.message || err)
     }
-  } catch (err) {
-    logger.warn("[webui] mount plugin routes failed:", err?.message || err)
+
+    let boundServer = null
+    try {
+      boundServer = await bindWebuiServer(nextApp, { host, port, allowPortFallback, logger })
+    } catch (err) {
+      app = null
+      server = null
+      logger.error("[webui] server error:", err)
+      throw err
+    }
+
+    const address = boundServer.address()
+    const actualPort = typeof address === "object" && address ? Number(address.port || port) : port
+
+    app = nextApp
+    server = boundServer
+    server.on("error", err => logger.error("[webui] server error:", err))
+    logger.info(`[webui] listening on http://${host}:${actualPort}`)
+
+    return { app, server }
+  })()
+
+  try {
+    return await startPromise
+  } finally {
+    startPromise = null
   }
-
-  server = app.listen(port, host, () => {
-    logger.info(`[webui] listening on http://${host}:${port}`)
-  })
-  server.on("error", err => logger.error("[webui] server error:", err))
-
-  return { app, server }
 }
 
 export function getWebuiServer() {
