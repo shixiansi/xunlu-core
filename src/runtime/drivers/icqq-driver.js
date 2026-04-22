@@ -1,6 +1,6 @@
 import BaseAdapterDriver from "./base-adapter-driver.js"
 import { createIcqqBinding } from "./icqq-binding.js"
-import { createIcqqRuntimeListener } from "../../Bot/adapter/icqq/runtime.js"
+import { createIcqqRuntimeListener } from "../../Bot/adapter/index.js"
 
 export class IcqqDriver extends BaseAdapterDriver {
   async start(runtime) {

@@ -1,7 +1,7 @@
 import CommandUsageDB from "../../src/db/CommandUsageDB.js"
 import MessageDB from "../../src/db/MessageDB.js"
 import cfg from "../../src/lib/config.js"
-import { resetActiveIcqqPluginLoader } from "../../src/Bot/icqq/pluginLoader.js"
+import { resetActiveIcqqPluginLoader } from "../../src/Bot/adapter/index.js"
 
 const originalConsole = {
   debug: console.debug,

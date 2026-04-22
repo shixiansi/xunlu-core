@@ -1,6 +1,6 @@
 ﻿import { MilkyClient } from "@saltify/milky-node-sdk"
 // 导入通用消息类型（用于兼容判断）
-import { UniversalMessage, UniversalSegmentType } from "../message/universal-message.js"
+import { UniversalMessage, UniversalSegmentType } from "../../message/universal-message.js"
 
 function normalizeMilkyApiName(name) {
   if (name === undefined || name === null) return ""

@@ -1,6 +1,5 @@
 import cfg from "../../lib/config.js"
-import MilkyAdapter from "../adapter/milky/milky-adapter.js"
-import OneBotV11Adapter from "../adapter/onebotV11/onebot.js"
+import { MilkyAdapter, OneBotV11Adapter } from "../adapter/index.js"
 import {
   UniversalMessage,
   UniversalMessageSegment,

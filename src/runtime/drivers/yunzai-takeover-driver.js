@@ -1,6 +1,6 @@
 import BaseAdapterDriver from "./base-adapter-driver.js"
 import { createIcqqBinding } from "./icqq-binding.js"
-import { createIcqqRuntimeListener } from "../../Bot/adapter/icqq/runtime.js"
+import { createIcqqRuntimeListener } from "../../Bot/adapter/index.js"
 
 /**
  * takeover 驱动把“外部适配器接入”与“云崽插件消费事件”拼装在一起。

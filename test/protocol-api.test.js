@@ -11,7 +11,7 @@ import {
 import { applyDerivedFieldsFromUniversalSegments } from "../src/Bot/message/context.js"
 import { UniversalMessage } from "../src/Bot/message/universal-message.js"
 import BaseBot from "../src/Bot/index.js"
-import IcqqMessageEvent from "../src/Bot/icqq/Event/message.js"
+import { IcqqMessageEvent } from "../src/Bot/adapter/index.js"
 import MessageDB from "../src/db/MessageDB.js"
 import { createProtocolMock } from "../src/dev/protocol-mock.js"
 import { installTestRuntime } from "./helpers/test-runtime.js"

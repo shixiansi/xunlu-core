@@ -3,7 +3,7 @@ import fs from "node:fs"
 import { fileURLToPath } from "url"
 import { dirname, resolve as resolvePath } from "path"
 import EventEmitter from "events"
-import { classifyMediaReference, coerceToUniversalMessage } from "../message/context.js"
+import { classifyMediaReference, coerceToUniversalMessage } from "../../message/context.js"
 
 // 解决 ES6 模块中 __dirname 缺失问题
 const __filename = fileURLToPath(import.meta.url)

@@ -1,6 +1,6 @@
 import BaseAdapterDriver from "./base-adapter-driver.js"
 import { createOneBotV11Binding } from "./onebotv11-binding.js"
-import { createOneBotV11RuntimeListener } from "../../Bot/adapter/onebotV11/runtime.js"
+import { createOneBotV11RuntimeListener } from "../../Bot/adapter/index.js"
 
 export class OneBotV11Driver extends BaseAdapterDriver {
   async start(runtime) {

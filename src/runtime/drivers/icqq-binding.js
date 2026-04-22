@@ -43,8 +43,8 @@ export function createIcqqBinding() {
       bot.sendMessage = sendMessage
       bot.makeGroupForwardMsg = async (msg, group_id) => {
         if (envName == "OneBotv11" && fileManager?.package?.name != "trss-yunzai") {
-          let { default: oneBotV11Adapter } = await import("../../Bot/onebotV11/onebot.js")
-          return new oneBotV11Adapter().makeForwardMsg(msg)
+          let { OneBotV11Adapter } = await import("../../Bot/adapter/index.js")
+          return new OneBotV11Adapter().makeForwardMsg(msg)
         } else if (fileManager?.package?.name == "trss-yunzai") {
           return { type: "node", data: msg }
         } else {

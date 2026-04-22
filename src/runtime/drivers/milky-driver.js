@@ -1,6 +1,6 @@
 import BaseAdapterDriver from "./base-adapter-driver.js"
 import { createMilkyBinding } from "./milky-binding.js"
-import { createMilkyRuntimeListener } from "../../Bot/adapter/milky/runtime.js"
+import { createMilkyRuntimeListener } from "../../Bot/adapter/index.js"
 
 export class MilkyDriver extends BaseAdapterDriver {
   async start(runtime) {
