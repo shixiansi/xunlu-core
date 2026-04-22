@@ -181,36 +181,44 @@ export class MessagePipeline {
     normalizeEventTargetFields(e)
     attachStandardMessageApis(e)
 
+    const universalOverride = [
+      "callApi",
+      "sendApi",
+      "getLoginInfo",
+      "getFriendList",
+      "getFriendInfo",
+      "getGroupList",
+      "getGroupInfo",
+      "setGroupName",
+      "setGroupMemberCard",
+      "setGroupMemberAdmin",
+      "setGroupMemberSpecialTitle",
+      "setGroupWholeMute",
+      "kickGroupMember",
+      "quitGroup",
+      "acceptFriendRequest",
+      "rejectFriendRequest",
+      "sendGroupMessageReaction",
+      "acceptGroupRequest",
+      "rejectGroupRequest",
+      "getUserInfo",
+      "getGroupMemberList",
+      "getGroupMemberInfo",
+      "setGroupMemberMute",
+      "makeGroupForwardMsg",
+      "makeGroupForwardMsgByUser",
+      "pickUser",
+      "renderImg",
+    ]
+
+    if (typeof e.sendMessage === "function" && e.sendMessage.__xunlu_legacy_sendMessage) {
+      universalOverride.unshift("sendMessage")
+    }
+
     applyUniversalBotApi(e, {
       bot: this.baseBot,
       adapterHint: this.baseBot.adapter,
-      override: [
-        "getLoginInfo",
-        "getFriendList",
-        "getFriendInfo",
-        "getGroupList",
-        "getGroupInfo",
-        "setGroupName",
-        "setGroupMemberCard",
-        "setGroupMemberAdmin",
-        "setGroupMemberSpecialTitle",
-        "setGroupWholeMute",
-        "kickGroupMember",
-        "quitGroup",
-        "acceptFriendRequest",
-        "rejectFriendRequest",
-        "sendGroupMessageReaction",
-        "acceptGroupRequest",
-        "rejectGroupRequest",
-        "getUserInfo",
-        "getGroupMemberList",
-        "getGroupMemberInfo",
-        "setGroupMemberMute",
-        "makeGroupForwardMsg",
-        "makeGroupForwardMsgByUser",
-        "pickUser",
-        "renderImg",
-      ],
+      override: universalOverride,
     })
 
     await this.roleResolver.enrichGroupRoleFlags(e)

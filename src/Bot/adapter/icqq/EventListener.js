@@ -272,6 +272,9 @@ const sendMessage = async (ctx, message) => {
     return null
   }
 }
+try {
+  sendMessage.__xunlu_legacy_sendMessage = true
+} catch {}
 
 const filemag = new Filemage(fileURLToPath(new URL("./Event", import.meta.url)))
 
