@@ -1,268 +1,31 @@
 import { coerceToUniversalMessage } from "../message/context.js"
 import { UniversalMessage } from "../message/universal-message.js"
 import {
-  extractMemberRoleFlags,
   getMemberRoleFlagsWithFallback,
   hasAdminRole,
   hasOwnerRole,
 } from "../member-role-utils.js"
-import { rememberRuntimeLastGroupMessage } from "../runtime-last-message.js"
-
-function getRuntimeBotOrNull() {
-  try {
-    // eslint-disable-next-line no-undef
-    return Bot || globalThis.Bot || null
-  } catch {
-    return globalThis.Bot || null
-  }
-}
-
-function toInt(value) {
-  if (value === undefined || value === null) return undefined
-  const v = typeof value === "string" ? value.trim() : value
-  if (v === "") return undefined
-  const num = Number(v)
-  return Number.isFinite(num) ? num : undefined
-}
-
-function getSelfIdFromTarget(ctx, runtimeBot) {
-  return (
-    toInt(ctx?.self_id) ??
-    toInt(ctx?.bot?.uin) ??
-    toInt(ctx?.bot?.self_id) ??
-    toInt(runtimeBot?.uin) ??
-    toInt(runtimeBot?.self_id) ??
-    toInt(runtimeBot?.user_id) ??
-    toInt(runtimeBot?.botQQ)
-  )
-}
-
-function getFastMemberRoleFlags(ctx, userId) {
-  if (!ctx || userId === undefined || userId === null) return null
-  const uid = toInt(userId)
-  if (uid === undefined) return null
-
-  const currentUserId = toInt(ctx?.user_id ?? ctx?.sender_id)
-  if (currentUserId === undefined || currentUserId !== uid) return null
-
-  return (
-    extractMemberRoleFlags(ctx?.member) ??
-    extractMemberRoleFlags(ctx?.group_member) ??
-    extractMemberRoleFlags(ctx?.sender) ??
-    extractMemberRoleFlags({
-      role: ctx?.isOwner ? "owner" : ctx?.isAdmin ? "admin" : "",
-      is_owner: ctx?.isOwner,
-      is_admin: ctx?.isAdmin,
-    })
-  )
-}
-
-function getFastBotRoleFlags(ctx) {
-  if (!ctx || typeof ctx !== "object") return null
-  return (
-    extractMemberRoleFlags(ctx?.botMember) ??
-    extractMemberRoleFlags({
-      role: ctx?.botRole,
-      is_owner: ctx?.botIsOwner,
-      is_admin: ctx?.botIsAdmin,
-    })
-  )
-}
-
-function resolveProtocol({ ctx, bot, runtimeBot, adapterHint } = {}) {
-  const fromCtx = ctx && typeof ctx.protocol === "string" ? String(ctx.protocol).toLowerCase() : ""
-  if (fromCtx) return normalizeProtocol(fromCtx)
-
-  const fromRuntime =
-    runtimeBot && typeof runtimeBot.adapterType === "string"
-      ? String(runtimeBot.adapterType).toLowerCase()
-      : ""
-  if (fromRuntime) return normalizeProtocol(fromRuntime)
-
-  const fromBot = bot && typeof bot.adapter === "string" ? String(bot.adapter).toLowerCase() : ""
-  if (fromBot) return normalizeProtocol(fromBot)
-
-  const fromHint = adapterHint ? String(adapterHint).toLowerCase() : ""
-  if (fromHint) return normalizeProtocol(fromHint)
-
-  return "icqq"
-}
-
-function getRawMethod(runtimeBot, methodName, selfFn) {
-  if (!runtimeBot || (typeof runtimeBot !== "object" && typeof runtimeBot !== "function"))
-    return null
-
-  const rawKey = `__xunlu_raw_${methodName}`
-  const raw = runtimeBot?.[rawKey]
-  if (typeof raw === "function") return raw
-
-  const fn = runtimeBot?.[methodName]
-  if (typeof fn === "function" && fn !== selfFn) return fn
-
-  return null
-}
-
-function rememberOutgoingGroupMessage(sendTarget, message, { ctx, runtimeBot } = {}) {
-  const groupId = sendTarget?.group_id
-  if (groupId === undefined || groupId === null) return
-  const selfId =
-    ctx?.self_id ??
-    runtimeBot?.self_id ??
-    runtimeBot?.uin ??
-    runtimeBot?.user_id ??
-    runtimeBot?.botQQ ??
-    ""
-  rememberRuntimeLastGroupMessage({
-    group_id: groupId,
-    user_id: selfId,
-    sender_id: selfId,
-    self_id: selfId,
-    message,
-    isMaster: false,
-    isBot: true,
-  })
-}
-
-function getYunzaiSendApi(runtimeBot) {
-  if (!runtimeBot || typeof runtimeBot !== "object") return null
-  if (typeof runtimeBot.sendApi === "function" && !runtimeBot.sendApi?.__xunlu_universal)
-    return runtimeBot.sendApi.bind(runtimeBot)
-
-  const qq = runtimeBot.botQQ
-  if (!qq) return null
-  const sub = runtimeBot[qq]
-  if (sub && typeof sub.sendApi === "function") return sub.sendApi.bind(sub)
-  return null
-}
-
-function normalizeProtocol(value) {
-  const v = String(value || "").toLowerCase()
-  if (v.includes("onebot")) return "onebotv11"
-  if (v.includes("milky")) return "milky"
-  if (v.includes("icqq")) return "icqq"
-  if (v === "onebotv11") return "onebotv11"
-  if (v === "milky") return "milky"
-  if (v === "icqq") return "icqq"
-  return "icqq"
-}
-
-function normalizeApiActionName(protocol, action) {
-  if (action === undefined || action === null) return ""
-  let out = String(action).trim()
-  while (out.startsWith("/")) out = out.slice(1)
-  if (protocol === "milky" && out.startsWith("api/")) out = out.slice("api/".length)
-  return out
-}
-
-function normalizeTarget(target, fallbackCtx) {
-  const ctx = fallbackCtx && typeof fallbackCtx === "object" ? fallbackCtx : null
-
-  if (typeof target === "string" || typeof target === "number") {
-    return { scene: "private", user_id: target }
-  }
-
-  if (target && typeof target === "object") {
-    const gid = target.group_id ?? target.groupId
-    if (gid !== undefined && gid !== null) return { scene: "group", group_id: gid }
-
-    const uid = target.user_id ?? target.userId
-    if (uid !== undefined && uid !== null) return { scene: "private", user_id: uid }
-  }
-
-  if (ctx) {
-    if (ctx.group_id !== undefined && ctx.group_id !== null)
-      return { scene: "group", group_id: ctx.group_id }
-    if (ctx.user_id !== undefined && ctx.user_id !== null)
-      return { scene: "private", user_id: ctx.user_id }
-  }
-
-  throw new Error("[sendMessage] invalid target")
-}
-
-function hasOnebotNodeSegments(message) {
-  const list = Array.isArray(message) ? message : message ? [message] : []
-  return list.some(i => i && typeof i === "object" && i.type === "node")
-}
-
-function hasMilkyForwardSegments(message) {
-  const list = Array.isArray(message) ? message : message ? [message] : []
-  return list.some(
-    i => i && typeof i === "object" && i.type === "forward" && Array.isArray(i?.data?.messages),
-  )
-}
-
-function toSendTargetObject(t) {
-  if (!t || typeof t !== "object") return t
-  if (t.group_id !== undefined && t.group_id !== null) {
-    const gid = toInt(t.group_id) ?? t.group_id
-    return { group_id: gid }
-  }
-  if (t.user_id !== undefined && t.user_id !== null) {
-    const uid = toInt(t.user_id) ?? t.user_id
-    return String(uid)
-  }
-  return t
-}
-
-function toMemberMap(listOrMap) {
-  if (!listOrMap) return new Map()
-  if (listOrMap instanceof Map) return listOrMap
-
-  if (Array.isArray(listOrMap)) {
-    return new Map(listOrMap.map(item => [item?.user_id ?? item?.uin ?? item?.id, item]))
-  }
-
-  // milky: { members: [...] }
-  if (typeof listOrMap === "object" && Array.isArray(listOrMap.members)) {
-    return new Map(listOrMap.members.map(item => [item?.user_id ?? item?.uin ?? item?.id, item]))
-  }
-
-  // onebot: may return plain array/object
-  if (typeof listOrMap === "object") {
-    const values = Object.values(listOrMap)
-    if (Array.isArray(values) && values.every(v => v && typeof v === "object")) {
-      const maybeArray = values
-      return new Map(maybeArray.map(item => [item?.user_id ?? item?.uin ?? item?.id, item]))
-    }
-  }
-
-  return new Map()
-}
-
-function toKeyMap(listOrMap, key) {
-  if (!listOrMap) return new Map()
-  if (listOrMap instanceof Map) return listOrMap
-  if (!Array.isArray(listOrMap)) return new Map()
-
-  const map = new Map()
-  for (const item of listOrMap) {
-    if (!item || typeof item !== "object") continue
-    const id = item[key]
-    if (id === undefined || id === null) continue
-    map.set(id, item)
-  }
-  return map
-}
-
-function mapOnebotGroupRequestSubType(input = {}) {
-  const subType = input.sub_type ?? input.subType
-  if (subType === "add" || subType === "invite") return subType
-
-  const type = input.type ?? input.notification_type ?? input.notificationType
-  if (type === "join_request") return "add"
-  if (type === "invited_join_request") return "invite"
-  if (type === "invite") return "invite"
-  return "add"
-}
-
-function mapMilkyNotificationType(input = {}) {
-  const t = input.notification_type ?? input.notificationType ?? input.type
-  if (t === "join_request" || t === "invited_join_request") return t
-
-  const subType = input.sub_type ?? input.subType
-  if (subType === "invite") return "invited_join_request"
-  return "join_request"
-}
+import {
+  getFastBotRoleFlags,
+  getFastMemberRoleFlags,
+  getRawMethod,
+  getRuntimeBotOrNull,
+  getSelfIdFromTarget,
+  getYunzaiSendApi,
+  hasMilkyForwardSegments,
+  hasOnebotNodeSegments,
+  mapMilkyNotificationType,
+  mapOnebotGroupRequestSubType,
+  normalizeApiActionName,
+  normalizeProtocol,
+  normalizeTarget,
+  rememberOutgoingGroupMessage,
+  resolveProtocol,
+  toInt,
+  toKeyMap,
+  toMemberMap,
+  toSendTargetObject,
+} from "./universal-bot-api-utils.js"
 
 export function createUniversalBotApi({ bot, adapterHint } = {}) {
   const api = {
