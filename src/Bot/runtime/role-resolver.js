@@ -81,7 +81,7 @@ export class RoleResolver {
 
   async getMasterList() {
     if (env.CurEnv == "QQBot-YunZai") {
-      const { default: yuncfg } = await import("../../../../lib/config/config.js")
+      const { default: yuncfg } = await import("../../../../../lib/config/config.js")
       return yuncfg.masterQQ
     }
     return cfg.getConfig("bot").masterQQ
