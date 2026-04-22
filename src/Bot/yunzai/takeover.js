@@ -780,8 +780,8 @@ function patchYunzaiBot(bot, state, { loginInfo } = {}) {
   if (uin) bot.uin = uin
   if (nickname !== undefined) bot.nickname = nickname
 
-  // 兼容：Bot[uin] 取自身
-  if (uin) bot[String(uin)] = bot
+  // 兼容：Bot[uin] 取“当前主体对应的底层适配器”，避免外部 Proxy 把 Bot[uin] 再指回代理自身导致递归。
+  if (uin) bot[String(uin)] = state.adapter || bot
   state.selfId = toInt(bot.uin) ?? state.selfId
 
   // 让 xunlu-core 的 icqq bridge（可选启动）能识别协议类型
@@ -1073,4 +1073,8 @@ export async function startYunzaiTakeover({ bot, ignoreSelf } = {}) {
 
   runtimeBot.__xunlu_takeover_started = { protocol, loginInfo, adapterName }
   return runtimeBot.__xunlu_takeover_started
+}
+
+export const __test = {
+  patchYunzaiBot,
 }
