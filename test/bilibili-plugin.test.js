@@ -8,6 +8,7 @@ import { createPluginTestHarness } from "../src/dev/plugin-test-harness.js"
 import bilibiliPlugin from "../src/plugins/bilibili/index.js"
 import Bili from "../src/plugins/bilibili/model/Bilili.js"
 import ffmpeg from "../src/component/ffmpeg/ffmpeg.js"
+import { getRuntimePaths } from "../src/runtime/runtime-context.js"
 import Download from "../src/utils/download.js"
 import { installTestRuntime } from "./helpers/test-runtime.js"
 
@@ -18,15 +19,7 @@ const repoRoot = path.resolve(__dirname, "..")
 installTestRuntime(test)
 
 function getGroupDataFile(groupId) {
-  return path.resolve(
-    repoRoot,
-    "src",
-    "plugins",
-    "bilibili",
-    "data",
-    "group",
-    `${groupId}.json`,
-  )
+  return path.resolve(getRuntimePaths().getPluginDataDir("bilibili", "group"), `${groupId}.json`)
 }
 
 function cleanupGroupData(groupId) {
