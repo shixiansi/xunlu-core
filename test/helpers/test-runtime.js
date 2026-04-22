@@ -1,6 +1,7 @@
 import CommandUsageDB from "../../src/db/CommandUsageDB.js"
 import MessageDB from "../../src/db/MessageDB.js"
 import cfg from "../../src/lib/config.js"
+import { resetActiveIcqqPluginLoader } from "../../src/Bot/icqq/pluginLoader.js"
 
 const originalConsole = {
   debug: console.debug,
@@ -13,6 +14,9 @@ const originalConsole = {
 export async function cleanupTestRuntime() {
   try {
     cfg?.cleanup?.()
+  } catch {}
+  try {
+    resetActiveIcqqPluginLoader?.()
   } catch {}
   try {
     await CommandUsageDB?.close?.()

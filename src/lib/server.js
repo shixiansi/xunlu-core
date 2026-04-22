@@ -62,52 +62,11 @@ export async function startServer(portOrOptions = process.env.PORT || 3000) {
 
     if (typeof impl.apiRoutes === "function") {
       const router = express.Router()
-      console.log(router)
-
       impl.apiRoutes(router)
-      console.log(router)
 
       app.use(`/plugins/${p.name}`, router)
       logger.info(`Mounted API routes for plugin: ${p.name}`)
     }
-  }
-
-  // 将 reset-qianyu 插件的 downloads 目录作为静态资源暴露（可选的 token 访问控制）
-  try {
-    const downloadsDir = path.join(__dirname, "plugins", "reset-qianyu-plugin", "downloads")
-
-    const DOWNLOAD_TOKEN = process.env.PLUGIN_DOWNLOAD_TOKEN || null
-    if (!DOWNLOAD_TOKEN) {
-      logger.info("No PLUGIN_DOWNLOAD_TOKEN set — downloads route will be publicly accessible")
-    } else {
-      logger.info(`PLUGIN_DOWNLOAD_TOKEN is set — downloads will require token`)
-    }
-
-    const checkDownloadToken = (req, res, next) => {
-      // 如果没有配置 token，则允许访问（兼容开发环境）
-      if (!DOWNLOAD_TOKEN) return next()
-
-      const headerToken = req.get("x-download-token")
-      const auth = req.get("authorization")
-      const bearerToken = auth && auth.startsWith("Bearer ") ? auth.slice(7) : null
-      const queryToken = req.query && req.query.token
-      const got = headerToken || bearerToken || queryToken
-
-      if (got && got === DOWNLOAD_TOKEN) return next()
-      res.status(401).json({ error: "Unauthorized" })
-    }
-
-    app.use(
-      "/plugins/reset-qianyu-plugin/downloads",
-      checkDownloadToken,
-      express.static(downloadsDir),
-    )
-
-    logger.info(
-      `Serving plugin downloads at /plugins/reset-qianyu-plugin/downloads from ${downloadsDir}`,
-    )
-  } catch (e) {
-    logger.error("Failed to mount downloads static route", e)
   }
 
   app.post("/bot/event", (req, res) => {

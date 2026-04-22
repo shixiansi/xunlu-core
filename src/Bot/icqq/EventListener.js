@@ -458,42 +458,6 @@ class ListenerLoader {
     return true
   }
 
-  checkEnv() {
-    // takeover 场景：优先读取 takeover 注入的协议类型（避免被 QQNT 误判为 icqq）
-    try {
-      const p = this.client?.__xunlu_takeover_state?.protocol
-      if (p === "onebotv11") return "OneBotv11"
-      if (p === "milky") return "milky"
-    } catch {}
-
-    const Botkeys = Object.keys(this.client)
-    console.log(Object.keys(this.client))
-
-    const normalizeEnv = raw => {
-      const v = String(raw || "")
-      const lower = v.toLowerCase()
-      if (lower.includes("onebot")) return "OneBotv11"
-      if (lower.includes("milky")) return "milky"
-      if (lower.includes("icqq")) return "icqq"
-      return "icqq"
-    }
-
-    try {
-      if (Botkeys.includes("lain")) {
-        this.bot = this.client[this.client.botQQ]
-        return normalizeEnv(this.client[this.client.botQQ]?.adapter?.name)
-      }
-
-      if (Botkeys.includes("uin") && Botkeys.includes("QQNT")) {
-        return "icqq"
-      }
-
-      return normalizeEnv(this.client[this.client.botQQ]?.adapter?.name)
-    } catch {
-      return "icqq"
-    }
-  }
-
   bindEvent(e, env) {
     e.adapterType = "icqq"
     const targetE = e
