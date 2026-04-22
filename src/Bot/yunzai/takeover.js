@@ -1038,7 +1038,7 @@ export async function startYunzaiTakeover({ bot, ignoreSelf } = {}) {
   })
 
   patchYunzaiBot(runtimeBot, state, { loginInfo })
-  globalThis.__xunlu_runtime_bot = runtimeBot
+  globalThis.__xunlu_runtime_bot = adapter
   await fillBotListsBestEffort(runtimeBot, state)
 
   const bridgeHelpers = { toInt, logError, logWarn }
