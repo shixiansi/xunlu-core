@@ -44,6 +44,56 @@ function getSelfIdFromCtx(e) {
   )
 }
 
+function readOwnDataProperty(target, key) {
+  if (!target || typeof target !== "object") return undefined
+  const desc = Object.getOwnPropertyDescriptor(target, key)
+  if (!desc) return undefined
+  if (Object.prototype.hasOwnProperty.call(desc, "value")) return desc.value
+  return undefined
+}
+
+function setShadowProperty(target, key, value) {
+  if (!target || typeof target !== "object") return false
+  try {
+    const ownDesc = Object.getOwnPropertyDescriptor(target, key)
+    if (ownDesc?.set || ownDesc?.writable) {
+      target[key] = value
+      return true
+    }
+    if (!ownDesc) {
+      Object.defineProperty(target, key, {
+        value,
+        configurable: true,
+        writable: true,
+        enumerable: true,
+      })
+      return true
+    }
+    if (ownDesc.configurable) {
+      Object.defineProperty(target, key, {
+        value,
+        configurable: true,
+        writable: true,
+        enumerable: true,
+      })
+      return true
+    }
+  } catch {}
+  return false
+}
+
+function getRuntimeGroup(groupId) {
+  const gid = normalizeEventId(groupId)
+  if (gid === undefined) return null
+  const runtimeBot = globalThis.Bot
+  if (!runtimeBot || typeof runtimeBot.pickGroup !== "function") return null
+  try {
+    return runtimeBot.pickGroup(Number(gid) || gid)
+  } catch {
+    return null
+  }
+}
+
 function pickMemberInfoSafe(group, userId, { ignorePlaceholder = false } = {}) {
   return pickGroupMemberRoleInfo(group, userId, { ignorePlaceholder })
 }
@@ -94,12 +144,17 @@ export class RoleResolver {
     const userId = normalizeEventId(e.user_id ?? e.sender_id)
     const selfId = getSelfIdFromCtx(e)
     const now = Date.now()
+    const runtimeGroup = getRuntimeGroup(groupId)
+    const ownMember = readOwnDataProperty(e, "member")
+    const ownGroupMember = readOwnDataProperty(e, "group_member")
+    const ownSender = readOwnDataProperty(e, "sender")
+    const ownBotMember = readOwnDataProperty(e, "botMember")
 
     const senderFlags =
-      getRoleFlags(e.member) ??
-      getRoleFlags(e.group_member) ??
-      getRoleFlags(e.sender) ??
-      getRoleFlags(pickMemberInfoSafe(e.group, userId, { ignorePlaceholder: true }))
+      getRoleFlags(ownMember) ??
+      getRoleFlags(ownGroupMember) ??
+      getRoleFlags(ownSender) ??
+      getRoleFlags(pickMemberInfoSafe(runtimeGroup, userId, { ignorePlaceholder: true }))
 
     let resolvedSenderFlags = senderFlags
     const senderCacheKey = groupId !== undefined && userId !== undefined ? `${groupId}:${userId}` : ""
@@ -132,22 +187,26 @@ export class RoleResolver {
     }
 
     if (userId !== undefined) {
-      e.member = applyRoleFlags(
-        e.member || {
-          user_id: userId,
-          nickname: e.sender?.nickname,
-          card: e.sender?.card,
-        },
+      const nextMember = applyRoleFlags(
+        ownMember ||
+          ownGroupMember || {
+            user_id: userId,
+            nickname: ownSender?.nickname,
+            card: ownSender?.card,
+          },
         resolvedSenderFlags,
       )
+      setShadowProperty(e, "member", nextMember)
+      setShadowProperty(e, "group_member", nextMember)
     }
     if (resolvedSenderFlags) {
-      e.sender = applyRoleFlags(e.sender, resolvedSenderFlags)
+      setShadowProperty(e, "sender", applyRoleFlags(ownSender, resolvedSenderFlags))
       e.isOwner = Boolean(resolvedSenderFlags.isOwner)
       e.isAdmin = Boolean(resolvedSenderFlags.isAdmin)
     } else {
-      e.isOwner = Boolean(e.member?.is_owner ?? e.member?.isOwner ?? false)
-      e.isAdmin = Boolean(e.member?.is_admin ?? e.member?.isAdmin ?? e.isOwner)
+      const fallbackMember = readOwnDataProperty(e, "member") || readOwnDataProperty(e, "group_member")
+      e.isOwner = Boolean(fallbackMember?.is_owner ?? fallbackMember?.isOwner ?? false)
+      e.isAdmin = Boolean(fallbackMember?.is_admin ?? fallbackMember?.isAdmin ?? e.isOwner)
     }
 
     if (groupId === undefined || selfId === undefined) return
@@ -155,9 +214,9 @@ export class RoleResolver {
     const cacheKey = `${groupId}:${selfId}`
     const cached = getCachedRoleFlags(groupBotRoleCache, cacheKey, GROUP_BOT_ROLE_CACHE_TTL_MS, now)
 
-    const localBotInfo = pickMemberInfoSafe(e.group, selfId)
+    const localBotInfo = pickMemberInfoSafe(runtimeGroup, selfId)
     let selection = selectPreferredRoleFlags({
-      directInfo: e.botMember,
+      directInfo: ownBotMember,
       localInfo: localBotInfo,
       cachedFlags: cached,
       expectedUserId: selfId,
@@ -228,11 +287,15 @@ export class RoleResolver {
     }
 
     if (botFlags) {
-      e.botMember = applyRoleFlags(
-        e.botMember || {
-          user_id: selfId,
-        },
-        botFlags,
+      setShadowProperty(
+        e,
+        "botMember",
+        applyRoleFlags(
+          ownBotMember || {
+            user_id: selfId,
+          },
+          botFlags,
+        ),
       )
       e.botRole = botFlags.role
       e.botIsOwner = Boolean(botFlags.isOwner)
