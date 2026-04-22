@@ -4,6 +4,7 @@ function normalizeMemberId(value) {
 }
 
 function getRuntimeBotOrNull() {
+  if (globalThis.__xunlu_runtime_bot) return globalThis.__xunlu_runtime_bot
   try {
     // eslint-disable-next-line no-undef
     return Bot || globalThis.Bot || null

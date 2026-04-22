@@ -216,12 +216,13 @@ function installIcqqRuntimeGroupSendHooks(bot) {
 const sendMessage = async (ctx, message) => {
   try {
     const protocol = BotEnv === "OneBotv11" ? "onebotv11" : BotEnv === "milky" ? "milky" : "icqq"
+    const runtimeBot = globalThis.__xunlu_runtime_bot || pluginLoader.Bot || globalThis.Bot
 
     const pickPrivate = userId => {
       const uid = Number(userId)
       if (!Number.isFinite(uid)) return null
-      if (typeof Bot?.pickFriend === "function") return Bot.pickFriend(uid)
-      if (typeof Bot?.pickUser === "function") return Bot.pickUser(uid)
+      if (typeof runtimeBot?.pickFriend === "function") return runtimeBot.pickFriend(uid)
+      if (typeof runtimeBot?.pickUser === "function") return runtimeBot.pickUser(uid)
       return null
     }
 
@@ -234,7 +235,10 @@ const sendMessage = async (ctx, message) => {
         return await target.sendMsg(rawList)
       }
       if (ctx?.group_id) {
-        return await Bot.pickGroup(Number(ctx.group_id)).sendMsg(rawList)
+        if (typeof runtimeBot?.pickGroup !== "function") {
+          throw new Error("invalid group target (pickGroup not available)")
+        }
+        return await runtimeBot.pickGroup(Number(ctx.group_id)).sendMsg(rawList)
       }
     }
 
@@ -250,7 +254,10 @@ const sendMessage = async (ctx, message) => {
     }
 
     if (ctx?.group_id) {
-      return await Bot.pickGroup(Number(ctx.group_id)).sendMsg(outSegments)
+      if (typeof runtimeBot?.pickGroup !== "function") {
+        throw new Error("invalid group target (pickGroup not available)")
+      }
+      return await runtimeBot.pickGroup(Number(ctx.group_id)).sendMsg(outSegments)
     }
 
     if (ctx?.user_id) {
@@ -305,6 +312,7 @@ class ListenerLoader {
   async load(client) {
     this.client = client
     pluginLoader.Bot = client
+    globalThis.__xunlu_runtime_bot = client
 
     const botenv = this.checkEnv()
     BotEnv = botenv
@@ -349,13 +357,15 @@ class ListenerLoader {
     await pluginLoader.initBot()
     await pluginLoader.runMount()
 
-    globalThis.Bot = this.binding.decorateRuntimeBot({
+    const runtimeBot = this.binding.decorateRuntimeBot({
       bot: globalThis.Bot,
       envName: botenv,
       pluginLoader,
       fileManager: filemag,
       sendMessage,
     })
+    globalThis.__xunlu_runtime_bot = runtimeBot
+    globalThis.Bot = runtimeBot
 
     const files = filemag.GetfileList().filter(file => file.endsWith(".js"))
     for (let File of files) {

@@ -85,7 +85,7 @@ function setShadowProperty(target, key, value) {
 function getRuntimeGroup(groupId) {
   const gid = normalizeEventId(groupId)
   if (gid === undefined) return null
-  const runtimeBot = globalThis.Bot
+  const runtimeBot = globalThis.__xunlu_runtime_bot || globalThis.Bot
   if (!runtimeBot || typeof runtimeBot.pickGroup !== "function") return null
   try {
     return runtimeBot.pickGroup(Number(gid) || gid)

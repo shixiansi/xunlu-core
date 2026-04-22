@@ -45,8 +45,9 @@ test("RoleResolver avoids accessor-only member/group getters and shadows writabl
   })
 
   const previousBot = globalThis.Bot
+  const previousRuntimeBot = globalThis.__xunlu_runtime_bot
   try {
-    globalThis.Bot = {
+    globalThis.__xunlu_runtime_bot = {
       pickGroup(gid) {
         assert.equal(gid, 123456)
         return {
@@ -62,6 +63,14 @@ test("RoleResolver avoids accessor-only member/group getters and shadows writabl
         }
       },
     }
+    globalThis.Bot = new Proxy(
+      {},
+      {
+        get() {
+          throw new Error("global Bot proxy should not be touched")
+        },
+      },
+    )
 
     await resolver.enrichGroupRoleFlags(event)
 
@@ -74,6 +83,7 @@ test("RoleResolver avoids accessor-only member/group getters and shadows writabl
     assert.equal(event.botIsOwner, true)
     assert.equal(event.botMember.role, "owner")
   } finally {
+    globalThis.__xunlu_runtime_bot = previousRuntimeBot
     globalThis.Bot = previousBot
   }
 })
