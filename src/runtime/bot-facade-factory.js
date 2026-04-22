@@ -1,16 +1,12 @@
 /**
  * 统一构造运行时 Bot facade。
  *
- * 第一阶段不强制重写所有 `global.Bot` 的来源，而是把“当前运行时应该暴露哪一个 Bot”
- * 这件事集中到一个工厂里，保证 Runtime Kernel、Service 和插件上下文拿到的是同一视图。
+ * Runtime Kernel 只消费 driver 暴露出的显式接口，
+ * 不再从 `globalThis.Bot` 或历史兼容对象回退拼装。
  */
-export function createBotFacade({ driver, globalBot } = {}) {
-  const runtimeBot = driver?.getRuntimeBot?.() || globalBot || globalThis.Bot || null
+export function createBotFacade({ driver } = {}) {
+  const runtimeBot = driver?.getRuntimeBot?.() || null
   const botCore = driver?.getBotCore?.() || null
-
-  if (runtimeBot) {
-    globalThis.Bot = runtimeBot
-  }
 
   return {
     runtimeBot,

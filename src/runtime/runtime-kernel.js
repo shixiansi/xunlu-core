@@ -56,9 +56,8 @@ export class RuntimeKernel {
       this.mode === "api-only"
         ? null
         : createBotFacade({
-            driver: this.driver,
-            globalBot: this.modeState?.globalBot,
-          })
+          driver: this.driver,
+        })
     this.registerDefaultServices()
     await this.services.startAll(this)
     this.started = true
@@ -143,7 +142,7 @@ export class RuntimeKernel {
 
   getRuntimeBot() {
     if (this.mode === "api-only" || this.mode === "standalone-icqq-unsupported") return null
-    return this.facade?.runtimeBot || this.driver?.getRuntimeBot?.() || globalThis.Bot || null
+    return this.facade?.runtimeBot || this.driver?.getRuntimeBot?.() || null
   }
 
   getBotCore() {

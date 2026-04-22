@@ -18,7 +18,7 @@ export class BaseAdapterDriver {
   }
 
   getRuntimeBot() {
-    return this.listener?.getRuntimeBot?.() || globalThis.Bot || null
+    return this.listener?.getRuntimeBot?.() || null
   }
 
   getBotCore() {

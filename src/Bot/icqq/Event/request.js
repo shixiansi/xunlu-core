@@ -1,13 +1,1 @@
-import EventListener from '../EventListener.js'
-/**
- * 监听群聊消息
- */
-export default class requestEvent extends EventListener {
-  constructor() {
-    super({ event: 'request' })
-  }
-
-  async execute(e) {
-    await this.plugins.deal(e)
-  }
-}
+export { default } from "../../adapter/icqq/Event/request.js"
