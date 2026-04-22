@@ -2,7 +2,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
-import { segment } from "../../../Bot/segment.js"
+import { segment } from "../../../Bot/message/legacy-segment.js"
 import fetch from "node-fetch"
 import lodash from "lodash"
 

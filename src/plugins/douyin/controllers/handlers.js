@@ -1,4 +1,4 @@
-import { segment } from "../../../Bot/segment.js"
+import { segment } from "../../../Bot/message/legacy-segment.js"
 import DouyinService, {
   extractFirstDouyinUrlFromText,
   extractFirstDouyinUrlFromValue,

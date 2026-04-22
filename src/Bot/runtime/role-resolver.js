@@ -7,7 +7,7 @@ import {
   findMemberInfoInGroupMemberList,
   pickGroupMemberRoleInfo,
   selectPreferredRoleFlags,
-} from "../member-role-utils.js"
+} from "../role/member-role.js"
 import { normalizeEventId } from "./shared.js"
 
 const GROUP_MEMBER_ROLE_CACHE_TTL_MS = 60 * 1000

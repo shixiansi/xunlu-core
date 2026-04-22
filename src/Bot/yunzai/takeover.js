@@ -6,7 +6,7 @@ import {
   UniversalSegmentType,
 } from "../message/universal-message.js"
 import { coerceToUniversalMessage } from "../message/context.js"
-import { rememberRuntimeLastGroupMessage } from "../runtime-last-message.js"
+import { rememberRuntimeLastGroupMessage } from "../state/last-group-message-store.js"
 
 function getLogger() {
   const l = globalThis.logger

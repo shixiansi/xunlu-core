@@ -3,7 +3,7 @@ import path from "node:path"
 import { pathToFileURL } from "node:url"
 
 import { coerceToUniversalMessage } from "../../../Bot/message/context.js"
-import { getMemberInfoWithFallback } from "../../../Bot/member-role-utils.js"
+import { getMemberInfoWithFallback } from "../../../Bot/role/member-role.js"
 import MessageDB from "../../../db/MessageDB.js"
 import env from "../../../lib/env.js"
 import cfg from "../../../lib/config.js"

@@ -1,6 +1,6 @@
 ﻿import _ from "lodash"
 import moment from "moment"
-import { segment } from "../../../Bot/segment.js"
+import { segment } from "../../../Bot/message/legacy-segment.js"
 import Filemage from "../../../utils/Filemage.js"
 import cfg from "../../../lib/config.js"
 import { applyRkeyToUrl, getSceneRkey } from "../../../utils/rkey.js"

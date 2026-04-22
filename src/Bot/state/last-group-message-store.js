@@ -1,12 +1,11 @@
-import { coerceToUniversalMessage } from "./message/context.js"
+import { coerceToUniversalMessage } from "../message/context.js"
 
 const BOT_STREAK_MAX = 10
 const BOT_STREAK_DEDUPE_WINDOW_MS = 2000
 
 function toId(value) {
   if (value === undefined || value === null) return ""
-  const text = String(value).trim()
-  return text
+  return String(value).trim()
 }
 
 function normalizeSegments(message) {
@@ -106,19 +105,12 @@ export function rememberRuntimeLastGroupMessage(input = {}) {
 export function getRuntimeLastGroupMessage(groupId) {
   const gid = toId(groupId)
   if (!gid) return null
-  const map = getRuntimeLastGroupMessageMap()
-  return map.get(gid) || null
+  return getRuntimeLastGroupMessageMap().get(gid) || null
 }
 
 export function getRuntimeBotGroupMessageStreak(groupId) {
   const gid = toId(groupId)
   if (!gid) return []
-  const map = getRuntimeBotGroupMessageStreakMap()
-  const list = map.get(gid)
+  const list = getRuntimeBotGroupMessageStreakMap().get(gid)
   return Array.isArray(list) ? [...list] : []
 }
-
-try {
-  globalThis.__xunlu_remember_runtime_last_group_message = rememberRuntimeLastGroupMessage
-  globalThis.__xunlu_get_runtime_bot_group_message_streak = getRuntimeBotGroupMessageStreak
-} catch {}
