@@ -85,11 +85,25 @@ export function resolveProtocol({ ctx, bot, runtimeBot, adapterHint } = {}) {
   const fromCtx = ctx && typeof ctx.protocol === "string" ? String(ctx.protocol).toLowerCase() : ""
   if (fromCtx) return normalizeProtocol(fromCtx)
 
+  const fromCtxAdapter =
+    ctx && typeof ctx.adapterType === "string" ? String(ctx.adapterType).toLowerCase() : ""
+  if (fromCtxAdapter) return normalizeProtocol(fromCtxAdapter)
+
   const fromRuntime =
     runtimeBot && typeof runtimeBot.adapterType === "string"
       ? String(runtimeBot.adapterType).toLowerCase()
       : ""
   if (fromRuntime) return normalizeProtocol(fromRuntime)
+
+  const runtimeSubAdapterName = (() => {
+    if (!runtimeBot || typeof runtimeBot !== "object") return ""
+    const botQQ = runtimeBot.botQQ
+    if (botQQ === undefined || botQQ === null) return ""
+    const subBot = runtimeBot[botQQ]
+    const raw = subBot?.adapter?.name ?? subBot?.adapterType ?? subBot?.adapter_name
+    return raw ? String(raw).toLowerCase() : ""
+  })()
+  if (runtimeSubAdapterName) return normalizeProtocol(runtimeSubAdapterName)
 
   const fromBot = bot && typeof bot.adapter === "string" ? String(bot.adapter).toLowerCase() : ""
   if (fromBot) return normalizeProtocol(fromBot)
