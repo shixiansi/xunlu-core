@@ -8,12 +8,13 @@
  * @版权声明
  **/
 import * as handlers from "./controllers/handlers.js"
+import definePlugin from "../define-plugin.js"
 
-export default {
+export default definePlugin({
   name: "chuo",
   title: "戳一戳",
   shortName: "戳",
   aliases: ["戳一戳", "戳"],
   register: handlers.register,
   onBotEvent: handlers.onBotEvent,
-}
+})

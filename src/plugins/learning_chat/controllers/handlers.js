@@ -6,14 +6,26 @@ import {
   getSegmentMentionTarget,
   normalizeUniversalSegmentType,
 } from "../../../Bot/message/index.js"
-import { classifyMediaReference } from "../../../Bot/message/index.js"
-import { BaseModel } from "../../../db/base/BaseModel.js"
-import { Op } from "sequelize"
-import { applyRkeyToUrl, getSceneRkey } from "../../../utils/rkey.js"
 
 import { getConfig, getEffectiveGroupConfig, setGroupOverrides } from "../model/config.js"
+import {
+  doesGroupTableExist,
+  ensureHeatForGroup,
+  getBotSelfId,
+  getHeatSnapshot as readHeatSnapshot,
+  getHeatState,
+  listGroupIdsFromMessageDbTables,
+  listTrackedHeatGroupIds,
+  markBotSpoke,
+  updateHeatFromUserMessage,
+} from "../services/heat-state.js"
 import { buildSignature, filterLearningSegments } from "../utils/signature.js"
 import { rawToLearningSegments } from "../utils/convert.js"
+import {
+  patchImageSegmentsWithRkeyValue,
+  prepareOutboundLearningSegments,
+  sendLearningSegments,
+} from "../services/outbound-media.js"
 import {
   banReply,
   getGroupState,
@@ -37,11 +49,8 @@ const proactiveStateCache = new Map() // groupId -> proactive state
 const proactiveCommandStateCache = new Map() // groupId:userId -> proactive command state
 const banCache = new Map() // groupId -> { ts, set }
 const repeatStateByGroup = new Map() // groupId -> { hash, startedAt, lastAt, users:Set, count, repeated }
-const heatByGroup = new Map() // groupId -> heat stats
 
 let runtimeProtocolHint = ""
-let groupIdDiscoveryCache = { ts: 0, ids: [] }
-const imageBase64Cache = new Map()
 
 function localDayKey(ts = Date.now()) {
   const d = new Date(ts)
@@ -80,602 +89,12 @@ function withTimeout(promise, timeoutMs, timeoutValue = null) {
   ])
 }
 
-async function patchImageSegmentsWithRkey(segments) {
-  const list = Array.isArray(segments) ? segments : []
-  if (!list.length) return list
-
-  const rkeySuffix = String((await getSceneRkey("group"))?.value || "").trim()
-  return patchImageSegmentsWithRkeyValue(list, rkeySuffix)
-}
-
-function resolveOutboundProtocol(ctx) {
-  return String(ctx?.protocol || runtimeProtocolHint || globalThis.Bot?.adapterType || "")
-    .trim()
-    .toLowerCase()
-}
-
-function isOnebotLikeProtocol(protocol) {
-  const p = String(protocol || "").trim().toLowerCase()
-  return p.includes("onebot")
-}
-
-function isHttpUrl(value) {
-  return typeof value === "string" && /^https?:\/\//i.test(value)
-}
-
-function isQqNtMediaUrl(value) {
-  return isHttpUrl(value) && String(value).startsWith("https://multimedia.nt.qq.com.cn")
-}
-
-function getImageCandidateUrl(data = {}) {
-  const candidates = [data.url, data.file, data.temp_url, data.fileId, data.path, data.uri]
-  return candidates.find(v => isHttpUrl(v)) || ""
-}
-
-export function patchImageSegmentsWithRkeyValue(segments, rkeySuffix = "") {
-  const list = Array.isArray(segments) ? segments : []
-  const suffix = String(rkeySuffix || "").trim()
-  if (!list.length || !suffix) return list
-
-  let changed = false
-  const out = list.map(seg => {
-    if (!seg || seg.type !== UniversalSegmentType.IMAGE) return seg
-    const data = seg.data && typeof seg.data === "object" ? seg.data : {}
-    const next = { ...seg, data: { ...data } }
-
-    const patchHttpField = (key, { mirrorToUrl = true } = {}) => {
-      if (typeof next.data[key] !== "string" || !/^https?:\/\//.test(next.data[key])) return
-      const patched = applyRkeyToUrl(next.data[key], suffix)
-      if (!patched) return
-      if (patched !== next.data[key]) {
-        next.data[key] = patched
-        changed = true
-      }
-      if (mirrorToUrl && patched !== next.data.url) {
-        next.data.url = patched
-        changed = true
-      }
-    }
-
-    patchHttpField("url", { mirrorToUrl: false })
-    patchHttpField("temp_url")
-    patchHttpField("file")
-    patchHttpField("fileId")
-    patchHttpField("path")
-    patchHttpField("uri")
-
-    return next
-  })
-
-  return changed ? out : list
-}
-
-function getOnebotDirectImageRef(data = {}) {
-  const candidates = [data.file, data.id, data.fileId, data.path, data.uri, data.url]
-  for (const raw of candidates) {
-    const text = String(raw || "").trim()
-    if (!text) continue
-    const kind = classifyMediaReference(text).kind
-    if (kind === "base64" || kind === "fileUri") return text
-    if (kind === "absolutePath" || kind === "relativePath" || kind === "opaqueId") return text
-    if (kind === "url" || kind === "dataUri" || kind === "basename" || kind === "empty") continue
-  }
-  return ""
-}
-
-function cleanupExpiredImageCache(now = Date.now()) {
-  if (imageBase64Cache.size <= 200) return
-  for (const [key, item] of imageBase64Cache.entries()) {
-    if (!item || !item.expireAt || item.expireAt <= now) imageBase64Cache.delete(key)
-  }
-}
-
-async function downloadImageAsBase64(url, { timeoutMs = 8000 } = {}) {
-  const raw = String(url || "").trim()
-  if (!raw) return ""
-
-  const now = Date.now()
-  const hit = imageBase64Cache.get(raw)
-  if (hit && hit.expireAt > now && hit.value) return hit.value
-
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), Math.max(1000, Math.floor(Number(timeoutMs) || 8000)))
-  try {
-    const res = await fetch(raw, {
-      method: "GET",
-      redirect: "follow",
-      signal: controller.signal,
-      headers: {
-        Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
-        Referer: "https://im.qq.com/",
-      },
-    })
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status} ${res.statusText}`)
-    }
-
-    const buf = Buffer.from(await res.arrayBuffer())
-    if (!buf.length) return ""
-
-    const value = `base64://${buf.toString("base64")}`
-    imageBase64Cache.set(raw, { value, expireAt: now + 10 * 60 * 1000 })
-    cleanupExpiredImageCache(now)
-    return value
-  } finally {
-    clearTimeout(timer)
-  }
-}
-
-export async function prepareOutboundLearningSegments(
-  segments,
-  { protocol = "", rkeySuffix = undefined, downloadImage = downloadImageAsBase64 } = {},
-) {
-  const list = Array.isArray(segments) ? segments : []
-  if (!list.length) return list
-
-  const protocolName = resolveOutboundProtocol({ protocol })
-  let resolvedRkeySuffix = rkeySuffix === undefined ? undefined : String(rkeySuffix || "").trim()
-  let rkeyLoaded = resolvedRkeySuffix !== undefined
-  const ensureRkeySuffix = async () => {
-    if (!rkeyLoaded) {
-      rkeyLoaded = true
-      resolvedRkeySuffix = String((await getSceneRkey("group"))?.value || "").trim()
-    }
-    return resolvedRkeySuffix || ""
-  }
-  if (!isOnebotLikeProtocol(protocolName)) {
-    let changed = false
-    let working = list
-
-    if (list.some(seg => isQqNtMediaUrl(getImageCandidateUrl(seg?.data || {})))) {
-      const suffix = await ensureRkeySuffix()
-      const patched = patchImageSegmentsWithRkeyValue(list, suffix)
-      if (patched !== list) {
-        working = patched
-        changed = true
-      }
-    }
-
-    const out = await Promise.all(
-      working.map(async seg => {
-        if (!seg || seg.type !== UniversalSegmentType.IMAGE) return seg
-        const data = seg.data && typeof seg.data === "object" ? { ...seg.data } : {}
-        const candidateUrl = getImageCandidateUrl(data)
-        if (!isQqNtMediaUrl(candidateUrl)) return seg
-
-        try {
-          const base64 = typeof downloadImage === "function" ? await downloadImage(candidateUrl) : ""
-          if (!base64) throw new Error("empty image body")
-          changed = true
-          delete data.temp_url
-          if (isHttpUrl(data.fileId)) delete data.fileId
-          if (isHttpUrl(data.path)) delete data.path
-          if (isHttpUrl(data.uri)) delete data.uri
-          return {
-            ...seg,
-            data: {
-              ...data,
-              url: base64,
-            },
-          }
-        } catch {
-          if (data.url === candidateUrl) return seg
-          changed = true
-          return {
-            ...seg,
-            data: {
-              ...data,
-              url: candidateUrl,
-            },
-          }
-        }
-      }),
-    )
-
-    return changed ? out : working
-  }
-
-  let changed = false
-  const out = await Promise.all(
-    list.map(async seg => {
-      if (!seg || seg.type !== UniversalSegmentType.IMAGE) return seg
-      const data = seg.data && typeof seg.data === "object" ? { ...seg.data } : {}
-      const stripUnsafeBasenameRefs = nextData => {
-        let removed = false
-        for (const key of ["fileId", "path", "uri"]) {
-          if (classifyMediaReference(nextData?.[key]).kind === "basename") {
-            delete nextData[key]
-            removed = true
-          }
-        }
-        return removed
-      }
-      const originalUrl = getImageCandidateUrl(data)
-      if (originalUrl) {
-        let outboundUrl = originalUrl
-        if (isQqNtMediaUrl(originalUrl)) {
-          const suffix = await ensureRkeySuffix()
-          outboundUrl = suffix ? applyRkeyToUrl(originalUrl, suffix) : originalUrl
-          try {
-            const base64 = typeof downloadImage === "function" ? await downloadImage(outboundUrl) : ""
-            if (!base64) throw new Error("empty image body")
-            changed = true
-            delete data.temp_url
-            if (isHttpUrl(data.fileId)) delete data.fileId
-            if (isHttpUrl(data.path)) delete data.path
-            if (isHttpUrl(data.uri)) delete data.uri
-            return {
-              ...seg,
-              data: {
-                ...data,
-                url: base64,
-              },
-            }
-          } catch (err) {
-            if (isHttpUrl(outboundUrl)) {
-              changed = true
-              delete data.temp_url
-              stripUnsafeBasenameRefs(data)
-              return {
-                ...seg,
-                data: {
-                  ...data,
-                  url: outboundUrl,
-                },
-              }
-            }
-            const fallbackRef = getOnebotDirectImageRef(data)
-            if (fallbackRef) {
-              changed = true
-              delete data.temp_url
-              delete data.uri
-              delete data.path
-              return {
-                ...seg,
-                data: {
-                  ...data,
-                  url: "",
-                  fileId: fallbackRef,
-                },
-              }
-            }
-            changed = true
-            console.warn("[learning_chat] QQNT image fallback to text:", err?.message || err)
-            return {
-              type: UniversalSegmentType.TEXT,
-              data: { content: String(data.summary || "[图片]") },
-            }
-          }
-        }
-
-        const removedUnsafeRefs = stripUnsafeBasenameRefs(data)
-        if (outboundUrl !== data.url || removedUnsafeRefs) {
-          changed = true
-          return {
-            ...seg,
-            data: {
-              ...data,
-              url: outboundUrl,
-            },
-          }
-        }
-        return seg
-      }
-      const directRef = getOnebotDirectImageRef(data)
-      if (directRef) {
-        changed = true
-        delete data.temp_url
-        delete data.uri
-        delete data.path
-        return {
-          ...seg,
-          data: {
-            ...data,
-            url: "",
-            fileId: directRef,
-          },
-        }
-      }
-      if ([data.fileId, data.path, data.uri, data.url].some(v => classifyMediaReference(v).kind === "basename")) {
-        changed = true
-        console.warn("[learning_chat] basename-only image fallback to text:", data)
-        return {
-          type: UniversalSegmentType.TEXT,
-          data: { content: String(data.summary || "[图片]") },
-        }
-      }
-      const suffix = await ensureRkeySuffix()
-      const candidateUrl = suffix ? applyRkeyToUrl(getImageCandidateUrl(data), suffix) : getImageCandidateUrl(data)
-      if (!isQqNtMediaUrl(candidateUrl)) return seg
-
-      try {
-        const base64 = typeof downloadImage === "function" ? await downloadImage(candidateUrl) : ""
-        if (!base64) throw new Error("empty image body")
-        changed = true
-        delete data.temp_url
-        if (isHttpUrl(data.fileId)) delete data.fileId
-        if (isHttpUrl(data.path)) delete data.path
-        if (isHttpUrl(data.uri)) delete data.uri
-        return {
-          ...seg,
-          data: {
-            ...data,
-            url: base64,
-          },
-        }
-      } catch (err) {
-        if (isHttpUrl(candidateUrl)) {
-          changed = true
-          delete data.temp_url
-          stripUnsafeBasenameRefs(data)
-          return {
-            ...seg,
-            data: {
-              ...data,
-              url: candidateUrl,
-            },
-          }
-        }
-        const fallbackRef = getOnebotDirectImageRef(data)
-        if (fallbackRef) {
-          changed = true
-          delete data.temp_url
-          delete data.uri
-          delete data.path
-          return {
-            ...seg,
-            data: {
-              ...data,
-              url: "",
-              fileId: fallbackRef,
-            },
-          }
-        }
-        changed = true
-        console.warn("[learning_chat] QQNT image fallback to text:", err?.message || err)
-        return {
-          type: UniversalSegmentType.TEXT,
-          data: { content: String(data.summary || "[图片]") },
-        }
-      }
-    }),
-  )
-
-  return changed ? out : list
-}
-
-export async function sendLearningSegments(
-  gid,
-  segments,
-  { send, protocol = "", rkeySuffix = undefined, downloadImage = downloadImageAsBase64 } = {},
-) {
-  const sendFn = send || globalThis.Bot?.sendMessage
-  if (typeof sendFn !== "function") return false
-
-  const outbound = await prepareOutboundLearningSegments(segments, {
-    protocol,
-    rkeySuffix,
-    downloadImage,
-  }).catch(() => segments)
-  await sendFn({ group_id: Number(gid) || gid }, outbound)
-  markBotSpoke(gid)
-  return true
-}
-
-function getBotSelfId() {
-  const id = Number(globalThis.Bot?.uin ?? globalThis.Bot?.user_id ?? globalThis.Bot?.self_id ?? 0)
-  return Number.isFinite(id) && id > 0 ? id : 0
-}
-
 function getTodayRangeSec(ts = Date.now()) {
   const start = new Date(ts)
   start.setHours(0, 0, 0, 0)
   const end = new Date(ts)
   end.setHours(23, 59, 59, 999)
   return { startSec: Math.floor(start.getTime() / 1000), endSec: Math.floor(end.getTime() / 1000) }
-}
-
-async function listGroupIdsFromMessageDbTables({ ttlMs = 10 * 60 * 1000 } = {}) {
-  const now = Date.now()
-  if (groupIdDiscoveryCache.ids.length && now - groupIdDiscoveryCache.ts < ttlMs) {
-    return groupIdDiscoveryCache.ids
-  }
-
-  try {
-    const sequelize = await BaseModel.getSequelize()
-    const [rows] = await sequelize.query(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'group_%'",
-    )
-
-    const ids = (Array.isArray(rows) ? rows : [])
-      .map(r => String(r?.name || ""))
-      .filter(n => n.startsWith("group_"))
-      .map(n => n.slice("group_".length))
-      .filter(Boolean)
-
-    groupIdDiscoveryCache = { ts: now, ids }
-    return ids
-  } catch {
-    return groupIdDiscoveryCache.ids || []
-  }
-}
-
-async function doesGroupTableExist(groupId) {
-  const gid = String(groupId || "")
-  if (!gid) return false
-  try {
-    const sequelize = await BaseModel.getSequelize()
-    const [rows] = await sequelize.query(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name = :name LIMIT 1",
-      { replacements: { name: `group_${gid}` } },
-    )
-    return Array.isArray(rows) && rows.length > 0
-  } catch {
-    return false
-  }
-}
-
-async function fetchLatestMessageMeta(groupId) {
-  const gid = String(groupId || "")
-  if (!gid) return null
-  if (!(await doesGroupTableExist(gid))) return null
-
-  try {
-    const table = await MessageDB.getGroupTable(gid)
-    const lastAny = await table.findOne({
-      attributes: ["user_id", "time"],
-      order: [["time", "DESC"]],
-    })
-
-    const botId = getBotSelfId()
-    const lastMsgAt = lastAny?.time ? Number(lastAny.time) * 1000 : 0
-    const lastMsgFromBot =
-      botId && lastAny?.user_id !== undefined && lastAny?.user_id !== null
-        ? String(lastAny.user_id) === String(botId)
-        : false
-
-    const lastUser = botId
-      ? await table.findOne({
-          attributes: ["time"],
-          where: { user_id: { [Op.ne]: botId } },
-          order: [["time", "DESC"]],
-        })
-      : null
-
-    const lastUserMsgAt = lastUser?.time ? Number(lastUser.time) * 1000 : 0
-
-    return { lastMsgAt, lastMsgFromBot, lastUserMsgAt }
-  } catch {
-    return null
-  }
-}
-
-async function fetchTodayHeatStats(groupId) {
-  const gid = String(groupId || "")
-  if (!gid) return null
-  if (!(await doesGroupTableExist(gid))) return null
-
-  try {
-    const botId = getBotSelfId()
-    const { startSec, endSec } = getTodayRangeSec()
-    const whereTime = { time: { [Op.gte]: startSec, [Op.lte]: endSec } }
-    const whereUser = botId ? { ...whereTime, user_id: { [Op.ne]: botId } } : whereTime
-
-    const table = await MessageDB.getGroupTable(gid)
-    const messagesToday = await table.count({ where: whereUser })
-
-    const sample = await table.findAll({
-      attributes: ["time"],
-      where: whereUser,
-      order: [["time", "DESC"]],
-      limit: 50,
-    })
-
-    const times = (Array.isArray(sample) ? sample : [])
-      .map(r => Number(r?.time))
-      .filter(t => Number.isFinite(t) && t > 0)
-
-    let avgIntervalSec = 120
-    if (times.length >= 2) {
-      let sum = 0
-      let n = 0
-      for (let i = 0; i < times.length - 1; i++) {
-        const dt = times[i] - times[i + 1]
-        if (!Number.isFinite(dt) || dt <= 0) continue
-        sum += dt
-        n += 1
-      }
-      if (n > 0) avgIntervalSec = Math.max(1, sum / n)
-    }
-
-    return { messagesToday: Number(messagesToday) || 0, avgIntervalSec }
-  } catch {
-    return null
-  }
-}
-
-async function ensureHeatForGroup(groupId, { forceBootstrap = false } = {}) {
-  const gid = String(groupId || "")
-  if (!gid) return null
-
-  const now = Date.now()
-  const day = localDayKey(now)
-  const existing = heatByGroup.get(gid) || null
-
-  const shouldBootstrap =
-    forceBootstrap ||
-    !existing ||
-    existing.day !== day ||
-    !existing.bootstrappedAt ||
-    now - Number(existing.bootstrappedAt || 0) > 5 * 60 * 1000
-
-  const next = existing
-    ? { ...existing }
-    : {
-        day,
-        messagesToday: 0,
-        lastUserMsgAt: 0,
-        avgIntervalSec: 120,
-        lastMsgAt: 0,
-        lastMsgFromBot: false,
-      }
-  next.day = day
-
-  if (shouldBootstrap) {
-    const latest = await fetchLatestMessageMeta(gid)
-    const today = await fetchTodayHeatStats(gid)
-
-    if (latest) {
-      const dbLastMsgAt = Number(latest.lastMsgAt) || 0
-      const curLastMsgAt = Number(next.lastMsgAt) || 0
-
-      // 注意：MessageDB 通常只记录“入站消息”，bot 主动发言/主动复读可能不会入库。
-      // 因此不能用数据库里更旧的 lastMsgAt/lastMsgFromBot 覆盖内存态，否则会导致主动发言频率失控。
-      if (dbLastMsgAt && (!curLastMsgAt || dbLastMsgAt > curLastMsgAt)) {
-        next.lastMsgAt = dbLastMsgAt
-        next.lastMsgFromBot = Boolean(latest.lastMsgFromBot)
-      }
-
-      const dbLastUserMsgAt = Number(latest.lastUserMsgAt) || 0
-      if (dbLastUserMsgAt && dbLastUserMsgAt > Number(next.lastUserMsgAt || 0)) {
-        next.lastUserMsgAt = dbLastUserMsgAt
-      }
-    }
-    if (today) {
-      next.messagesToday = Math.max(
-        0,
-        Math.floor(toNumber(today.messagesToday, next.messagesToday)),
-      )
-      next.avgIntervalSec = Math.max(1, toNumber(today.avgIntervalSec, next.avgIntervalSec))
-    }
-
-    next.bootstrappedAt = now
-  } else {
-    // cheap refresh: keep lastMsgFromBot accurate even if other plugins spoke
-    const refreshNeeded = !next.refreshedAt || now - Number(next.refreshedAt || 0) > 30 * 1000
-    if (refreshNeeded) {
-      const latest = await fetchLatestMessageMeta(gid)
-      if (latest) {
-        const dbLastMsgAt = Number(latest.lastMsgAt) || 0
-        const curLastMsgAt = Number(next.lastMsgAt) || 0
-        if (dbLastMsgAt && (!curLastMsgAt || dbLastMsgAt > curLastMsgAt)) {
-          next.lastMsgAt = dbLastMsgAt
-          next.lastMsgFromBot = Boolean(latest.lastMsgFromBot)
-        }
-
-        const dbLastUserMsgAt = Number(latest.lastUserMsgAt) || 0
-        if (dbLastUserMsgAt && dbLastUserMsgAt > Number(next.lastUserMsgAt || 0)) {
-          next.lastUserMsgAt = dbLastUserMsgAt
-        }
-      }
-      next.refreshedAt = now
-    }
-  }
-
-  heatByGroup.set(gid, next)
-  return next
 }
 
 function isToggleCommand(ctx) {
@@ -785,74 +204,6 @@ async function getBanSet(groupId) {
   const set = new Set(rows.map(r => String(r.reply_hash || "")).filter(Boolean))
   banCache.set(gid, { ts: now, set })
   return set
-}
-
-function markBotSpoke(groupId) {
-  const gid = String(groupId || "")
-  if (!gid) return
-  const now = Date.now()
-  const day = localDayKey(now)
-  const s = heatByGroup.get(gid) || {
-    day,
-    messagesToday: 0,
-    lastUserMsgAt: 0,
-    avgIntervalSec: 120,
-    lastMsgAt: 0,
-    lastMsgFromBot: false,
-    bootstrappedAt: 0,
-    refreshedAt: 0,
-  }
-  if (s.day !== day) {
-    s.day = day
-    s.messagesToday = 0
-    s.lastUserMsgAt = 0
-    s.avgIntervalSec = 120
-    s.bootstrappedAt = 0
-    s.refreshedAt = 0
-  }
-  s.lastMsgAt = now
-  s.lastMsgFromBot = true
-  s.refreshedAt = now
-  heatByGroup.set(gid, s)
-}
-
-function updateHeatFromUserMessage(groupId) {
-  const gid = String(groupId || "")
-  if (!gid) return
-  const now = Date.now()
-  const day = localDayKey(now)
-  const s = heatByGroup.get(gid) || {
-    day,
-    messagesToday: 0,
-    lastUserMsgAt: 0,
-    avgIntervalSec: 120,
-    lastMsgAt: 0,
-    lastMsgFromBot: false,
-    bootstrappedAt: 0,
-    refreshedAt: 0,
-  }
-
-  if (s.day !== day) {
-    s.day = day
-    s.messagesToday = 0
-    s.lastUserMsgAt = 0
-    s.avgIntervalSec = 120
-    s.bootstrappedAt = 0
-    s.refreshedAt = 0
-  }
-
-  if (s.lastUserMsgAt) {
-    const intervalSec = Math.max(0, (now - s.lastUserMsgAt) / 1000)
-    const prev = toNumber(s.avgIntervalSec, intervalSec)
-    s.avgIntervalSec = prev ? prev * 0.8 + intervalSec * 0.2 : intervalSec
-  }
-  s.lastUserMsgAt = now
-  s.lastMsgAt = now
-  s.lastMsgFromBot = false
-  s.messagesToday = Math.max(0, Math.floor(toNumber(s.messagesToday, 0))) + 1
-  s.refreshedAt = now
-
-  heatByGroup.set(gid, s)
 }
 
 async function resolveIsGroupAdmin(ctx) {
@@ -1059,6 +410,7 @@ async function handleRepeat(ctx, groupCfg, msgInfo) {
 
   const outbound = await prepareOutboundLearningSegments(msgInfo.segments, {
     protocol: ctx?.protocol,
+    runtimeProtocolHint,
   }).catch(() => msgInfo.segments)
   await ctx.reply(outbound)
   await patchState(gid, { last_repeat_at: now })
@@ -1156,6 +508,7 @@ async function handleLearnAndReply(ctx, groupCfg, msgInfo) {
 
   const outbound = await prepareOutboundLearningSegments(rawSegments, {
     protocol: ctx?.protocol,
+    runtimeProtocolHint,
   }).catch(() => rawSegments)
   await ctx.reply(outbound)
   await patchState(gid, { last_auto_reply_at: now })
@@ -1227,7 +580,7 @@ export async function listEnabledProactiveGroups({ discoveredIds = null, extraGr
   const cfg = getConfig()
   const ids = new Set([
     ...Object.keys(cfg?.groups || {}),
-    ...Array.from(heatByGroup.keys()),
+    ...listTrackedHeatGroupIds(),
     ...((Array.isArray(extraGroupIds) ? extraGroupIds : []).map(id => String(id || "")).filter(Boolean)),
   ])
 
@@ -1609,6 +962,8 @@ export async function proactiveTick(ctxLike, botApi = null) {
       const ok = await sendLearningSegments(gid, rawSegments, {
         send: ctxLike?.sendMessage || globalThis.Bot?.sendMessage,
         protocol: ctxLike?.protocol || runtimeProtocolHint,
+        runtimeProtocolHint,
+        afterSend: markBotSpoke,
       }).catch(() => false)
       if (!ok) break
 
@@ -1619,7 +974,7 @@ export async function proactiveTick(ctxLike, botApi = null) {
     if (!sent) return false
 
     // 更新退避状态：连续主动发言未收到用户消息则递增，收到用户消息则重置
-    const heat = heatByGroup.get(gid) || {}
+    const heat = getHeatState(gid) || {}
     const groupState = await getStateCached(gid)
     const pstate = await getProactiveStateCached(gid)
 
@@ -1643,7 +998,7 @@ export async function proactiveTick(ctxLike, botApi = null) {
     return true
   }
 
-  const ids = new Set([...Object.keys(cfg?.groups || {}), ...Array.from(heatByGroup.keys())])
+  const ids = new Set([...Object.keys(cfg?.groups || {}), ...listTrackedHeatGroupIds()])
 
   if (cfg?.proactive?.allow_default) {
     const more = await listGroupIdsFromMessageDbTables().catch(() => [])
@@ -1845,11 +1200,7 @@ export function onBotEvent(event) {
 }
 
 export function getHeatSnapshot() {
-  const out = []
-  for (const [groupId, heat] of heatByGroup.entries()) {
-    out.push({ group_id: String(groupId), ...(heat || {}) })
-  }
-  return out
+  return readHeatSnapshot()
 }
 
 export function getRuntimeProtocolHint() {

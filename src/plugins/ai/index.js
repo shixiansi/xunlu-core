@@ -1,11 +1,2 @@
-import * as handlers from "./controllers/handlers.js"
-
-// export default {
-//   name: "ai-plugin",
-//   register: handlers.register,
-//   apiRoutes: handlers.apiRoutes,
-//   onBotEvent: handlers.onBotEvent,
-//   // 新增接口：插件初始化和销毁
-//   onPluginInit: handlers.onPluginInit,
-//   onPluginDestroy: handlers.onPluginDestroy,
-// };
+// 保留占位模块，交由严格 loader 明确跳过，避免被空对象静默吞下。
+export default null

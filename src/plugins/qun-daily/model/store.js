@@ -1,9 +1,9 @@
 import fs from "node:fs"
 import path from "node:path"
 
-import env from "../../../lib/env.js"
+import { getRuntimePaths } from "../../../runtime/runtime-context.js"
 
-const DATA_ROOT = path.resolve(env.RootPath, "src", "plugins", "qun-daily", "data", "stats")
+const DATA_ROOT = getRuntimePaths().getPluginDataDir("qun-daily", "stats")
 
 function pad(num) {
   return String(num).padStart(2, "0")

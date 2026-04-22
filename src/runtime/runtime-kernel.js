@@ -2,6 +2,7 @@ import cfg from "../lib/config.js"
 import ServiceRegistry from "./service-registry.js"
 import { createBotFacade } from "./bot-facade-factory.js"
 import { resolveRuntimeMode } from "./mode-resolver.js"
+import { getRuntimeContext } from "./runtime-context.js"
 import ControlServiceModule from "./services/control-service.js"
 import WebuiServiceModule from "./services/webui-service.js"
 import ApiServiceModule from "./services/api-service.js"
@@ -31,6 +32,7 @@ async function loadRuntimeEnvironment() {
 export class RuntimeKernel {
   constructor(options = {}) {
     this.options = options
+    this.context = options.context || getRuntimeContext()
     this.modeState = options.modeState || null
     this.mode = this.modeState?.mode || ""
     this.driver = null
@@ -47,6 +49,7 @@ export class RuntimeKernel {
   async start() {
     if (this.started) return this
 
+    this.context.ensureRuntimeLayout()
     await loadRuntimeEnvironment()
     this.driver = await this.createDriver()
     if (!this.driver?.__startedByAutoFallback) {
@@ -152,6 +155,10 @@ export class RuntimeKernel {
 
   getLoadedPlugins() {
     return this.driver?.getLoadedPlugins?.() || []
+  }
+
+  getRuntimeContext() {
+    return this.context
   }
 
   async reloadPlugins(options = {}) {

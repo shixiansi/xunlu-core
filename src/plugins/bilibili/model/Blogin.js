@@ -1,13 +1,16 @@
 import fetch from "node-fetch"
 import qrcode from "qrcode"
 import fs from "fs"
-import env from "../../../lib/env.js"
 import path from "path"
+import { getRuntimePaths } from "../../../runtime/runtime-context.js"
+
 class BiliBiliQRLogin {
   constructor() {
-    const __dirname = env.RootPath
     this.qrcodeKey = null
-    this.qrImagePath = path.join(__dirname, "bili_qrcode.png")
+    this.qrImagePath = path.join(
+      getRuntimePaths().getPluginTempDir("bilibili"),
+      "bilibili-login-qrcode.png",
+    )
   }
 
   parseCookies(cookiesArray) {

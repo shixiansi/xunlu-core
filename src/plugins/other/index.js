@@ -9,8 +9,9 @@
  **/
 import * as handlers from "./controllers/handlers.js"
 import { createRouter } from "./routes/index.js"
+import definePlugin from "../define-plugin.js"
 
-export default {
+export default definePlugin({
   name: "other",
   title: "其他功能",
   shortName: "其他",
@@ -20,4 +21,4 @@ export default {
     router.use(createRouter({ name: "other" }))
   },
   onBotEvent: handlers.onBotEvent,
-}
+})

@@ -7,6 +7,9 @@
 export function createBotFacade({ driver } = {}) {
   const runtimeBot = driver?.getRuntimeBot?.() || null
   const botCore = driver?.getBotCore?.() || null
+  if (runtimeBot) {
+    globalThis.Bot = runtimeBot
+  }
 
   return {
     runtimeBot,

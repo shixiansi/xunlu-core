@@ -1,5 +1,4 @@
-import env from "../lib/env.js"
-import cfg from "../lib/config.js"
+import { getRuntimeContext } from "./runtime-context.js"
 
 function getGlobalBotOrNull() {
   try {
@@ -39,8 +38,9 @@ async function waitIcqqOnline(bot, { timeoutMs = 60000, intervalMs = 1000 } = {}
  * 让入口文件退化成纯粹的“拿到 mode -> 交给 Runtime Kernel”。
  */
 export async function resolveRuntimeMode(options = {}) {
-  const runtimeEnv = options.env || env
-  const botCfg = options.botConfig || cfg.getConfig("bot") || {}
+  const runtimeContext = getRuntimeContext()
+  const runtimeEnv = options.env || runtimeContext.env
+  const botCfg = options.botConfig || runtimeContext.config.getConfig("bot") || {}
   const globalBot = options.globalBot !== undefined ? options.globalBot : getGlobalBotOrNull()
 
   const forcedMode = String(process.env.XUNLU_RUNTIME_MODE || options.mode || "")

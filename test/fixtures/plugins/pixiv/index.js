@@ -1,4 +1,6 @@
-export default {
+import definePlugin from "../../../../src/plugins/define-plugin.js"
+
+export default definePlugin({
   name: "pixiv",
   register(bot) {
     bot.registerCommand(["^随机图$", 1000], async ctx => {
@@ -21,4 +23,4 @@ export default {
       })
     }
   },
-}
+})

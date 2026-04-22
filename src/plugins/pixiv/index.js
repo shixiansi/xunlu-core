@@ -9,8 +9,9 @@
  **/
 import * as handlers from "./controllers/handlers.js";
 import { createRouter } from "./routes/index.js";
+import definePlugin from "../define-plugin.js"
 
-export default {
+export default definePlugin({
   name: "pixiv",
   title: "P站",
   shortName: "P站",
@@ -20,4 +21,4 @@ export default {
     router.use(createRouter({ name: "pixiv" }));
   },
   onBotEvent: handlers.onBotEvent,
-};
+});

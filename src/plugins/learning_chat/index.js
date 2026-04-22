@@ -1,7 +1,8 @@
 import * as handlers from "./controllers/handlers.js"
 import { createRouter } from "./routes/index.js"
+import definePlugin from "../define-plugin.js"
 
-export default {
+export default definePlugin({
   name: "learning_chat",
   title: "学习聊天",
   shortName: "学聊",
@@ -11,4 +12,4 @@ export default {
     router.use(createRouter({ name: "learning_chat" }))
   },
   onBotEvent: handlers.onBotEvent,
-}
+})

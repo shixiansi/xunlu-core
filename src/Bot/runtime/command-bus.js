@@ -1,10 +1,10 @@
 import path from "path"
 import lodash from "lodash"
-import env from "../../lib/env.js"
 import { loadPlugins } from "../../lib/pluginLoader.js"
 import CommandUsageDB from "../../db/CommandUsageDB.js"
 import { applyUniversalBotApi } from "../api/universal-bot-api.js"
 import { UniversalMessageSegment } from "../message/universal-message.js"
+import { getRuntimePaths } from "../../runtime/runtime-context.js"
 import {
   invokeYunzaiCommandByReg as invokeYunzaiRecordedCommandByReg,
   invokeYunzaiCommandByText,
@@ -23,7 +23,7 @@ export class CommandBus {
 
   async loadPlugins(options = {}) {
     try {
-      const plugins = await loadPlugins(path.join(env.RootPath, "./src/plugins"), options)
+      const plugins = await loadPlugins(path.join(getRuntimePaths().rootDir, "src", "plugins"), options)
 
       for (const plugin of plugins) {
         logger.info("加载插件:", plugin)

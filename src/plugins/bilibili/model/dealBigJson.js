@@ -1,6 +1,9 @@
 import fs from "fs"
 import bigJson from "big-json"
 import { statSync } from "fs"
+import path from "path"
+
+import { getRuntimePaths } from "../../../runtime/runtime-context.js"
 
 /**
  * 从超大 JSON 文件（数组结构）中流式搜索指定关键词（低内存占用，支持GB级文件）
@@ -34,6 +37,7 @@ async function searchBigJson({ filePath, keyword, showProgress = true, chunkSize
   // 2. 创建流式解析器
   const parseStream = bigJson.createParseStream({ chunkSize })
   const readStream = fs.createReadStream(filePath, "utf8")
+  const medallistDir = getRuntimePaths().getPluginDataDir("bilibili", "medallist")
 
   // 返回Promise，封装流式操作（异步等待解析完成）
   return new Promise((resolve, reject) => {
@@ -47,10 +51,7 @@ async function searchBigJson({ filePath, keyword, showProgress = true, chunkSize
         for (let n of node) {
           list.push(n)
           if (list.length >= 10000) {
-            fs.writeFileSync(
-              `src/plugins/bilibili/data/medallist/medal_${idx}.json`,
-              JSON.stringify(list),
-            )
+            fs.writeFileSync(path.join(medallistDir, `medal_${idx}.json`), JSON.stringify(list))
             idx += 1
             list = []
           }

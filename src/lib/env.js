@@ -1,26 +1,17 @@
-import fs from "fs"
+import { getRuntimeContext } from "../runtime/runtime-context.js"
 
-class xunLuEnv {
+class XunLuEnvCompat {
   get package() {
-    return JSON.parse(fs.readFileSync("package.json", "utf-8"))
+    return getRuntimeContext().packageInfo
   }
 
-  //获取当前环境
   get CurEnv() {
-    const YunZai = ["YunZai", "yunzai"]
-    if (YunZai.find(i => this.package.name.includes(i))) {
-      return "QQBot-YunZai"
-    } else if (this.package.name == "xunlu-core") {
-      return "xunlu-core"
-    }
+    return getRuntimeContext().currentEnv
   }
 
   get RootPath() {
-    if (this.CurEnv == "QQBot-YunZai") {
-      return process.cwd() + "/plugins/xunlu-core/"
-    } else {
-      return process.cwd() + "/"
-    }
+    return getRuntimeContext().rootPath
   }
 }
-export default new xunLuEnv()
+
+export default new XunLuEnvCompat()

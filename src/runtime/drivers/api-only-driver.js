@@ -1,7 +1,7 @@
 import path from "path"
 
-import env from "../../lib/env.js"
 import { loadPlugins } from "../../lib/pluginLoader.js"
+import { getRuntimePaths } from "../runtime-context.js"
 import BaseAdapterDriver from "./base-adapter-driver.js"
 
 /**
@@ -18,7 +18,7 @@ export class ApiOnlyDriver extends BaseAdapterDriver {
 
   async start(runtime) {
     this.runtime = runtime
-    this.plugins = await loadPlugins(path.join(env.RootPath, "./src/plugins"), {
+    this.plugins = await loadPlugins(path.join(getRuntimePaths().rootDir, "src", "plugins"), {
       cacheBust: Boolean(this.options.cacheBust),
     })
     return null
@@ -46,7 +46,7 @@ export class ApiOnlyDriver extends BaseAdapterDriver {
   }
 
   async reloadPlugins(options = {}) {
-    this.plugins = await loadPlugins(path.join(env.RootPath, "./src/plugins"), {
+    this.plugins = await loadPlugins(path.join(getRuntimePaths().rootDir, "src", "plugins"), {
       cacheBust: options.cacheBust !== false,
     })
     return this.plugins.map(item => item?.name || item?.title).filter(Boolean)

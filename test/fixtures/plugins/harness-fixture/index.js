@@ -1,4 +1,6 @@
-export default {
+import definePlugin from "../../../../src/plugins/define-plugin.js"
+
+export default definePlugin({
   name: "harness-fixture",
   register(bot) {
     bot.registerCommand(["^fixture ping$", 1000], async ctx => {
@@ -43,4 +45,4 @@ export default {
       return await Bot.sendMessage({ group_id: 424242 }, "fixture scheduled")
     })
   },
-}
+})

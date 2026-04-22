@@ -1,3 +1,5 @@
+import definePlugin from "../define-plugin.js"
+
 const CAP_CACHE_TTL_SEC = 86400
 const memoryCapCache = new Map()
 
@@ -134,7 +136,7 @@ function deriveCapUpdate({ capBefore, attempts, successTimes }) {
   return changed ? next : null
 }
 
-export default {
+export default definePlugin({
   name: "dianzan",
   title: "点赞",
   shortName: "赞",
@@ -205,4 +207,4 @@ export default {
       },
     )
   },
-}
+})

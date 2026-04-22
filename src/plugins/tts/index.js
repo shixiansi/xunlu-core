@@ -1,6 +1,7 @@
 import * as handlers from "./controllers/handlers.js";
+import definePlugin from "../define-plugin.js"
 
-export default {
+export default definePlugin({
   name: "tts-plugin",
   title: "语音合成",
   shortName: "TTS",
@@ -11,4 +12,4 @@ export default {
   // 新增接口：插件初始化和销毁
   onPluginInit: handlers.onPluginInit,
   onPluginDestroy: handlers.onPluginDestroy,
-};
+});
