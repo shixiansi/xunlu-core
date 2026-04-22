@@ -3,7 +3,7 @@ import path from "node:path"
 import test from "node:test"
 import { fileURLToPath } from "node:url"
 
-import { simulateIncomingEvent } from "../src/Bot/message/cli-simulator.js"
+import { simulateIncomingEvent } from "../src/Bot/message/index.js"
 import { createPluginTestHarness } from "../src/dev/plugin-test-harness.js"
 import { installTestRuntime } from "./helpers/test-runtime.js"
 

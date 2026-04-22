@@ -1,4 +1,4 @@
-import { UniversalMessage, UniversalSegmentType } from "../../../Bot/message/universal-message.js"
+import { UniversalMessage, UniversalSegmentType } from "../../../Bot/message/index.js"
 
 import { filterLearningSegments } from "./signature.js"
 
@@ -61,4 +61,3 @@ export function rawToLearningSegments(rawSegments, { protocolHints = [] } = {}) 
 
   return best
 }
-

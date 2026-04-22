@@ -5,8 +5,8 @@ import {
   UniversalMessageSegment,
   getSegmentMentionTarget,
   normalizeUniversalSegmentType,
-} from "../../../Bot/message/universal-message.js"
-import { classifyMediaReference } from "../../../Bot/message/context.js"
+} from "../../../Bot/message/index.js"
+import { classifyMediaReference } from "../../../Bot/message/index.js"
 import { BaseModel } from "../../../db/base/BaseModel.js"
 import { Op } from "sequelize"
 import { applyRkeyToUrl, getSceneRkey } from "../../../utils/rkey.js"

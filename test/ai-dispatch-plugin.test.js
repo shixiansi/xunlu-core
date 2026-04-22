@@ -11,8 +11,7 @@ import {
   invokeYunzaiCommandByText,
   listYunzaiCommandsForAi,
 } from "../src/Bot/yunzai/command-bridge.js"
-import { renderUniversalSegments } from "../src/Bot/message/cli-simulator.js"
-import { UniversalMessageSegment } from "../src/Bot/message/universal-message.js"
+import { renderUniversalSegments, UniversalMessageSegment } from "../src/Bot/message/index.js"
 import { createPluginTestHarness } from "../src/dev/plugin-test-harness.js"
 import { __resetAiDispatchSessionsForTests } from "../src/plugins/ai-dispatch/controllers/handlers.js"
 import { installTestRuntime } from "./helpers/test-runtime.js"

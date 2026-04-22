@@ -1,5 +1,5 @@
 import lodash from "lodash"
-import { segment } from "../../../Bot/message/legacy-segment.js"
+import { segment } from "../../../Bot/message/index.js"
 import {
   disableUserReaction,
   getUserReactionConfig,

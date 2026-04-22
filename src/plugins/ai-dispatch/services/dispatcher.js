@@ -1,5 +1,4 @@
-import { renderUniversalSegments } from "../../../Bot/message/cli-simulator.js"
-import { UniversalMessageSegment } from "../../../Bot/message/universal-message.js"
+import { renderUniversalSegments, UniversalMessageSegment } from "../../../Bot/message/index.js"
 import { invokeYunzaiCommandByText, listYunzaiCommandsForAi } from "../../../Bot/yunzai/command-bridge.js"
 
 function getDispatchLogger() {

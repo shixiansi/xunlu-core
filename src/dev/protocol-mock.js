@@ -1,5 +1,4 @@
-import { coerceToUniversalMessage } from "../Bot/message/context.js"
-import { UniversalMessage } from "../Bot/message/universal-message.js"
+import { coerceToUniversalMessage, UniversalMessage } from "../Bot/message/index.js"
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value)

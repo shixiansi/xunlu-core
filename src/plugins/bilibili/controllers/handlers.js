@@ -1,7 +1,7 @@
 import fs from "node:fs"
 import path from "node:path"
 
-import { segment } from "../../../Bot/message/legacy-segment.js"
+import { segment } from "../../../Bot/message/index.js"
 import Blogin from "../model/Blogin.js"
 import Bili from "../model/Bilili.js"
 import lodash from "lodash"

@@ -3,8 +3,11 @@ import path from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
 import BaseBot from "../Bot/index.js"
-import { renderUniversalSegments, simulateIncomingEvent } from "../Bot/message/cli-simulator.js"
-import { UniversalMessageSegment } from "../Bot/message/universal-message.js"
+import {
+  renderUniversalSegments,
+  simulateIncomingEvent,
+  UniversalMessageSegment,
+} from "../Bot/message/index.js"
 import sharedPuppeteer from "../component/puppeteer/puppeteer.js"
 import CommandUsageDB from "../db/CommandUsageDB.js"
 import MessageDB from "../db/MessageDB.js"

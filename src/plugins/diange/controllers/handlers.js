@@ -1,4 +1,4 @@
-import { segment } from "../../../Bot/message/legacy-segment.js"
+import { segment } from "../../../Bot/message/index.js"
 import musicService from "../services/music-service.js"
 
 function normalizeSelectionText(value = "") {

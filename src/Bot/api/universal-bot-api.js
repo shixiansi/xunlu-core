@@ -4,7 +4,7 @@ import {
   getMemberRoleFlagsWithFallback,
   hasAdminRole,
   hasOwnerRole,
-} from "../role/member-role.js"
+} from "../role/index.js"
 import {
   getFastBotRoleFlags,
   getFastMemberRoleFlags,

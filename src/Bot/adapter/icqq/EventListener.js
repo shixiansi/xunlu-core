@@ -5,7 +5,7 @@ import pluginLoader from "./pluginLoader.js"
 import { UniversalMessage } from "../../message/universal-message.js"
 import { coerceToUniversalMessage } from "../../message/context.js"
 import { applyUniversalBotApi } from "../../api/universal-bot-api.js"
-import { rememberRuntimeLastGroupMessage } from "../../state/last-group-message-store.js"
+import { rememberRuntimeLastGroupMessage } from "../../state/index.js"
 import { simulateIncomingMessage } from "../../message/cli-simulator.js"
 import { createIcqqBinding } from "../../../runtime/drivers/icqq-binding.js"
 

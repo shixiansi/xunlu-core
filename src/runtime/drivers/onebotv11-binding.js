@@ -1,6 +1,5 @@
 import { applyUniversalBotApi } from "../../Bot/api/universal-bot-api.js"
-import { UniversalMessage } from "../../Bot/message/universal-message.js"
-import { coerceToUniversalMessage } from "../../Bot/message/context.js"
+import { coerceToUniversalMessage, UniversalMessage } from "../../Bot/message/index.js"
 
 const UNIVERSAL_OVERRIDE = [
   "getLoginInfo",

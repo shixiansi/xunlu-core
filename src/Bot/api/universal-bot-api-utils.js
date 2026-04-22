@@ -1,5 +1,5 @@
-import { extractMemberRoleFlags } from "../role/member-role.js"
-import { rememberRuntimeLastGroupMessage } from "../state/last-group-message-store.js"
+import { extractMemberRoleFlags } from "../role/index.js"
+import { rememberRuntimeLastGroupMessage } from "../state/index.js"
 
 /**
  * 通用 Bot API 的底层工具集合。

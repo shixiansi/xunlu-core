@@ -247,7 +247,7 @@ export function createIcqqBinding() {
           const msgObj = res?.message ?? res?.data?.message ?? (res && typeof res === "object" ? res : null)
           const rawSegments = Array.isArray(msgObj?.segments) ? msgObj.segments : []
           try {
-            const { UniversalMessage } = await import("../../Bot/message/universal-message.js")
+            const { UniversalMessage } = await import("../../Bot/message/index.js")
             const universalMessage = UniversalMessage.from("milky", rawSegments)
             return {
               protocol: "milky",

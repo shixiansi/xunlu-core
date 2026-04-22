@@ -1,6 +1,6 @@
 import puppeteer from "../component/puppeteer/puppeteer.js"
 import lodash from "lodash"
-import { segment } from "../Bot/message/legacy-segment.js"
+import { segment } from "../Bot/message/index.js"
 import fs from "fs"
 import Path from "path" // 新增：路径处理
 import env from "../lib/env.js"

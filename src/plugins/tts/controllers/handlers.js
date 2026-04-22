@@ -1,7 +1,7 @@
 import { Filemage, Downloader } from "#utils"
 import Hobbyist from "../services/hobbyist.js"
 import env from "../../../lib/env.js"
-import { segment } from "../../../Bot/message/legacy-segment.js"
+import { segment } from "../../../Bot/message/index.js"
 let hobbyist = new Hobbyist()
 const resPath = env.RootPath + "/src/plugins/tts/resources/"
 let downloader = new Downloader(resPath)

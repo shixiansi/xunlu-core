@@ -2,7 +2,7 @@ import cfg from "../../lib/config.js"
 import getImageDisplay from "../../utils/imgdisplay.js"
 import { parseTextWithFaces, coerceToUniversalMessage, getMessageRefFromCtx } from "../message/context.js"
 import { UniversalMessage, UniversalMessageSegment, UniversalSegmentType } from "../message/universal-message.js"
-import { rememberRuntimeLastGroupMessage } from "../state/last-group-message-store.js"
+import { rememberRuntimeLastGroupMessage } from "../state/index.js"
 
 /**
  * ReplyService 负责给上下文挂上统一的 `ctx.reply()`。

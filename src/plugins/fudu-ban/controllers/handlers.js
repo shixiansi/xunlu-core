@@ -14,7 +14,7 @@ import { setGroupMemberMute } from "../model/mute.js"
 import {
   getRuntimeBotGroupMessageStreak,
   getRuntimeLastGroupMessage,
-} from "../../../Bot/state/last-group-message-store.js"
+} from "../../../Bot/state/index.js"
 
 const NORMAL_MAX_STRIKES = 3
 const BOT_REPEAT_MAX_STRIKES = 4

@@ -1,6 +1,6 @@
 import schedule from "node-schedule"
 
-import { UniversalMessageSegment } from "../../../Bot/message/universal-message.js"
+import { UniversalMessageSegment } from "../../../Bot/message/index.js"
 
 const GLOBAL_RUNTIME_KEY = "__xunlu_scheduler_runtime__"
 

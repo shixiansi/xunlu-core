@@ -1,6 +1,6 @@
 import crypto from "node:crypto"
 
-import { UniversalSegmentType } from "../../../Bot/message/universal-message.js"
+import { UniversalSegmentType } from "../../../Bot/message/index.js"
 
 function toInt(value) {
   const n = Number(value)

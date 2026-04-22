@@ -8,8 +8,7 @@ import {
   patchImageSegmentsWithRkeyValue,
   sendLearningSegments,
 } from "../src/plugins/learning_chat/controllers/handlers.js"
-import { applyDerivedFieldsFromUniversalSegments } from "../src/Bot/message/context.js"
-import { UniversalMessage } from "../src/Bot/message/universal-message.js"
+import { applyDerivedFieldsFromUniversalSegments, UniversalMessage } from "../src/Bot/message/index.js"
 import BaseBot from "../src/Bot/index.js"
 import { IcqqMessageEvent } from "../src/Bot/adapter/index.js"
 import MessageDB from "../src/db/MessageDB.js"
