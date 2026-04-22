@@ -1,7 +1,6 @@
 import Filemage from "../../utils/Filemage.js"
 import lodash from "lodash"
 import pluginLoader from "./pluginLoader.js"
-import MessageDB from "../../db/MessageDB.js"
 import { UniversalMessage } from "../message/universal-message.js"
 import { coerceToUniversalMessage } from "../message/context.js"
 import { applyUniversalBotApi } from "../api/universal-bot-api.js"
@@ -10,6 +9,7 @@ import { startControlServer } from "../../lib/controlServer.js"
 import { startWebuiServer } from "../../lib/webuiServer.js"
 import { simulateIncomingMessage } from "../message/cli-simulator.js"
 import { createIcqqBinding } from "../../runtime/drivers/icqq-binding.js"
+
 let BotEnv
 
 const OUTGOING_GROUP_SEND_MARK = Symbol.for("xunlu.outgoing.group.send.remembered")
@@ -221,7 +221,6 @@ const sendMessage = async (ctx, message) => {
     const pickPrivate = userId => {
       const uid = Number(userId)
       if (!Number.isFinite(uid)) return null
-      // 优先 pickFriend（多数云崽环境），否则回退 pickUser（部分环境仅提供 pickUser）
       if (typeof Bot?.pickFriend === "function") return Bot.pickFriend(uid)
       if (typeof Bot?.pickUser === "function") return Bot.pickUser(uid)
       return null
@@ -229,7 +228,6 @@ const sendMessage = async (ctx, message) => {
 
     const rawList = Array.isArray(message) ? message : message ? [message] : []
 
-    // onebot 转发（node）保持原样透传
     if (protocol === "onebotv11" && rawList.some(i => i?.type === "node")) {
       if (typeof ctx === "string" || typeof ctx === "number") {
         const target = pickPrivate(ctx)
@@ -244,7 +242,6 @@ const sendMessage = async (ctx, message) => {
     const universalMsg =
       message instanceof UniversalMessage ? message : coerceToUniversalMessage(message)
 
-    // milky: adapter.sendMsg 支持直接接收 UniversalMessageSegment[]（更完整，且支持 forward 段）
     const outSegments = protocol === "milky" ? universalMsg.segments : universalMsg.convertTo(protocol)
 
     if (typeof ctx === "string" || typeof ctx === "number") {
@@ -269,13 +266,15 @@ const sendMessage = async (ctx, message) => {
     return null
   }
 }
+
 const filemag = new Filemage(process.cwd() + "/plugins/xunlu-core/src/Bot/icqq/Event")
+
 export default class EventListener {
   /**
-   * 事件监听
-   * @param data.prefix 事件名称前缀
-   * @param data.event 监听的事件
-   * @param data.once 是否只监听一次
+   * 事件监听基类。
+   *
+   * 各事件文件只描述要监听的 event/prefix/once，
+   * 真正的协议绑定和 Bot Core 调度都由 ListenerLoader 统一注入。
    */
   constructor(data) {
     this.prefix = data.prefix || ""
@@ -285,46 +284,42 @@ export default class EventListener {
   }
 }
 
-/**
- * 加载监听事件
- */
 class ListenerLoader {
   constructor(options = {}) {
     this.options = {
       manageServices: options.manageServices !== false,
     }
     this.binding = options.binding || createIcqqBinding()
-    this.checkEnv = () => this.binding.detectEnv(this.client)
-    this.bindEvent = async (e, env) =>
-      await this.binding.decorateBindEvent(e, {
-        envName: env,
-        client: this.client,
-        pluginLoader,
-        fileManager: filemag,
-        sendMessage,
-      })
   }
 
-  /**
-   * 监听事件加载
-   * @param client Bot示例
-   */
+  checkEnv() {
+    return this.binding.detectEnv(this.client)
+  }
+
+  async bindEvent(e, env) {
+    return await this.binding.decorateBindEvent(e, {
+      envName: env,
+      client: this.client,
+      pluginLoader,
+      fileManager: filemag,
+      sendMessage,
+    })
+  }
+
   async load(client) {
     this.client = client
     pluginLoader.Bot = client
 
-    let botenv = this.checkEnv()
+    const botenv = this.checkEnv()
     BotEnv = botenv
     if (botenv === "icqq") {
       installIcqqRuntimeGroupSendHooks(this.client)
     }
 
-    // 先绑定事件能力，再加载插件（确保 register()/onMount/callFnc 可用）
     const bindEvent = { reply: pluginLoader.reply.bind(pluginLoader) }
     await this.bindEvent(bindEvent, botenv)
     pluginLoader.bindEvent = bindEvent
 
-    // 补齐：bindEvent/bot 全量通用 API
     const universalOverride = [
       "getLoginInfo",
       "getFriendList",
@@ -352,7 +347,6 @@ class ListenerLoader {
 
     applyUniversalBotApi(bindEvent, { bot: pluginLoader, adapterHint: botenv, override: universalOverride })
     try {
-      // eslint-disable-next-line no-undef
       applyUniversalBotApi(Bot, { bot: pluginLoader, adapterHint: botenv, override: universalOverride })
     } catch {}
 
@@ -377,7 +371,7 @@ class ListenerLoader {
       }
     }
 
-    this.binding.decorateRuntimeBot({
+    globalThis.Bot = this.binding.decorateRuntimeBot({
       bot: globalThis.Bot,
       envName: botenv,
       pluginLoader,
@@ -390,7 +384,6 @@ class ListenerLoader {
       try {
         let listener = await import(`./Event/${File}`)
 
-        /* eslint-disable new-cap */
         if (!listener.default) continue
         listener = new listener.default()
         listener.client = this.client
@@ -418,9 +411,6 @@ class ListenerLoader {
     }
   }
 
-  /**
-   * 对 Runtime Kernel 暴露当前协议 Bot 核心。
-   */
   getBotCore() {
     return pluginLoader
   }
@@ -456,262 +446,6 @@ class ListenerLoader {
 
   dispose() {
     return true
-  }
-
-  bindEvent(e, env) {
-    e.adapterType = "icqq"
-    const targetE = e
-
-    const protocol = env === "OneBotv11" ? "onebotv11" : env === "milky" ? "milky" : "icqq"
-    const isTakeover = Boolean(this.client?.__xunlu_takeover_state?.protocol) && protocol !== "icqq"
-    e.protocol = protocol
-    e.__xunluTakeover = isTakeover
-    if (isTakeover && e.__commandUsageSource === undefined) {
-      e.__commandUsageSource = "yunzai-takeover"
-    }
-
-    // 兜底补齐 BaseBot.filtEvent 依赖字段（仅在缺失时）
-    if (!e.post_type && Array.isArray(e.message)) {
-      e.post_type = "message"
-      e.message_type = e.group_id ? "group" : "private"
-      e.sub_type = e.sub_type || "normal"
-    }
-    if (env === "OneBotv11") {
-      e.adapterType = "OneBotv11"
-
-      const getOneBotSendApi = () => {
-        try {
-          if (Bot?.sendApi) return Bot.sendApi.bind(Bot)
-        } catch {}
-        try {
-          const qq = Bot?.botQQ
-          const sub = qq ? Bot?.[qq] : null
-          if (sub?.sendApi) return sub.sendApi.bind(sub)
-        } catch {}
-        return null
-      }
-      const onebotSendApi = getOneBotSendApi()
-
-      const recallMessage = async ({ peer_id, message_seq, message_id, isGroup }) => {
-        console.log(peer_id)
-
-        try {
-          const mid = message_id ?? message_seq
-          if (mid === undefined || mid === null) return false
-
-          if (isGroup) {
-            return await Bot.pickGroup(peer_id).recallMsg(mid)
-          }
-          return await Bot.pickFriend(peer_id).recallMsg(mid)
-        } catch (error) {
-          console.warn("[recallMessage] milky failed:", error?.message || error)
-          throw error
-        }
-      }
-      e.sendGroupMessageReaction = async ({ reaction, emoji_id } = {}) => {
-        try {
-          const rid = reaction ?? emoji_id
-          if (rid === undefined || rid === null) return false
-          if (!onebotSendApi) throw new Error("onebot sendApi not available")
-          await onebotSendApi("set_msg_emoji_like", {
-            message_id: targetE.message_id,
-            emoji_id: Number(rid),
-          })
-          return true
-        } catch (err) {
-          console.warn("[sendGroupMessageReaction] icqq(onebotv11) failed:", err?.message || err)
-          return false
-        }
-      }
-
-      e.recallMessage = recallMessage
-      e.sendMessage = sendMessage
-      e.renderImg = pluginLoader.renderImg.bind(pluginLoader)
-      e.getMsg = async msg_id => {
-        if (!onebotSendApi) throw new Error("onebot sendApi not available")
-        return await onebotSendApi("get_msg", {
-          message_id: msg_id,
-        })
-      }
-      e.getGroupMemberInfo = async (group_id, user_id) => {
-        if (!onebotSendApi) throw new Error("onebot sendApi not available")
-        return await onebotSendApi("get_group_member_info", {
-          group_id,
-          user_id,
-        })
-      }
-      e.getGroupMemberList = async group_id => {
-        let memberList
-        if (filemag.package.name === "trss-yunzai") {
-          memberList = await Bot.pickGroup(group_id).getMemberMap()
-        } else {
-          memberList = await Bot.getGroupMemberList(group_id)
-        }
-
-        console.log("memberList:", memberList)
-
-        return memberList
-      }
-    } else if (env === "icqq") {
-      const recallMessage = async ({ peer_id, message_seq, isGroup }) => {
-        try {
-          if (isGroup) {
-            return await Bot.pickGroup(peer_id).recallMsg(message_seq)
-          } else {
-            return await Bot.pickFriend(peer_id).recallMsg(message_seq)
-          }
-        } catch (error) {
-          console.log(error)
-          return false
-        }
-      }
-      e.sendGroupMessageReaction = async ({ group_id, message_seq, seq, reaction, emoji_id } = {}) => {
-        try {
-          const gid = Number(group_id ?? targetE.group_id)
-          const messageSeq = Number(message_seq ?? seq ?? targetE.seq)
-          const rid = reaction ?? emoji_id
-          if (!gid || !messageSeq || rid === undefined || rid === null) return false
-          const group = Bot.pickGroup(gid)
-          if (group?.setReaction) {
-            await group.setReaction(messageSeq, Number(rid))
-            return true
-          }
-          return false
-        } catch (err) {
-          console.warn("[sendGroupMessageReaction] icqq failed:", err?.message || err)
-          return false
-        }
-      }
-      e.recallMessage = recallMessage
-
-      e.getMsg = async msg_id => {
-        const genGroupMessageId = (gid, uin, seq, rand, time, pktnum = 1) => {
-          const buf = Buffer.allocUnsafe(21)
-          buf.writeUInt32BE(gid)
-          buf.writeUInt32BE(uin, 4)
-          buf.writeInt32BE(seq & 0xffffffff, 8)
-          buf.writeInt32BE(rand & 0xffffffff, 12)
-          buf.writeUInt32BE(time, 16)
-          buf.writeUInt8(pktnum > 1 ? pktnum : 1, 20)
-          return buf.toString("base64")
-        }
-        let resolvedMsgId = msg_id
-        if (!resolvedMsgId && e.source) {
-          let { seq, time, rand } = e.source
-          resolvedMsgId = genGroupMessageId(e.group_id, e.user_id, seq, rand, time)
-        }
-        return resolvedMsgId ? await Bot.getMsg(resolvedMsgId) : null
-      }
-      e.getReplyMsg = async seq => {
-        if (e.group_id) {
-          return await Bot.pickGroup(e.group_id).getChatHistory(seq, 1)
-        }
-        return await Bot.pickFriend(e.user_id).getChatHistory(seq, 1)
-      }
-      e.getGroupMemberInfo = Bot.getGroupMemberInfo.bind(Bot)
-      e.getGroupMemberList = Bot.getGroupMemberList.bind(Bot)
-    } else if (env === "milky") {
-      e.adapterType = "milky"
-
-      const getMilkySendApi = () => {
-        try {
-          if (Bot?.sendApi) return Bot.sendApi.bind(Bot)
-        } catch {}
-        try {
-          const qq = Bot?.botQQ
-          const sub = qq ? Bot?.[qq] : null
-          if (sub?.sendApi) return sub.sendApi.bind(sub)
-        } catch {}
-        return null
-      }
-      const milkySendApi = getMilkySendApi()
-
-      const recallMessage = async ({ peer_id, message_seq, message_id, isGroup }) => {
-        try {
-          const seq = Number(message_seq ?? message_id)
-          if (!Number.isFinite(seq)) return false
-
-          if (isGroup) {
-            const gid = Number(peer_id ?? e.group_id)
-            if (!gid) return false
-            if (milkySendApi) {
-              await milkySendApi("recall_group_message", { group_id: gid, message_seq: seq })
-              return true
-            }
-            // fallback: let patched icqq entity handle it
-            return await Bot.pickGroup(gid).recallMsg(seq)
-          }
-
-          const uid = Number(peer_id ?? e.user_id)
-          if (!uid) return false
-          if (milkySendApi) {
-            await milkySendApi("recall_private_message", { user_id: uid, message_seq: seq })
-            return true
-          }
-          return await Bot.pickFriend(uid).recallMsg(seq)
-        } catch (error) {
-          console.log(error)
-          return false
-        }
-      }
-
-      e.recallMessage = recallMessage
-
-      // milky getMessage: 优先走本地消息库（更稳定），否则走 milky API
-      e.getMsg = async message_seq => {
-        const seq = Number(message_seq)
-        if (!Number.isFinite(seq)) throw new Error("milky getMsg requires message_seq")
-
-        const message_scene = e.group_id ? "group" : "friend"
-        const peer_id = e.group_id ? Number(e.group_id) : Number(e.user_id)
-        if (!peer_id) throw new Error("milky getMsg requires peer_id (group_id/user_id)")
-
-        if (e.group_id) {
-          const rec = await MessageDB.getMessageById(e.group_id, String(seq))
-          if (rec) return rec
-        }
-
-        if (!milkySendApi) throw new Error("milky sendApi not available")
-        const res = await milkySendApi("get_message", { message_scene, peer_id, message_seq: seq })
-
-        const msgObj = res?.message ?? res?.data?.message ?? (res && typeof res === "object" ? res : null)
-        const rawSegments = Array.isArray(msgObj?.segments) ? msgObj.segments : []
-        try {
-          const universalMessage = UniversalMessage.from("milky", rawSegments)
-          return {
-            protocol: "milky",
-            adapterType: "milky",
-            ...(msgObj && typeof msgObj === "object" ? msgObj : {}),
-            message_scene: msgObj?.message_scene ?? message_scene,
-            peer_id: msgObj?.peer_id ?? peer_id,
-            message_seq: msgObj?.message_seq ?? seq,
-            seq: msgObj?.message_seq ?? seq,
-            segments: rawSegments,
-            universalMessage,
-            message: universalMessage.segments,
-          }
-        } catch {
-          return res
-        }
-      }
-
-      e.getGroupMemberInfo = async (group_id, user_id) => {
-        if (!milkySendApi) throw new Error("milky sendApi not available")
-        return await milkySendApi("get_group_member_info", {
-          group_id,
-          user_id,
-        })
-      }
-
-      e.getGroupMemberList = async group_id => {
-        if (!milkySendApi) throw new Error("milky sendApi not available")
-        return await milkySendApi("get_group_member_list", { group_id })
-      }
-    }
-    e.sendMessage = sendMessage
-    e.makeGroupForwardMsg = pluginLoader.makeForwardMsg
-    e.renderImg = pluginLoader.renderImg.bind(pluginLoader)
-    delete e.client
   }
 }
 
