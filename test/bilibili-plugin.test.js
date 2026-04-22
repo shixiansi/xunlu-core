@@ -223,6 +223,7 @@ test("invalid bilibili short links reply gracefully", async () => {
 })
 
 test("bilibili video links reply with rendered image card", async () => {
+  const savedPaths = []
   await withPatchedMethods(
     Bili,
     {
@@ -277,6 +278,7 @@ test("bilibili video links reply with rendered image card", async () => {
             Download.prototype,
             {
               async downloadFile(_url, savePath) {
+                savedPaths.push(savePath)
                 const full = path.resolve(repoRoot, savePath)
                 fs.mkdirSync(path.dirname(full), { recursive: true })
                 fs.writeFileSync(full, Buffer.from("fake-media"))
@@ -305,6 +307,8 @@ test("bilibili video links reply with rendered image card", async () => {
                 )
                 assert.equal(hasImageReply, true)
                 assert.equal(hasVideoReply, true)
+                assert.ok(savedPaths.some(item => /temp\/bilibili\/video\/source_.*\.mp4$/i.test(String(item))))
+                assert.ok(savedPaths.some(item => /temp\/bilibili\/video\/source_.*\.mp3$/i.test(String(item))))
               })
             },
           )

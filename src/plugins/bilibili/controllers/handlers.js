@@ -1021,6 +1021,8 @@ export function register(bot) {
     const changeVideo = async (streamPlan, playInfo, currentBv, currentCtx) => {
       const { videoPath, audioPath, resultPath } = getVideoCachePaths(currentBv)
       const cleanupPaths = [videoPath, audioPath, resultPath]
+      const videoRelativePath = `${BILIBILI_VIDEO_DIR}/source_${currentBv}.mp4`
+      const audioRelativePath = `${BILIBILI_VIDEO_DIR}/source_${currentBv}.mp3`
 
       try {
         const videoUrl = streamPlan?.url
@@ -1031,7 +1033,7 @@ export function register(bot) {
 
         const videoOk = await download.downloadFile(
           videoUrl,
-          `src/plugins/bilibili/resources/video/source_${currentBv}.mp4`,
+          videoRelativePath,
           {
             headers: {
               referer: "https://www.bilibili.com",
@@ -1041,7 +1043,7 @@ export function register(bot) {
         )
         const audioOk = await download.downloadFile(
           audio,
-          `src/plugins/bilibili/resources/video/source_${currentBv}.mp3`,
+          audioRelativePath,
           {
             headers: {
               referer: "https://www.bilibili.com",
