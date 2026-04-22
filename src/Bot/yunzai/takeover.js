@@ -49,6 +49,22 @@ function safeStringify(value) {
   }
 }
 
+function createIdPrimitive(value) {
+  const id = toInt(value)
+  return {
+    valueOf() {
+      return id
+    },
+    toString() {
+      return String(id ?? "")
+    },
+    [Symbol.toPrimitive](hint) {
+      if (hint === "number") return Number(id || 0)
+      return String(id ?? "")
+    },
+  }
+}
+
 function normalizeAdapterName(name) {
   const v = String(name || "").toLowerCase()
   if (v === "auto") return "auto"
@@ -154,6 +170,8 @@ function createTakeoverState({ bot, protocol, adapter, ignoreSelf = true }) {
 
     const group = {
       group_id: gid,
+      gid,
+      uin: state.selfId,
       get name() {
         return String(state.groupInfoById.get(gid)?.group_name || state.groupInfoById.get(gid)?.groupName || "")
       },
@@ -187,6 +205,7 @@ function createTakeoverState({ bot, protocol, adapter, ignoreSelf = true }) {
           return new Map()
         }
       },
+      ...createIdPrimitive(gid),
     }
 
     state.groupFacadeById.set(gid, group)
@@ -200,6 +219,7 @@ function createTakeoverState({ bot, protocol, adapter, ignoreSelf = true }) {
 
     const user = {
       user_id: uid,
+      uin: uid,
       get nickname() {
         return String(state.friendInfoById.get(uid)?.nickname || state.friendInfoById.get(uid)?.remark || uid)
       },
@@ -218,6 +238,7 @@ function createTakeoverState({ bot, protocol, adapter, ignoreSelf = true }) {
       async recallMsg(messageId) {
         return await state.recall({ scene: "private", user_id: uid, message_id: messageId })
       },
+      ...createIdPrimitive(uid),
     }
 
     state.userFacadeById.set(uid, user)
@@ -236,6 +257,7 @@ function createTakeoverState({ bot, protocol, adapter, ignoreSelf = true }) {
 
     return {
       user_id: uid,
+      uin: uid,
       nickname: info.nickname ?? String(uid),
       card: info.card ?? info.nickname ?? String(uid),
       role,
@@ -243,6 +265,7 @@ function createTakeoverState({ bot, protocol, adapter, ignoreSelf = true }) {
       is_admin: isAdmin,
       info,
       _info: info,
+      ...createIdPrimitive(uid),
     }
   }
 
@@ -261,6 +284,7 @@ function createTakeoverState({ bot, protocol, adapter, ignoreSelf = true }) {
     const memberInfo = {
       group_id: gid,
       user_id: uid,
+      uin: state.selfId,
       nickname,
       card,
       role,
@@ -431,7 +455,7 @@ async function fillBotListsBestEffort(bot, state) {
 
   if (bot?.fl instanceof Map) {
     for (const [uid, info] of state.friendInfoById.entries()) {
-      bot.fl.set(uid, { ...(info || {}), user_id: uid })
+      bot.fl.set(uid, { ...(info || {}), user_id: uid, uin: uid })
     }
   } else {
     logWarn("[xunlu-core][takeover] bot.fl is not a Map, skip fill")
@@ -439,7 +463,7 @@ async function fillBotListsBestEffort(bot, state) {
 
   if (bot?.gl instanceof Map) {
     for (const [gid, info] of state.groupInfoById.entries()) {
-      bot.gl.set(gid, { ...(info || {}), group_id: gid, update_time: now })
+      bot.gl.set(gid, { ...(info || {}), group_id: gid, uin: state.selfId, update_time: now })
     }
   } else {
     logWarn("[xunlu-core][takeover] bot.gl is not a Map, skip fill")
