@@ -79,6 +79,68 @@ function normalizeUserArg(input) {
   return toInt(input)
 }
 
+function looksLikeGroupFacade(input) {
+  return Boolean(
+    input &&
+      typeof input === "object" &&
+      !Array.isArray(input) &&
+      (typeof input.sendMsg === "function" ||
+        typeof input.pickMember === "function" ||
+        typeof input.getMemberMap === "function" ||
+        typeof input.makeForwardMsg === "function" ||
+        typeof input.recallMsg === "function"),
+  )
+}
+
+function looksLikeMemberFacade(input) {
+  return Boolean(
+    input &&
+      typeof input === "object" &&
+      !Array.isArray(input) &&
+      ((typeof input.getAvatarUrl === "function" && typeof input.mute === "function") ||
+        (input.card !== undefined && input.nickname !== undefined)),
+  )
+}
+
+function installTakeoverBotCompatProxy(bot) {
+  if (!bot || typeof bot !== "object") return bot
+  if (bot.__xunlu_takeover_compat_proxy) return bot.__xunlu_takeover_compat_proxy
+
+  const proxy = new Proxy(bot, {
+    get(target, prop, receiver) {
+      if (prop === "pickGroup" && typeof target.__xunlu_pickGroup_compat === "function") {
+        return target.__xunlu_pickGroup_compat
+      }
+      if (prop === "pickMember" && typeof target.__xunlu_pickMember_compat === "function") {
+        return target.__xunlu_pickMember_compat
+      }
+      if (prop === "pickFriend" && typeof target.__xunlu_pickFriend_compat === "function") {
+        return target.__xunlu_pickFriend_compat
+      }
+      if (prop === "pickUser" && typeof target.__xunlu_pickFriend_compat === "function") {
+        return target.__xunlu_pickFriend_compat
+      }
+      return Reflect.get(target, prop, receiver)
+    },
+    has(target, prop) {
+      if (
+        prop === "pickGroup" ||
+        prop === "pickMember" ||
+        prop === "pickFriend" ||
+        prop === "pickUser"
+      ) {
+        return true
+      }
+      return Reflect.has(target, prop)
+    },
+  })
+
+  try {
+    bot.__xunlu_takeover_compat_proxy = proxy
+  } catch {}
+  return proxy
+}
+
 function normalizeAdapterName(name) {
   const v = String(name || "").toLowerCase()
   if (v === "auto") return "auto"
@@ -886,7 +948,11 @@ function patchYunzaiBot(bot, state, { loginInfo } = {}) {
   ].forEach(name => bindAdapterMethod(name, { force: false }))
 
   // 兼容外部插件把 e.group / e.member / 普通对象直接传给 Bot.pickGroup / Bot.pickMember。
-  bot.pickGroup = function pickGroupCompat(groupInput, strict) {
+  const pickGroupCompat = function pickGroupCompat(groupInput, strict) {
+    if (looksLikeGroupFacade(groupInput)) {
+      return groupInput
+    }
+
     const gid = normalizeGroupArg(groupInput)
     if (!gid) {
       if (typeof bot.__xunlu_raw_pickGroup === "function") {
@@ -910,9 +976,25 @@ function patchYunzaiBot(bot, state, { loginInfo } = {}) {
     return state.getGroup(gid)
   }
 
-  bot.pickMember = function pickMemberCompat(groupInput, userInput, strict) {
+  const pickMemberCompat = function pickMemberCompat(groupInput, userInput, strict) {
+    if (looksLikeMemberFacade(groupInput) && userInput === undefined) {
+      return groupInput
+    }
+
+    if (looksLikeGroupFacade(groupInput) && typeof groupInput.pickMember === "function") {
+      const uid = normalizeUserArg(userInput)
+      if (uid) {
+        try {
+          return groupInput.pickMember(uid, strict)
+        } catch {}
+      }
+    }
+
     const gid = normalizeGroupArg(groupInput)
-    const uid = normalizeUserArg(userInput)
+    const uid =
+      normalizeUserArg(userInput) ??
+      (looksLikeMemberFacade(userInput) ? normalizeUserArg(userInput) : undefined) ??
+      normalizeUserArg(groupInput?.user_id ?? groupInput?.uid ?? groupInput?.uin)
     if (!gid || !uid) {
       if (typeof bot.__xunlu_raw_pickMember === "function") {
         return bot.__xunlu_raw_pickMember(groupInput, userInput, strict)
@@ -920,7 +1002,22 @@ function patchYunzaiBot(bot, state, { loginInfo } = {}) {
       return state.getMember(gid, uid)
     }
 
-    const group = typeof bot.pickGroup === "function" ? bot.pickGroup(gid, strict) : null
+    let group = null
+    if (typeof state.adapter?.pickGroup === "function") {
+      try {
+        group = state.adapter.pickGroup(gid, strict)
+      } catch {}
+    }
+    if (!group && typeof state.getGroup === "function") {
+      try {
+        group = state.getGroup(gid)
+      } catch {}
+    }
+    if (!group && typeof bot.__xunlu_raw_pickGroup === "function") {
+      try {
+        group = bot.__xunlu_raw_pickGroup(gid, strict)
+      } catch {}
+    }
     if (group && typeof group.pickMember === "function") {
       try {
         return group.pickMember(uid, strict)
@@ -935,6 +1032,39 @@ function patchYunzaiBot(bot, state, { loginInfo } = {}) {
 
     return state.getMember(gid, uid)
   }
+
+  const pickFriendCompat = function pickFriendCompat(userInput, strict) {
+    if (looksLikeMemberFacade(userInput)) {
+      return userInput
+    }
+
+    const uid = normalizeUserArg(userInput)
+    if (!uid) {
+      if (typeof bot.__xunlu_raw_pickFriend === "function") {
+        return bot.__xunlu_raw_pickFriend(userInput, strict)
+      }
+      if (typeof bot.__xunlu_raw_pickUser === "function") {
+        return bot.__xunlu_raw_pickUser(userInput, strict)
+      }
+      return null
+    }
+
+    if (typeof state.getUser === "function") {
+      return state.getUser(uid)
+    }
+
+    if (typeof bot.__xunlu_raw_pickFriend === "function") {
+      return bot.__xunlu_raw_pickFriend(uid, strict)
+    }
+    if (typeof bot.__xunlu_raw_pickUser === "function") {
+      return bot.__xunlu_raw_pickUser(uid, strict)
+    }
+    return null
+  }
+
+  bot.__xunlu_pickGroup_compat = pickGroupCompat
+  bot.__xunlu_pickMember_compat = pickMemberCompat
+  bot.__xunlu_pickFriend_compat = pickFriendCompat
 
   const makeForwardViaTakeover = async (scene, targetId, forwardMsg, raw = null) => {
     const currentState = bot?.__xunlu_takeover_state || state
@@ -1128,6 +1258,7 @@ export async function startYunzaiTakeover({ bot, ignoreSelf } = {}) {
 
   patchYunzaiBot(runtimeBot, state, { loginInfo })
   globalThis.__xunlu_runtime_bot = adapter
+  globalThis.Bot = installTakeoverBotCompatProxy(runtimeBot)
   await fillBotListsBestEffort(runtimeBot, state)
 
   const bridgeHelpers = { toInt, logError, logWarn }
@@ -1142,4 +1273,5 @@ export async function startYunzaiTakeover({ bot, ignoreSelf } = {}) {
 
 export const __test = {
   patchYunzaiBot,
+  installTakeoverBotCompatProxy,
 }

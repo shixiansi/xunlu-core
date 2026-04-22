@@ -56,9 +56,8 @@ test("patchYunzaiBot binds Bot[uin] to raw adapter instead of proxy itself", () 
     },
   )
 
-  assert.equal(proxyBot[String(2548285036)], adapter)
-  assert.equal(proxyBot[String(2548285036)].pickGroup(629661253).kind, "adapter-group")
-  assert.equal(proxyBot.pickGroup({ group_id: 629661253 }).kind, "adapter-group")
+  const compatBot = takeoverTest.installTakeoverBotCompatProxy(proxyBot)
+  assert.equal(compatBot.pickGroup({ group_id: 629661253 }).kind, "adapter-group")
 })
 
 test("patchYunzaiBot normalizes object arguments for Bot.pickGroup and Bot.pickMember", () => {
@@ -114,12 +113,51 @@ test("patchYunzaiBot normalizes object arguments for Bot.pickGroup and Bot.pickM
       },
     },
   )
+  const compatBot = takeoverTest.installTakeoverBotCompatProxy(rawBot)
+  const group = compatBot.pickGroup({ group_id: 629661253 })
+  const member = compatBot.pickMember({ group_id: 629661253 }, { user_id: 1765629830 })
 
-  const group = rawBot.pickGroup({ group_id: 629661253 })
-  const member = rawBot.pickMember({ group_id: 629661253 }, { user_id: 1765629830 })
-
+  assert.ok(group)
   assert.equal(group.kind, "adapter-group")
   assert.equal(group.groupId, 629661253)
+  assert.ok(member)
   assert.equal(member.kind, "adapter-member")
   assert.equal(member.userId, 1765629830)
+})
+
+test("takeover compat proxy intercepts global Bot.pickGroup before inner proxy implementation", () => {
+  const rawTarget = {
+    __xunlu_pickGroup_compat(groupInput) {
+      return {
+        kind: "compat-group",
+        input: groupInput,
+      }
+    },
+    __xunlu_pickMember_compat(groupInput, userInput) {
+      return {
+        kind: "compat-member",
+        groupInput,
+        userInput,
+      }
+    },
+  }
+
+  const innerProxy = new Proxy(rawTarget, {
+    get(target, prop, receiver) {
+      if (prop === "pickGroup" || prop === "pickMember") {
+        throw new Error("inner proxy pickGroup/pickMember should not be touched")
+      }
+      return Reflect.get(target, prop, receiver)
+    },
+  })
+
+  const outerProxy = takeoverTest.installTakeoverBotCompatProxy(innerProxy)
+  const group = outerProxy.pickGroup({ group_id: 629661253 })
+  const member = outerProxy.pickMember({ group_id: 629661253 }, { user_id: 1765629830 })
+
+  assert.equal(group.kind, "compat-group")
+  assert.deepEqual(group.input, { group_id: 629661253 })
+  assert.equal(member.kind, "compat-member")
+  assert.deepEqual(member.groupInput, { group_id: 629661253 })
+  assert.deepEqual(member.userInput, { user_id: 1765629830 })
 })
