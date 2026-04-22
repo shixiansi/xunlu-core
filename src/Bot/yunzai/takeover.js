@@ -65,6 +65,20 @@ function createIdPrimitive(value) {
   }
 }
 
+function normalizeGroupArg(input) {
+  if (input && typeof input === "object" && !Array.isArray(input)) {
+    return toInt(input.group_id ?? input.groupId ?? input.gid ?? input.id ?? input.peer_id ?? input.peerId)
+  }
+  return toInt(input)
+}
+
+function normalizeUserArg(input) {
+  if (input && typeof input === "object" && !Array.isArray(input)) {
+    return toInt(input.user_id ?? input.userId ?? input.uid ?? input.uin ?? input.id ?? input.sender_id ?? input.senderId)
+  }
+  return toInt(input)
+}
+
 function normalizeAdapterName(name) {
   const v = String(name || "").toLowerCase()
   if (v === "auto") return "auto"
@@ -870,6 +884,57 @@ function patchYunzaiBot(bot, state, { loginInfo } = {}) {
     "pickUser",
     "pickGroup",
   ].forEach(name => bindAdapterMethod(name, { force: false }))
+
+  // 兼容外部插件把 e.group / e.member / 普通对象直接传给 Bot.pickGroup / Bot.pickMember。
+  bot.pickGroup = function pickGroupCompat(groupInput, strict) {
+    const gid = normalizeGroupArg(groupInput)
+    if (!gid) {
+      if (typeof bot.__xunlu_raw_pickGroup === "function") {
+        return bot.__xunlu_raw_pickGroup(groupInput, strict)
+      }
+      return null
+    }
+
+    if (typeof state.adapter?.pickGroup === "function") {
+      try {
+        return state.adapter.pickGroup(gid, strict)
+      } catch {}
+    }
+
+    if (typeof bot.__xunlu_raw_pickGroup === "function") {
+      try {
+        return bot.__xunlu_raw_pickGroup(gid, strict)
+      } catch {}
+    }
+
+    return state.getGroup(gid)
+  }
+
+  bot.pickMember = function pickMemberCompat(groupInput, userInput, strict) {
+    const gid = normalizeGroupArg(groupInput)
+    const uid = normalizeUserArg(userInput)
+    if (!gid || !uid) {
+      if (typeof bot.__xunlu_raw_pickMember === "function") {
+        return bot.__xunlu_raw_pickMember(groupInput, userInput, strict)
+      }
+      return state.getMember(gid, uid)
+    }
+
+    const group = typeof bot.pickGroup === "function" ? bot.pickGroup(gid, strict) : null
+    if (group && typeof group.pickMember === "function") {
+      try {
+        return group.pickMember(uid, strict)
+      } catch {}
+    }
+
+    if (typeof bot.__xunlu_raw_pickMember === "function") {
+      try {
+        return bot.__xunlu_raw_pickMember(gid, uid, strict)
+      } catch {}
+    }
+
+    return state.getMember(gid, uid)
+  }
 
   const makeForwardViaTakeover = async (scene, targetId, forwardMsg, raw = null) => {
     const currentState = bot?.__xunlu_takeover_state || state

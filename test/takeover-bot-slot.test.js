@@ -58,4 +58,68 @@ test("patchYunzaiBot binds Bot[uin] to raw adapter instead of proxy itself", () 
 
   assert.equal(proxyBot[String(2548285036)], adapter)
   assert.equal(proxyBot[String(2548285036)].pickGroup(629661253).kind, "adapter-group")
+  assert.equal(proxyBot.pickGroup({ group_id: 629661253 }).kind, "adapter-group")
+})
+
+test("patchYunzaiBot normalizes object arguments for Bot.pickGroup and Bot.pickMember", () => {
+  const rawBot = {
+    uin: 2548285036,
+    adapter: {},
+    fl: new Map(),
+    gl: new Map(),
+    sendApi() {},
+    isOnline() {
+      return true
+    },
+  }
+
+  const adapter = {
+    pickGroup(groupId) {
+      return {
+        kind: "adapter-group",
+        groupId,
+        pickMember(userId) {
+          return {
+            kind: "adapter-member",
+            userId,
+          }
+        },
+      }
+    },
+    callApi() {},
+  }
+
+  takeoverTest.patchYunzaiBot(
+    rawBot,
+    {
+      adapter,
+      protocol: "milky",
+      selfId: 2548285036,
+      sendTo() {},
+      recall() {},
+      getGroup() {
+        return {
+          kind: "state-group",
+        }
+      },
+      getMember() {
+        return {
+          kind: "state-member",
+        }
+      },
+    },
+    {
+      loginInfo: {
+        uin: 2548285036,
+      },
+    },
+  )
+
+  const group = rawBot.pickGroup({ group_id: 629661253 })
+  const member = rawBot.pickMember({ group_id: 629661253 }, { user_id: 1765629830 })
+
+  assert.equal(group.kind, "adapter-group")
+  assert.equal(group.groupId, 629661253)
+  assert.equal(member.kind, "adapter-member")
+  assert.equal(member.userId, 1765629830)
 })
