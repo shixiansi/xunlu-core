@@ -38,12 +38,11 @@ class Render {
 
     // 计算资源路径（修复重复../问题）
     const xunLuEnv = String(process.env.xunLuEnv || "")
-    const resLevel = paths.length + (xunLuEnv.includes("YunZai") ? 3 : 3)
-    let pluResPath =
+    const isYunzai = env?.CurEnv === "QQBot-YunZai" || xunLuEnv.includes("YunZai")
+    const resLevel = paths.length + 3
+    const pluResPath =
       lodash.repeat("../", resLevel) +
-      `${
-        xunLuEnv.includes("YunZai") ? "plugins/xunlu-core/src/" : "src/"
-      }plugins/${plugin}/resources/`
+      `${isYunzai ? "plugins/xunlu-core/src/" : "src/"}plugins/${plugin}/resources/`
 
     // 渲染数据（修复tplFile路径）
     data = {
@@ -52,12 +51,7 @@ class Render {
       sys: { scale: 1 },
       _htmlPath: tplPath,
       pluResPath,
-      tplFile: Path.resolve(
-        env.RootPath,
-        `${
-          xunLuEnv.includes("YunZai") ? "src/" : "src/"
-        }plugins/${plugin}/resources/${tplPath}.html`,
-      ),
+      tplFile: Path.resolve(env.RootPath, `src/plugins/${plugin}/resources/${tplPath}.html`),
       saveId: data.saveId || data.save_id || paths[paths.length - 1],
       pageGotoParams: {
         waitUntil: "networkidle2",
