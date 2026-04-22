@@ -31,6 +31,16 @@ async function waitIcqqOnline(bot, { timeoutMs = 60000, intervalMs = 1000 } = {}
   return false
 }
 
+function normalizeConfiguredAdapter(adapter) {
+  const value = String(adapter || "").trim().toLowerCase()
+  if (value === "onebotv11" || value === "onebot-v11" || value === "onebot") return "onebotv11"
+  if (value === "api" || value === "api-only") return "api-only"
+  if (value === "icqq") return "icqq"
+  if (value === "auto") return "auto"
+  if (value === "milky") return "milky"
+  return value || "milky"
+}
+
 /**
  * 统一判定当前运行形态。
  *
@@ -56,15 +66,39 @@ export async function resolveRuntimeMode(options = {}) {
     }
   }
 
-  const adapter = String(process.env.XUNLU_ADAPTER || botCfg.adapter || "milky")
-    .trim()
-    .toLowerCase()
+  const adapter = normalizeConfiguredAdapter(process.env.XUNLU_ADAPTER || botCfg.adapter || "milky")
   const isYunzai = runtimeEnv?.CurEnv === "QQBot-YunZai"
 
   if (isYunzai || globalBot) {
     const yunzaiCfg = options.yunzaiConfig || (await readYunzaiBotYaml())
     const skipLogin = Boolean(yunzaiCfg?.skip_login)
     const ignoreSelf = yunzaiCfg?.ignore_self !== undefined ? Boolean(yunzaiCfg.ignore_self) : true
+
+    if (adapter === "icqq") {
+      return {
+        mode: "yunzai-icqq",
+        adapter: "icqq",
+        isYunzai,
+        globalBot,
+        yunzaiConfig: yunzaiCfg,
+        botConfig: botCfg,
+        skipLogin,
+        ignoreSelf,
+      }
+    }
+
+    if (adapter === "onebotv11" || adapter === "milky") {
+      return {
+        mode: "yunzai-takeover",
+        adapter,
+        isYunzai,
+        globalBot,
+        yunzaiConfig: yunzaiCfg,
+        botConfig: botCfg,
+        skipLogin,
+        ignoreSelf,
+      }
+    }
 
     const isOnline =
       typeof globalBot?.isOnline === "function"
@@ -124,7 +158,6 @@ export async function resolveRuntimeMode(options = {}) {
     case "milky":
       return { mode: "standalone-milky", adapter, isYunzai: false, globalBot, botConfig: botCfg }
     case "onebotv11":
-    case "onebot-v11":
       return {
         mode: "standalone-onebotv11",
         adapter: "onebotv11",

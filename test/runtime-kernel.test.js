@@ -42,6 +42,38 @@ test("resolveRuntimeMode falls back to takeover when yunzai bot is offline", asy
   assert.equal(mode.adapter, "onebotv11")
 })
 
+test("resolveRuntimeMode respects explicit yunzai icqq adapter even when login is skipped", async () => {
+  const mode = await resolveRuntimeMode({
+    env: { CurEnv: "QQBot-YunZai" },
+    botConfig: { adapter: "icqq" },
+    yunzaiConfig: { skip_login: true, ignore_self: true },
+    globalBot: {
+      isOnline() {
+        return false
+      },
+    },
+  })
+
+  assert.equal(mode.mode, "yunzai-icqq")
+  assert.equal(mode.adapter, "icqq")
+})
+
+test("resolveRuntimeMode respects explicit yunzai onebot adapter even when bot is online", async () => {
+  const mode = await resolveRuntimeMode({
+    env: { CurEnv: "QQBot-YunZai" },
+    botConfig: { adapter: "onebotv11" },
+    yunzaiConfig: { skip_login: false, ignore_self: true },
+    globalBot: {
+      isOnline() {
+        return true
+      },
+    },
+  })
+
+  assert.equal(mode.mode, "yunzai-takeover")
+  assert.equal(mode.adapter, "onebotv11")
+})
+
 test("resolveRuntimeMode marks standalone icqq as unsupported when no global bot exists", async () => {
   const mode = await resolveRuntimeMode({
     env: { CurEnv: "xunlu-core" },
