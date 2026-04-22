@@ -62,6 +62,7 @@ function createPixivCtx(overrides = {}) {
   const state = {
     replyCalls: [],
     forwardCalls: [],
+    recallCalls: [],
   }
 
   const ctx = {
@@ -73,7 +74,16 @@ function createPixivCtx(overrides = {}) {
     },
     async reply(message) {
       state.replyCalls.push(message)
-      return { ok: true, message }
+      return {
+        ok: true,
+        message,
+        message_id: `mock-message-${state.replyCalls.length}`,
+        seq: state.replyCalls.length,
+      }
+    },
+    async recallMessage(payload) {
+      state.recallCalls.push(payload)
+      return { ok: true }
     },
     ...overrides,
   }
@@ -230,7 +240,71 @@ test("pixiv setu command rebuilds forward with mirage images after first forward
               throw new Error("forward send failed")
             }
           }
-          return { ok: true, message }
+          return {
+            ok: true,
+            message,
+            message_id: `mock-message-${state.replyCalls.length}`,
+            seq: state.replyCalls.length,
+          }
+        },
+      })
+
+      await handler(ctx)
+
+      assert.equal(state.forwardCalls.length, 2)
+      assert.equal(state.replyCalls[1], __test.MIRAGE_FALLBACK_NOTICE)
+      const fallbackList = state.forwardCalls[1].msgList
+      assert.equal(fallbackList[1]?.type, "image")
+      assert.match(String(fallbackList[1]?.data?.file || ""), /^base64:\/\//)
+      assert.equal(state.replyCalls.length, 3)
+      assert.equal(state.recallCalls.length, 1)
+      assert.equal(state.recallCalls[0]?.message_id, "mock-message-2")
+      for (const filePath of mirageOutputs) {
+        assert.equal(fs.existsSync(filePath), false)
+      }
+    },
+  )
+})
+
+test("pixiv setu command still sends mirage fallback when notice message fails", async () => {
+  const pic = createLoliconPic()
+
+  await withPixivDeps(
+    {
+      async fetch(url, options = {}) {
+        if (url === __test.LOLICON_SETU_API) {
+          return createMockResponse({ jsonData: { error: "", data: [pic] } })
+        }
+        if (url === pic.urls.regular && options.method === "HEAD") {
+          return { ok: true }
+        }
+        throw new Error(`unexpected fetch: ${url}`)
+      },
+      async createMirageTank(_surfacePath, _innerUrl, outputPath) {
+        return createMirageOutput(path.basename(outputPath))
+      },
+    },
+    async () => {
+      const handler = getCommandHandler("^来张(.*)色图$")
+      let forwardReplyCount = 0
+      const { ctx, state } = createPixivCtx({
+        async reply(message) {
+          state.replyCalls.push(message)
+          if (message?.type === "forward") {
+            forwardReplyCount += 1
+            if (forwardReplyCount === 1) {
+              throw new Error("forward send failed")
+            }
+          }
+          if (message === __test.MIRAGE_FALLBACK_NOTICE) {
+            throw new Error("notice send failed")
+          }
+          return {
+            ok: true,
+            message,
+            message_id: `mock-message-${state.replyCalls.length}`,
+            seq: state.replyCalls.length,
+          }
         },
       })
 
@@ -240,10 +314,7 @@ test("pixiv setu command rebuilds forward with mirage images after first forward
       const fallbackList = state.forwardCalls[1].msgList
       assert.equal(fallbackList[1]?.type, "image")
       assert.match(String(fallbackList[1]?.data?.file || ""), /^base64:\/\//)
-      assert.equal(state.replyCalls.length, 2)
-      for (const filePath of mirageOutputs) {
-        assert.equal(fs.existsSync(filePath), false)
-      }
+      assert.equal(state.recallCalls.length, 0)
     },
   )
 })
@@ -344,16 +415,24 @@ test("pixiv sends explicit failure text when mirage fallback forward also fails"
             forwardReplyCount += 1
             throw new Error(`forward fail ${forwardReplyCount}`)
           }
-          return { ok: true, message }
+          return {
+            ok: true,
+            message,
+            message_id: `mock-message-${state.replyCalls.length}`,
+            seq: state.replyCalls.length,
+          }
         },
       })
 
       await handler(ctx)
 
       assert.equal(state.forwardCalls.length, 2)
-      assert.equal(typeof state.replyCalls[2], "string")
-      assert.match(state.replyCalls[2], /标签「猫娘」色图转发发送失败/)
-      assert.match(state.replyCalls[2], /1\. https:\/\/i\.pixiv\.re\/img-master/)
+      assert.equal(state.replyCalls[1], __test.MIRAGE_FALLBACK_NOTICE)
+      assert.equal(typeof state.replyCalls[3], "string")
+      assert.match(state.replyCalls[3], /标签「猫娘」色图转发发送失败/)
+      assert.match(state.replyCalls[3], /1\. https:\/\/i\.pixiv\.re\/img-master/)
+      assert.equal(state.recallCalls.length, 1)
+      assert.equal(state.recallCalls[0]?.message_id, "mock-message-2")
     },
   )
 })

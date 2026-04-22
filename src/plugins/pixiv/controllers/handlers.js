@@ -18,6 +18,7 @@ const LOLICON_SETU_API = "https://api.lolicon.app/setu/v2"
 const MAX_RETRY_COUNT = 3
 const FORWARD_DESC = "这就是涩图"
 const RECALL_SECONDS = 120
+const MIRAGE_FALLBACK_NOTICE = "原图发送失败使用幻影坦克发送"
 
 const defaultDeps = {
   fetch,
@@ -239,6 +240,62 @@ function buildForwardFailureText(title, imageUrls = []) {
   return `😭 ${title}转发发送失败，请直接使用以下链接查看：\n${links}`
 }
 
+function getReplyResultMeta(replyResult) {
+  if (!replyResult || typeof replyResult !== "object") {
+    return { messageId: "", messageSeq: undefined }
+  }
+
+  const rawMessageId =
+    replyResult.message_id ??
+    replyResult.messageId ??
+    replyResult.seq ??
+    replyResult.message_seq ??
+    replyResult?.data?.message_id ??
+    replyResult?.data?.messageId ??
+    replyResult?.data?.message_seq
+
+  const messageId =
+    rawMessageId !== undefined && rawMessageId !== null ? String(rawMessageId).trim() : ""
+  const rawMessageSeq = replyResult.seq ?? replyResult.message_seq ?? replyResult?.data?.message_seq
+  const messageSeq = Number(rawMessageSeq)
+
+  return {
+    messageId,
+    messageSeq: Number.isFinite(messageSeq) && messageSeq > 0 ? messageSeq : undefined,
+  }
+}
+
+async function recallNoticeMessage(ctx, replyResult) {
+  const { messageId, messageSeq } = getReplyResultMeta(replyResult)
+  if (!messageId && messageSeq === undefined) return false
+
+  try {
+    if (typeof ctx?.recallMessage === "function") {
+      await ctx.recallMessage({
+        peer_id: ctx?.peer_id ?? ctx?.group_id ?? ctx?.user_id,
+        message_seq: messageSeq,
+        message_id: messageId || messageSeq,
+        isGroup: Boolean(ctx?.group_id || ctx?.message_scene === "group"),
+      })
+      return true
+    }
+
+    if (ctx?.group_id && typeof ctx?.group?.recallMsg === "function") {
+      await ctx.group.recallMsg(messageId || messageSeq)
+      return true
+    }
+
+    if (!ctx?.group_id && typeof ctx?.friend?.recallMsg === "function") {
+      await ctx.friend.recallMsg(messageId || messageSeq)
+      return true
+    }
+  } catch (error) {
+    getLogger().warn?.(`[pixiv] 撤回幻影坦克提示失败：${error?.message || error}`)
+  }
+
+  return false
+}
+
 async function buildMirageFallbackNodes(imageUrls = []) {
   ensureTempDir()
   const msgList = []
@@ -282,7 +339,13 @@ function cleanupTempFiles(filePaths = []) {
 
 async function sendForwardWithMirageFallback(
   ctx,
-  { metaText, imageUrls = [], desc = FORWARD_DESC, failureTitle = "涩图" } = {},
+  {
+    metaText,
+    imageUrls = [],
+    desc = FORWARD_DESC,
+    failureTitle = "涩图",
+    fallbackNoticeText = "",
+  } = {},
 ) {
   const originForward = [metaText, ...imageUrls.map(url => segment.image(url))]
 
@@ -293,6 +356,15 @@ async function sendForwardWithMirageFallback(
   }
 
   let cleanupPaths = []
+  let fallbackNoticeReply = null
+  if (fallbackNoticeText) {
+    try {
+      fallbackNoticeReply = await ctx.reply(fallbackNoticeText)
+    } catch (error) {
+      getLogger().warn?.(`[pixiv] 幻影坦克提示发送失败：${error?.message || error}`)
+    }
+  }
+
   try {
     const fallback = await buildMirageFallbackNodes(imageUrls)
     cleanupPaths = fallback.cleanupPaths
@@ -302,6 +374,7 @@ async function sendForwardWithMirageFallback(
     return await ctx.reply(buildForwardFailureText(failureTitle, imageUrls))
   } finally {
     cleanupTempFiles(cleanupPaths)
+    await recallNoticeMessage(ctx, fallbackNoticeReply)
   }
 }
 
@@ -344,6 +417,7 @@ async function handleSetuRequest(ctx) {
     metaText: buildSetuMetaText(pic),
     imageUrls: previewUrl ? [previewUrl] : [],
     failureTitle: `标签「${tag}」色图`,
+    fallbackNoticeText: MIRAGE_FALLBACK_NOTICE,
   })
 }
 
@@ -365,6 +439,7 @@ export const __test = {
   LOLICON_SETU_API,
   mirageSurfacePath,
   tempDir,
+  MIRAGE_FALLBACK_NOTICE,
   getRequestedSetuTag,
   getValidPixivPic,
   getValidSetuPic,
