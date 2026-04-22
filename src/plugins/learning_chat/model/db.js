@@ -367,3 +367,59 @@ export async function listLearnedTransitions(groupId, { fromHash, limit = 50, of
   })
   return rows.map(r => r.toJSON())
 }
+
+export async function listTrackedLearningGroupIds() {
+  const { Transition, BanReply, GroupState, ProactiveState, ProactiveCommandState } = await initDb()
+  const ids = new Set()
+
+  const collectIds = rows => {
+    for (const row of Array.isArray(rows) ? rows : []) {
+      const gid = String(row?.group_id || "").trim()
+      if (gid) ids.add(gid)
+    }
+  }
+
+  collectIds((await Transition.findAll({ attributes: ["group_id"], group: ["group_id"] })).map(r => r.toJSON()))
+  collectIds((await BanReply.findAll({ attributes: ["group_id"], group: ["group_id"] })).map(r => r.toJSON()))
+  collectIds((await GroupState.findAll({ attributes: ["group_id"] })).map(r => r.toJSON()))
+  collectIds((await ProactiveState.findAll({ attributes: ["group_id"] })).map(r => r.toJSON()))
+  collectIds(
+    (await ProactiveCommandState.findAll({ attributes: ["group_id"], group: ["group_id"] })).map(r =>
+      r.toJSON(),
+    ),
+  )
+
+  return Array.from(ids).sort((a, b) => a.localeCompare(b))
+}
+
+export async function clearGroupScopedLearningData(groupId) {
+  const { Transition, BanReply, GroupState, ProactiveState, ProactiveCommandState } = await initDb()
+  const gid = String(groupId || "").trim()
+  if (!gid) {
+    return {
+      group_id: "",
+      transitions: 0,
+      bans: 0,
+      groupState: 0,
+      proactiveState: 0,
+      proactiveCommandState: 0,
+    }
+  }
+
+  const [transitions, bans, groupState, proactiveState, proactiveCommandState] = await Promise.all([
+    Transition.destroy({ where: { group_id: gid } }),
+    BanReply.destroy({ where: { group_id: gid } }),
+    GroupState.destroy({ where: { group_id: gid } }),
+    ProactiveState.destroy({ where: { group_id: gid } }),
+    ProactiveCommandState.destroy({ where: { group_id: gid } }),
+  ])
+
+  return {
+    group_id: gid,
+    transitions: Number(transitions || 0),
+    bans: Number(bans || 0),
+    groupState: Number(groupState || 0),
+    proactiveState: Number(proactiveState || 0),
+    proactiveCommandState: Number(proactiveCommandState || 0),
+  }
+}

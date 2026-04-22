@@ -34,6 +34,10 @@ import {
   sendMasterPayload,
   sendToMasters,
 } from "./notice-helpers.js"
+import {
+  cleanupGroupScopedPluginData,
+  reconcileGroupScopedPlugins,
+} from "../services/group-scope-maintenance.js"
 const filemage = new Filemage()
 const groupPass = {}
 
@@ -236,6 +240,33 @@ async function handleNoticeToggle(ctx, name, enable) {
 
 export function register(bot) {
   if (!bot || !bot.registerCommand) return
+
+  if (typeof bot.onMount === "function") {
+    bot.onMount(async () => {
+      const result = await reconcileGroupScopedPlugins(bot, {
+        reason: "group-plugin-on-mount-reconcile",
+      }).catch(err => {
+        console.warn("[group] group scope reconcile failed:", err?.message || err)
+        return null
+      })
+
+      if (result?.skippedDueToOwnerMismatch) {
+        console.warn(
+          `[group] skip startup group cleanup because bot owner changed: ${result.owner_self_id} -> ${result.current_self_id}`,
+        )
+        return
+      }
+
+      const cleanedCount =
+        Number(result?.cleaned?.learningChat?.missingGroupIds?.length || 0) +
+        Number(result?.cleaned?.groupNoticeRemoved?.length || 0) +
+        Number(result?.cleaned?.bilibiliRemoved?.length || 0) +
+        Number(result?.cleaned?.schedulerRemovedTaskIds?.length || 0)
+      if (cleanedCount > 0) {
+        console.warn(`[group] startup reconciled group-scoped plugin data, cleaned=${cleanedCount}`)
+      }
+    })
+  }
   //第一个参数是数组第一个是命令，第二个是事件，第三个是优先级（第二个和第三个都可以省略）
 
   // ===================== 荨鹿通知设置（主人） =====================
@@ -707,6 +738,12 @@ export function register(bot) {
       const sid = toInt(ctx.self_id)
 
       if (uid && sid && uid === sid) {
+        await cleanupGroupScopedPluginData(groupId, {
+          reason: "notice-group-decrease-self",
+        }).catch(err => {
+          console.warn("[group] group-scope cleanup failed after self decrease:", err?.message || err)
+        })
+
         if (!gcfg.group_list_change) return false
         const key = `group_list_change:leave:${sid}:${groupId}:${ctx.time || ""}`
         const payload = await createSummaryNotice(ctx, {
@@ -939,6 +976,11 @@ export function register(bot) {
       const group_id = toInt(m[1])
       if (!group_id) return await ctx.reply("用法：#退群 群号")
       await ctx.quitGroup({ group_id })
+      await cleanupGroupScopedPluginData(group_id, {
+        reason: "quit-group-command",
+      }).catch(err => {
+        console.warn("[group] group-scope cleanup failed after quitGroup:", err?.message || err)
+      })
       return await ctx.reply(`已尝试退群：${group_id}`)
     },
   )

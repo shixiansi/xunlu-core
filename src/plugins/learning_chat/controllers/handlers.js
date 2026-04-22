@@ -11,6 +11,7 @@ import { getConfig, getEffectiveGroupConfig, setGroupOverrides } from "../model/
 import {
   doesGroupTableExist,
   ensureHeatForGroup,
+  forgetHeatForGroup,
   getBotSelfId,
   getHeatSnapshot as readHeatSnapshot,
   getHeatState,
@@ -37,10 +38,12 @@ import {
   listBans,
   listGlobalCandidates,
   listLocalCandidates,
+  listTrackedLearningGroupIds,
   setGroupState,
   setProactiveCommandState,
   setProactiveState,
   upsertSignature,
+  clearGroupScopedLearningData,
 } from "../model/db.js"
 
 const lastByGroup = new Map() // groupId -> { hash, ts }
@@ -51,6 +54,44 @@ const banCache = new Map() // groupId -> { ts, set }
 const repeatStateByGroup = new Map() // groupId -> { hash, startedAt, lastAt, users:Set, count, repeated }
 
 let runtimeProtocolHint = ""
+
+function normalizeGroupId(value) {
+  return String(value || "").trim()
+}
+
+function normalizeGroupIdSet(value) {
+  const out = new Set()
+
+  if (value instanceof Map) {
+    for (const [groupId] of value.entries()) {
+      const gid = normalizeGroupId(groupId)
+      if (gid) out.add(gid)
+    }
+    return out
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      if (item && typeof item === "object") {
+        const gid = normalizeGroupId(item.group_id ?? item.groupId ?? item.id ?? item.uin)
+        if (gid) out.add(gid)
+        continue
+      }
+      const gid = normalizeGroupId(item)
+      if (gid) out.add(gid)
+    }
+    return out
+  }
+
+  if (value && typeof value === "object") {
+    for (const [groupId] of Object.entries(value)) {
+      const gid = normalizeGroupId(groupId)
+      if (gid) out.add(gid)
+    }
+  }
+
+  return out
+}
 
 function localDayKey(ts = Date.now()) {
   const d = new Date(ts)
@@ -672,7 +713,7 @@ export async function runProactiveCommandTick(ctxLike, botApi) {
   if (!whitelist.length) return false
 
   const hourBucket = new Date().getHours()
-  const ids = new Set([...Object.keys(cfg?.groups || {}), ...Array.from(heatByGroup.keys())])
+  const ids = new Set([...Object.keys(cfg?.groups || {}), ...listTrackedHeatGroupIds()])
   if (cfg?.proactive?.allow_default) {
     const more = await listGroupIdsFromMessageDbTables().catch(() => [])
     for (const gid of more) ids.add(String(gid))
@@ -1071,6 +1112,116 @@ export async function proactiveTick(ctxLike, botApi = null) {
 
     remaining = remaining.filter(it => it.gid !== gid)
     if (!remaining.length) return
+  }
+}
+
+export async function cleanupLearningChatGroup(groupId, options = {}) {
+  const gid = normalizeGroupId(groupId)
+  if (!gid) {
+    return {
+      group_id: "",
+      updatedConfig: false,
+      clearedRuntimeCaches: false,
+      clearedDb: false,
+      db: null,
+    }
+  }
+
+  const shouldDisableConfig = options.disableConfig !== false
+  const shouldClearDb = options.clearDb !== false
+
+  if (shouldDisableConfig) {
+    await setGroupOverrides(gid, {
+      learning_enabled: false,
+      proactive_enabled: false,
+      proactive_command_enabled: false,
+      reply_prob: 0,
+    })
+  }
+
+  lastByGroup.delete(gid)
+  stateCache.delete(gid)
+  proactiveStateCache.delete(gid)
+  banCache.delete(gid)
+  repeatStateByGroup.delete(gid)
+  forgetHeatForGroup(gid)
+
+  for (const key of Array.from(proactiveCommandStateCache.keys())) {
+    if (key.startsWith(`${gid}:`)) proactiveCommandStateCache.delete(key)
+  }
+
+  const dbSummary = shouldClearDb ? await clearGroupScopedLearningData(gid) : null
+
+  return {
+    group_id: gid,
+    updatedConfig: shouldDisableConfig,
+    clearedRuntimeCaches: true,
+    clearedDb: Boolean(dbSummary),
+    db: dbSummary,
+    reason: String(options.reason || "").trim(),
+  }
+}
+
+export async function reconcileLearningChatGroups(runtimeLike, options = {}) {
+  let activeGroupIds =
+    options.activeGroupIds instanceof Set
+      ? new Set(options.activeGroupIds)
+      : Array.isArray(options.activeGroupIds)
+        ? normalizeGroupIdSet(options.activeGroupIds)
+        : null
+
+  if (!(activeGroupIds instanceof Set)) {
+    const candidates = [runtimeLike, globalThis.Bot].filter(Boolean)
+
+    for (const candidate of candidates) {
+      if (typeof candidate?.getGroupList !== "function") continue
+      try {
+        const raw = await candidate.getGroupList()
+        activeGroupIds = normalizeGroupIdSet(raw)
+        break
+      } catch (err) {
+        console.warn("[learning_chat] reconcile getGroupList failed:", err?.message || err)
+      }
+    }
+  }
+
+  if (!(activeGroupIds instanceof Set)) {
+    return {
+      ok: false,
+      reason: "group-list-unavailable",
+      activeGroupIds: [],
+      missingGroupIds: [],
+      cleaned: [],
+    }
+  }
+
+  const cfg = getConfig()
+  const trackedIds = new Set([
+    ...Object.keys(cfg?.groups || {}),
+    ...listTrackedHeatGroupIds(),
+    ...(await listTrackedLearningGroupIds().catch(() => [])),
+  ])
+
+  const missingGroupIds = Array.from(trackedIds)
+    .map(id => normalizeGroupId(id))
+    .filter(id => id && !activeGroupIds.has(id))
+    .sort((a, b) => a.localeCompare(b))
+
+  const cleaned = []
+  for (const gid of missingGroupIds) {
+    cleaned.push(
+      await cleanupLearningChatGroup(gid, {
+        ...options,
+        reason: options.reason || "group-reconcile",
+      }),
+    )
+  }
+
+  return {
+    ok: true,
+    activeGroupIds: Array.from(activeGroupIds).sort((a, b) => a.localeCompare(b)),
+    missingGroupIds,
+    cleaned,
   }
 }
 

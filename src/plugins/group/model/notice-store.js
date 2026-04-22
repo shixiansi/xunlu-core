@@ -177,6 +177,34 @@ export function setGroupNoticeConfig(groupId, patch = {}) {
   return getGroupNoticeConfig(id)
 }
 
+export function removeGroupNoticeConfig(groupId) {
+  const store = loadNoticeStore()
+  const id = normalizeId(groupId)
+  if (!id || !safeObject(store.groups) || !Object.prototype.hasOwnProperty.call(store.groups, id)) {
+    return false
+  }
+
+  delete store.groups[id]
+  store.updatedAt = Date.now()
+  saveStoreToDisk(store)
+  return true
+}
+
+export function listConfiguredGroupNoticeIds() {
+  const store = loadNoticeStore()
+  return Object.keys(safeObject(store.groups) || {}).filter(Boolean)
+}
+
+export function reconcileGroupNoticeConfigs(activeGroupIds = []) {
+  const active = new Set((Array.isArray(activeGroupIds) ? activeGroupIds : []).map(id => normalizeId(id)).filter(Boolean))
+  const removed = []
+  for (const gid of listConfiguredGroupNoticeIds()) {
+    if (active.has(gid)) continue
+    if (removeGroupNoticeConfig(gid)) removed.push(gid)
+  }
+  return removed.sort((a, b) => a.localeCompare(b))
+}
+
 export function getGlobalNoticeConfig() {
   const store = loadNoticeStore()
   const raw = safeObject(store.global) || {}
@@ -195,4 +223,3 @@ export function setGlobalNoticeConfig(patch = {}) {
   saveStoreToDisk(store)
   return getGlobalNoticeConfig()
 }
-

@@ -235,6 +235,12 @@ export function listTrackedHeatGroupIds() {
   return Array.from(heatByGroup.keys())
 }
 
+export function forgetHeatForGroup(groupId) {
+  const gid = String(groupId || "").trim()
+  if (!gid) return false
+  return heatByGroup.delete(gid)
+}
+
 export function markBotSpoke(groupId) {
   const gid = String(groupId || "")
   if (!gid) return

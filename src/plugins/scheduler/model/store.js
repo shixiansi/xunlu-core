@@ -262,6 +262,71 @@ export class SchedulerStore {
       task: saved.config.tasks.find(item => item.id === String(taskId)) || null,
     }
   }
+
+  removeTasksByGroupId(groupId, options = {}) {
+    const gid = normalizeString(groupId)
+    if (!gid) {
+      return {
+        ...this.load(options),
+        removedTaskIds: [],
+      }
+    }
+
+    const current = this.load(options)
+    const removedTaskIds = current.config.tasks
+      .filter(item => item?.target?.scene === "group" && String(item?.target?.id || "") === gid)
+      .map(item => item.id)
+
+    if (!removedTaskIds.length) {
+      return {
+        ...current,
+        removedTaskIds: [],
+      }
+    }
+
+    const nextTasks = current.config.tasks.filter(item => !removedTaskIds.includes(item.id))
+    const saved = this.save({ version: 1, tasks: nextTasks }, options)
+    return {
+      ...saved,
+      removedTaskIds,
+    }
+  }
+
+  reconcileMissingGroupTasks(activeGroupIds = [], options = {}) {
+    const active = new Set(
+      (Array.isArray(activeGroupIds) ? activeGroupIds : [])
+        .map(item => normalizeString(item))
+        .filter(Boolean),
+    )
+
+    const current = this.load(options)
+    const removedTaskIds = current.config.tasks
+      .filter(item => item?.target?.scene === "group")
+      .filter(item => !active.has(String(item?.target?.id || "")))
+      .map(item => item.id)
+
+    if (!removedTaskIds.length) {
+      return {
+        ...current,
+        removedTaskIds: [],
+      }
+    }
+
+    const nextTasks = current.config.tasks.filter(item => !removedTaskIds.includes(item.id))
+    const saved = this.save({ version: 1, tasks: nextTasks }, options)
+    return {
+      ...saved,
+      removedTaskIds,
+    }
+  }
+}
+
+export function removeSchedulerTasksByGroupId(groupId, options = {}) {
+  return new SchedulerStore().removeTasksByGroupId(groupId, options)
+}
+
+export function reconcileSchedulerMissingGroupTasks(activeGroupIds = [], options = {}) {
+  return new SchedulerStore().reconcileMissingGroupTasks(activeGroupIds, options)
 }
 
 export default SchedulerStore
