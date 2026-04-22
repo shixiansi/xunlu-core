@@ -204,6 +204,27 @@ export async function reconcileGroupScopedPlugins(runtimeLike, options = {}) {
   const currentSelfId = await resolveBotSelfId(runtimeLike)
   const state = readState()
 
+  const shouldRepairLegacyPlaceholderOwner =
+    state.owner_self_id === "10000" && currentSelfId && currentSelfId !== "10000"
+
+  if (shouldRepairLegacyPlaceholderOwner) {
+    writeState({ owner_self_id: currentSelfId, updated_at: Date.now() })
+    return {
+      ok: true,
+      reason: "legacy-owner-placeholder-repaired",
+      owner_self_id: currentSelfId,
+      current_self_id: currentSelfId,
+      activeGroupIds,
+      skippedDueToOwnerMismatch: false,
+      cleaned: {
+        learningChat: null,
+        groupNoticeRemoved: [],
+        bilibiliRemoved: [],
+        schedulerRemovedTaskIds: [],
+      },
+    }
+  }
+
   if (state.owner_self_id && currentSelfId && state.owner_self_id !== currentSelfId) {
     return {
       ok: false,

@@ -154,3 +154,42 @@ test("reconcileGroupScopedPlugins skips auto cleanup when bot owner changes", as
     restoreOptionalFile(groupMaintenanceStatePath, stateSnapshot)
   }
 })
+
+test("reconcileGroupScopedPlugins repairs legacy placeholder owner_self_id 10000", async () => {
+  const stateSnapshot = readOptionalFile(groupMaintenanceStatePath)
+
+  try {
+    fs.mkdirSync(path.dirname(groupMaintenanceStatePath), { recursive: true })
+    fs.writeFileSync(
+      groupMaintenanceStatePath,
+      JSON.stringify(
+        {
+          version: 1,
+          owner_self_id: "10000",
+          updated_at: Date.now(),
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    )
+
+    const result = await reconcileGroupScopedPlugins({
+      async getGroupList() {
+        return new Map([["10001", {}]])
+      },
+      async getLoginInfo() {
+        return { user_id: 22334455, nickname: "real-bot" }
+      },
+    })
+
+    assert.equal(result.ok, true)
+    assert.equal(result.reason, "legacy-owner-placeholder-repaired")
+    assert.equal(result.owner_self_id, "22334455")
+
+    const persisted = JSON.parse(fs.readFileSync(groupMaintenanceStatePath, "utf8"))
+    assert.equal(String(persisted.owner_self_id), "22334455")
+  } finally {
+    restoreOptionalFile(groupMaintenanceStatePath, stateSnapshot)
+  }
+})
