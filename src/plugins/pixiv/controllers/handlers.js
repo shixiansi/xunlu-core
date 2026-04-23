@@ -224,7 +224,11 @@ async function getValidSetuPic(tag, retryCount = 0) {
 
 async function sendGroupForward(ctx, msgList, desc = FORWARD_DESC) {
   const forwardPayload = await ctx.makeGroupForwardMsg(ctx, msgList, desc, true)
-  return await ctx.reply(forwardPayload, false, { recallMsg: RECALL_SECONDS })
+  const replyResult = await ctx.reply(forwardPayload, false, { recallMsg: RECALL_SECONDS })
+  if (!replyResult) {
+    throw new Error("[pixiv] group forward send returned empty result")
+  }
+  return replyResult
 }
 
 function buildForwardFailureText(title, imageUrls = []) {

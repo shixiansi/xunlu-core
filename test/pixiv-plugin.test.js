@@ -266,6 +266,56 @@ test("pixiv setu command rebuilds forward with mirage images after first forward
   )
 })
 
+test("pixiv setu command rebuilds forward with mirage images when forward reply swallows send error", async () => {
+  const pic = createLoliconPic()
+
+  await withPixivDeps(
+    {
+      async fetch(url, options = {}) {
+        if (url === __test.LOLICON_SETU_API) {
+          return createMockResponse({ jsonData: { error: "", data: [pic] } })
+        }
+        if (url === pic.urls.regular && options.method === "HEAD") {
+          return { ok: true }
+        }
+        throw new Error(`unexpected fetch: ${url}`)
+      },
+      async createMirageTank(_surfacePath, _innerUrl, outputPath) {
+        return createMirageOutput(path.basename(outputPath))
+      },
+    },
+    async () => {
+      const handler = getCommandHandler("^来张(.*)色图$")
+      let forwardReplyCount = 0
+      const { ctx, state } = createPixivCtx({
+        async reply(message) {
+          state.replyCalls.push(message)
+          if (message?.type === "forward") {
+            forwardReplyCount += 1
+            if (forwardReplyCount === 1) {
+              return undefined
+            }
+          }
+          return {
+            ok: true,
+            message,
+            message_id: `mock-message-${state.replyCalls.length}`,
+            seq: state.replyCalls.length,
+          }
+        },
+      })
+
+      await handler(ctx)
+
+      assert.equal(state.forwardCalls.length, 2)
+      assert.equal(state.replyCalls[1], __test.MIRAGE_FALLBACK_NOTICE)
+      const fallbackList = state.forwardCalls[1].msgList
+      assert.equal(fallbackList[1]?.type, "image")
+      assert.match(String(fallbackList[1]?.data?.file || ""), /^base64:\/\//)
+    },
+  )
+})
+
 test("pixiv setu command still sends mirage fallback when notice message fails", async () => {
   const pic = createLoliconPic()
 
