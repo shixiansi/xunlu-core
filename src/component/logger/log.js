@@ -3,6 +3,38 @@ import chalk from "chalk"
 import cfg from "../../lib/config.js"
 import fs from "node:fs"
 
+function setLoggerField(target, key, value) {
+  if (!target || (typeof target !== "object" && typeof target !== "function")) return false
+
+  const desc = Object.getOwnPropertyDescriptor(target, key)
+  if (!desc) {
+    target[key] = value
+    return true
+  }
+
+  if ("writable" in desc && desc.writable) {
+    target[key] = value
+    return true
+  }
+
+  if (typeof desc.set === "function") {
+    target[key] = value
+    return true
+  }
+
+  if (desc.configurable) {
+    Object.defineProperty(target, key, {
+      configurable: true,
+      enumerable: desc.enumerable ?? true,
+      writable: true,
+      value,
+    })
+    return true
+  }
+
+  return false
+}
+
 /**
  * 设置日志样式
  */
@@ -91,31 +123,33 @@ export default function setLog() {
 
   /* eslint-disable no-useless-call */
   /** 全局变量 logger */
-  Object.assign(targetLogger, levelMethods)
+  for (const [level, fn] of Object.entries(levelMethods)) {
+    setLoggerField(targetLogger, level, fn)
+  }
 
   const nestedLogger =
     targetLogger.logger && typeof targetLogger.logger === "object" ? targetLogger.logger : {}
 
   for (const [level, fn] of Object.entries(levelMethods)) {
-    nestedLogger[level] = (...args) => fn(...args)
+    setLoggerField(nestedLogger, level, (...args) => fn(...args))
   }
 
   if (typeof targetLogger.log !== "function") {
-    targetLogger.log = (...args) => targetLogger.info(...args)
+    setLoggerField(targetLogger, "log", (...args) => targetLogger.info(...args))
   }
 
-  targetLogger.logger = nestedLogger
+  setLoggerField(targetLogger, "logger", nestedLogger)
   global.logger = targetLogger
 
   logColor()
 }
 
 function logColor() {
-  logger.chalk = chalk
-  logger.red = chalk.red
-  logger.green = chalk.green
-  logger.yellow = chalk.yellow
-  logger.blue = chalk.blue
-  logger.magenta = chalk.magenta
-  logger.cyan = chalk.cyan
+  setLoggerField(logger, "chalk", chalk)
+  setLoggerField(logger, "red", chalk.red)
+  setLoggerField(logger, "green", chalk.green)
+  setLoggerField(logger, "yellow", chalk.yellow)
+  setLoggerField(logger, "blue", chalk.blue)
+  setLoggerField(logger, "magenta", chalk.magenta)
+  setLoggerField(logger, "cyan", chalk.cyan)
 }
