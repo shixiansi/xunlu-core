@@ -80,6 +80,45 @@ function logForwardDebug(stage, detail = {}) {
   getForwardDebugLogger().info?.(`[xunlu-core][forward-debug] ${stage}`, detail)
 }
 
+async function getIcqqGroupMemberInfoCompat(bot, group_id, user_id) {
+  if (typeof bot?.getGroupMemberInfo === "function") {
+    return await bot.getGroupMemberInfo(group_id, user_id)
+  }
+
+  const gid = Number(group_id)
+  const uid = Number(user_id)
+  const group = typeof bot?.pickGroup === "function" ? bot.pickGroup(gid) : null
+  if (group?.pickMember) {
+    const member = group.pickMember(uid)
+    if (!member) return null
+    if (typeof member.getInfo === "function") return await member.getInfo()
+    return member.info ?? member._info ?? member
+  }
+
+  if (typeof bot?.pickMember === "function") {
+    const member = bot.pickMember(gid, uid)
+    if (!member) return null
+    if (typeof member.getInfo === "function") return await member.getInfo()
+    return member.info ?? member._info ?? member
+  }
+
+  throw new Error("icqq getGroupMemberInfo not available")
+}
+
+async function getIcqqGroupMemberListCompat(bot, group_id) {
+  if (typeof bot?.getGroupMemberList === "function") {
+    return await bot.getGroupMemberList(group_id)
+  }
+
+  const gid = Number(group_id)
+  const group = typeof bot?.pickGroup === "function" ? bot.pickGroup(gid) : null
+  if (group?.getMemberMap) {
+    return await group.getMemberMap()
+  }
+
+  throw new Error("icqq getGroupMemberList not available")
+}
+
 /**
  * icqq binding 负责把 yunzai / icqq / takeover 这条历史最重的协议分支封装起来。
  *
@@ -295,8 +334,9 @@ export function createIcqqBinding() {
           if (e.group_id) return await bot.pickGroup(e.group_id).getChatHistory(seq, 1)
           return await bot.pickFriend(e.user_id).getChatHistory(seq, 1)
         }
-        e.getGroupMemberInfo = bot.getGroupMemberInfo.bind(bot)
-        e.getGroupMemberList = bot.getGroupMemberList.bind(bot)
+        e.getGroupMemberInfo = async (group_id, user_id) =>
+          await getIcqqGroupMemberInfoCompat(bot, group_id, user_id)
+        e.getGroupMemberList = async group_id => await getIcqqGroupMemberListCompat(bot, group_id)
       } else if (actualEnvName === "milky") {
         e.adapterType = "milky"
         const bot = globalThis.Bot

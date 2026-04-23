@@ -66,3 +66,68 @@ test("icqq binding decorates event with wrapped onebot protocol before icqq fall
     globalThis.Bot = previousBot
   }
 })
+
+test("icqq binding tolerates missing direct member APIs by falling back to pickGroup", async () => {
+  const binding = createIcqqBinding()
+  const previousBot = globalThis.Bot
+
+  try {
+    globalThis.Bot = {
+      pickGroup(groupId) {
+        return {
+          groupId,
+          async getMemberMap() {
+            return new Map([[10001, { user_id: 10001 }]])
+          },
+          pickMember(userId) {
+            return {
+              async getInfo() {
+                return { group_id: groupId, user_id: userId, nickname: "mock" }
+              },
+            }
+          },
+        }
+      },
+      pickFriend() {
+        return {
+          async getChatHistory() {
+            return []
+          },
+        }
+      },
+    }
+
+    const event = await binding.decorateBindEvent(
+      {
+        group_id: 123,
+        user_id: 10001,
+        seq: 1,
+        message: [{ type: "text", data: { text: "hello" } }],
+      },
+      {
+        envName: "icqq",
+        client: {
+          uin: 10000,
+          QQNT: true,
+        },
+        pluginLoader: {
+          renderImg: async () => "",
+        },
+        fileManager: {
+          package: {
+            name: "Miao-Yunzai",
+          },
+        },
+        sendMessage: async () => ({ ok: true }),
+      },
+    )
+
+    const memberInfo = await event.getGroupMemberInfo(123, 10001)
+    const memberList = await event.getGroupMemberList(123)
+
+    assert.equal(memberInfo?.user_id, 10001)
+    assert.equal(memberList instanceof Map, true)
+  } finally {
+    globalThis.Bot = previousBot
+  }
+})
