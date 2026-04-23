@@ -235,6 +235,55 @@ test("sendGroupMessageReaction prefers OneBot sendApi when takeover bot exposes 
   }
 })
 
+test("sendMessage falls back to ctx.bot pickGroup when runtime adapter cannot send directly", async () => {
+  const previousBot = globalThis.Bot
+  const previousRuntimeBot = globalThis.__xunlu_runtime_bot
+  const calls = []
+
+  globalThis.Bot = {
+    __xunlu_takeover_state: { protocol: "milky" },
+    adapterType: "milky",
+  }
+  globalThis.__xunlu_runtime_bot = undefined
+
+  try {
+    const api = createUniversalBotApi()
+    const ctxBot = {
+      adapter: { name: "OneBotv11" },
+      pickGroup(groupId) {
+        calls.push({ kind: "pickGroup", groupId })
+        return {
+          async sendMsg(message) {
+            calls.push({ kind: "sendMsg", message })
+            return { message_id: 456 }
+          },
+        }
+      },
+    }
+
+    const result = await api.sendMessage.call(
+      {
+        bot: ctxBot,
+        group_id: 123,
+      },
+      { group_id: 123 },
+      "开始执行重启，请稍等...",
+    )
+
+    assert.equal(result?.message_id, 456)
+    assert.deepEqual(calls, [
+      { kind: "pickGroup", groupId: 123 },
+      {
+        kind: "sendMsg",
+        message: [{ type: "text", data: { text: "开始执行重启，请稍等..." } }],
+      },
+    ])
+  } finally {
+    globalThis.Bot = previousBot
+    globalThis.__xunlu_runtime_bot = previousRuntimeBot
+  }
+})
+
 test("forward passthrough stays protocol-native", async () => {
   const milky = createProtocolMock({ protocol: "milky", selfId: 10000 })
   await milky.bot.sendMsg(

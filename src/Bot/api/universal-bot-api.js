@@ -76,6 +76,61 @@ function getDirectOnebotReactionMethod(runtimeBot) {
     : null
 }
 
+function collectMessageBotCandidates(...targets) {
+  const out = []
+  const seen = new Set()
+
+  for (const target of targets) {
+    if (!target || (typeof target !== "object" && typeof target !== "function")) continue
+    if (seen.has(target)) continue
+    seen.add(target)
+    out.push(target)
+  }
+
+  return out
+}
+
+async function sendMessageViaCandidate(candidate, target, message, sendTarget) {
+  if (!candidate || (typeof candidate !== "object" && typeof candidate !== "function")) return null
+
+  if (typeof candidate.sendMsg === "function") {
+    return await candidate.sendMsg(sendTarget, message)
+  }
+
+  if (target?.scene === "group") {
+    const groupId = toInt(target.group_id) ?? target.group_id
+
+    if (typeof candidate.sendGroupMsg === "function") {
+      return await candidate.sendGroupMsg(groupId, message)
+    }
+
+    if (typeof candidate.pickGroup === "function") {
+      const group = candidate.pickGroup(groupId)
+      if (group?.sendMsg) return await group.sendMsg(message)
+    }
+
+    return null
+  }
+
+  const userId = toInt(target?.user_id) ?? target?.user_id
+
+  if (typeof candidate.sendPrivateMsg === "function") {
+    return await candidate.sendPrivateMsg(userId, message)
+  }
+
+  if (typeof candidate.pickFriend === "function") {
+    const friend = candidate.pickFriend(userId)
+    if (friend?.sendMsg) return await friend.sendMsg(message)
+  }
+
+  if (typeof candidate.pickUser === "function") {
+    const user = candidate.pickUser(userId)
+    if (user?.sendMsg) return await user.sendMsg(message)
+  }
+
+  return null
+}
+
 export function createUniversalBotApi({ bot, adapterHint } = {}) {
   const api = {
     getBot() {
@@ -612,27 +667,15 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
 
       const t = normalizeTarget(target, ctx)
       const sendTarget = toSendTargetObject(t)
+      const candidateBots = collectMessageBotCandidates(ctx?.bot, runtimeBot, globalThis.Bot)
 
       // onebot node 转发：必须透传，否则会被转换成文本
       if (protocol === "onebotv11" && hasOnebotNodeSegments(message)) {
-        if (runtimeBot?.sendMsg) {
-          const res = await runtimeBot.sendMsg(sendTarget, message)
+        for (const candidate of candidateBots) {
+          const res = await sendMessageViaCandidate(candidate, t, message, sendTarget)
+          if (!res) continue
           rememberOutgoingGroupMessage(sendTarget, message, { ctx, runtimeBot })
           return res
-        }
-
-        if (runtimeBot) {
-          if (t.scene === "group" && runtimeBot.pickGroup) {
-            const res = await runtimeBot.pickGroup(toInt(t.group_id) ?? t.group_id).sendMsg(message)
-            rememberOutgoingGroupMessage(sendTarget, message, { ctx, runtimeBot })
-            return res
-          }
-          if (runtimeBot.pickFriend) {
-            return await runtimeBot.pickFriend(toInt(t.user_id) ?? t.user_id).sendMsg(message)
-          }
-          if (runtimeBot.pickUser) {
-            return await runtimeBot.pickUser(toInt(t.user_id) ?? t.user_id).sendMsg(message)
-          }
         }
 
         throw new Error("[sendMessage] onebotv11 forward requires sendMsg or pickGroup/pickFriend")
@@ -640,8 +683,9 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
 
       // milky forward 段：如果已经是原生 forward 格式则透传
       if (protocol === "milky" && hasMilkyForwardSegments(message)) {
-        if (runtimeBot?.sendMsg) {
-          const res = await runtimeBot.sendMsg(sendTarget, message)
+        for (const candidate of candidateBots) {
+          const res = await sendMessageViaCandidate(candidate, t, message, sendTarget)
+          if (!res) continue
           rememberOutgoingGroupMessage(sendTarget, message, { ctx, runtimeBot })
           return res
         }
@@ -652,8 +696,9 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
         message instanceof UniversalMessage ? message : coerceToUniversalMessage(message)
       const outSegments = universalMsg.convertTo(protocol)
 
-      if (runtimeBot?.sendMsg) {
-        const res = await runtimeBot.sendMsg(sendTarget, outSegments)
+      for (const candidate of candidateBots) {
+        const res = await sendMessageViaCandidate(candidate, t, outSegments, sendTarget)
+        if (!res) continue
         rememberOutgoingGroupMessage(sendTarget, outSegments, { ctx, runtimeBot })
         return res
       }
