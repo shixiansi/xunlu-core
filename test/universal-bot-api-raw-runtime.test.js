@@ -73,3 +73,41 @@ test("universal bot api detects onebot runtime behind yunzai icqq wrapper for ra
     globalThis.Bot = previousBot
   }
 })
+
+test("universal bot api forwards onebot node message through pickGroup when runtime bot lacks sendMsg", async () => {
+  const calls = []
+  const previousBot = globalThis.Bot
+  const previousRawRuntimeBot = globalThis.__xunlu_runtime_bot
+
+  try {
+    globalThis.__xunlu_runtime_bot = {
+      botQQ: 2548285036,
+      2548285036: {
+        adapter: {
+          name: "OneBotV11",
+        },
+      },
+      pickGroup(groupId) {
+        return {
+          async sendMsg(message) {
+            calls.push({ groupId, message })
+            return { ok: true, via: "pickGroup" }
+          },
+        }
+      },
+    }
+    globalThis.Bot = globalThis.__xunlu_runtime_bot
+
+    const api = createUniversalBotApi({ bot: { adapter: "icqq" }, adapterHint: "icqq" })
+    const message = [{ type: "node", data: { uin: 10001, name: "mock", content: "hello" } }]
+    const res = await api.sendMessage({ group_id: 123456 }, message)
+
+    assert.deepEqual(res, { ok: true, via: "pickGroup" })
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0].groupId, 123456)
+    assert.deepEqual(calls[0].message, message)
+  } finally {
+    globalThis.__xunlu_runtime_bot = previousRawRuntimeBot
+    globalThis.Bot = previousBot
+  }
+})

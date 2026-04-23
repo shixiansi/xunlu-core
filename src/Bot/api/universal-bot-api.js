@@ -571,7 +571,22 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
           rememberOutgoingGroupMessage(sendTarget, message, { ctx, runtimeBot })
           return res
         }
-        throw new Error("[sendMessage] onebotv11 forward requires sendMsg")
+
+        if (runtimeBot) {
+          if (t.scene === "group" && runtimeBot.pickGroup) {
+            const res = await runtimeBot.pickGroup(toInt(t.group_id) ?? t.group_id).sendMsg(message)
+            rememberOutgoingGroupMessage(sendTarget, message, { ctx, runtimeBot })
+            return res
+          }
+          if (runtimeBot.pickFriend) {
+            return await runtimeBot.pickFriend(toInt(t.user_id) ?? t.user_id).sendMsg(message)
+          }
+          if (runtimeBot.pickUser) {
+            return await runtimeBot.pickUser(toInt(t.user_id) ?? t.user_id).sendMsg(message)
+          }
+        }
+
+        throw new Error("[sendMessage] onebotv11 forward requires sendMsg or pickGroup/pickFriend")
       }
 
       // milky forward 段：如果已经是原生 forward 格式则透传
