@@ -646,14 +646,66 @@ function normalizeDurationSecondsByScale(value, scale = 1) {
   return Math.max(1, Math.round(num / divisor))
 }
 
-function normalizeVideoDurationSeconds(value) {
+function estimateDurationSecondsByDataSize(dataSize = 0, bitRate = 0) {
+  const size = normalizePositiveNumber(dataSize)
+  const rate = normalizePositiveNumber(bitRate)
+  if (!size || !rate) return 0
+  return Math.max(1, Math.round((size * 8) / rate))
+}
+
+function estimateDurationSecondsByStreams(streams = []) {
+  const estimates = (Array.isArray(streams) ? streams : [])
+    .map(stream =>
+      estimateDurationSecondsByDataSize(
+        stream?.dataSize ?? stream?.data_size,
+        stream?.bitRate ?? stream?.bit_rate,
+      ),
+    )
+    .filter(value => Number.isFinite(value) && value > 0 && value <= 4 * 3600)
+
+  if (estimates.length === 0) return 0
+  estimates.sort((a, b) => a - b)
+  return estimates[Math.floor(estimates.length / 2)]
+}
+
+function normalizeVideoDurationSeconds(value, { estimatedSec = 0 } = {}) {
   const num = normalizePositiveNumber(value)
   if (!num) return 0
-  if (num >= 1000000000) return normalizeDurationSecondsByScale(num, 1000000)
-  if (num >= 10000000 && num % 1000 !== 0) return normalizeDurationSecondsByScale(num, 1000000)
-  if (num >= 10000) return normalizeDurationSecondsByScale(num, 1000)
-  if (num >= 1000 && num % 1000 === 0) return normalizeDurationSecondsByScale(num, 1000)
-  return Math.floor(num)
+
+  const candidates = []
+  const seen = new Set()
+  const pushCandidate = (seconds, priority) => {
+    const normalized = Math.floor(normalizePositiveNumber(seconds))
+    if (!normalized || normalized > 4 * 3600 || seen.has(normalized)) return
+    seen.add(normalized)
+    candidates.push({ seconds: normalized, priority })
+  }
+
+  if (num <= 1000) {
+    pushCandidate(num, 100)
+  } else {
+    pushCandidate(normalizeDurationSecondsByScale(num, 1000), 100)
+    pushCandidate(Math.floor(num), 10)
+  }
+
+  if (num >= 1000000) {
+    pushCandidate(normalizeDurationSecondsByScale(num, 1000000), 90)
+  }
+
+  if (candidates.length === 0) return 0
+
+  if (estimatedSec > 0) {
+    candidates.sort((a, b) => {
+      const aRatio = Math.abs(a.seconds - estimatedSec) / Math.max(estimatedSec, 1)
+      const bRatio = Math.abs(b.seconds - estimatedSec) / Math.max(estimatedSec, 1)
+      if (aRatio !== bRatio) return aRatio - bRatio
+      return b.priority - a.priority
+    })
+    return candidates[0]?.seconds || 0
+  }
+
+  candidates.sort((a, b) => b.priority - a.priority)
+  return candidates[0]?.seconds || 0
 }
 
 function shouldPreferMusicDuration(videoDuration = 0, musicDuration = 0) {
@@ -687,7 +739,7 @@ function normalizeMusicData(candidate = {}) {
   }
 }
 
-function pickVideoDurationSeconds(source = {}, video = {}, musicDuration = 0) {
+function pickVideoDurationSeconds(source = {}, video = {}, streams = [], musicDuration = 0) {
   const addressDurationFields = [
     video?.download_addr?.duration,
     video?.downloadAddr?.duration,
@@ -700,17 +752,18 @@ function pickVideoDurationSeconds(source = {}, video = {}, musicDuration = 0) {
   ]
 
   let duration = 0
+  const estimatedSec = estimateDurationSecondsByStreams(streams)
 
   // Prefer asset-side duration when available. Some detail payloads expose a
   // noisy top-level video.duration, which can incorrectly trip the 30-minute guard.
   for (const value of addressDurationFields) {
-    duration = normalizeDurationSecondsByScale(value, 1000)
+    duration = normalizeVideoDurationSeconds(value, { estimatedSec })
     if (duration > 0) break
   }
 
   if (!duration) {
     for (const value of [video?.duration, source?.duration]) {
-      duration = normalizeVideoDurationSeconds(value)
+      duration = normalizeVideoDurationSeconds(value, { estimatedSec })
       if (duration > 0) break
     }
   }
@@ -906,7 +959,7 @@ function normalizeVideoData(candidate = {}, musicDuration = 0) {
     pickFirstUrl(video?.dynamic_cover) ||
     pickFirstUrl(video?.origin_cover) ||
     ""
-  const duration = pickVideoDurationSeconds(source, video, musicDuration)
+  const duration = pickVideoDurationSeconds(source, video, streams, musicDuration)
   return {
     url: playUrl,
     cover,

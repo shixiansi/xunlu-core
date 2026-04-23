@@ -5,6 +5,7 @@ import DouyinService, {
   formatCount,
   formatShortText,
 } from "../services/douyin-service.js"
+import { VIDEO_MAX_BYTES } from "../services/douyin-runtime.js"
 
 const ACTIVE_SESSION_KEY = "global"
 const QR_POLL_INTERVAL_MS = 5000
@@ -191,6 +192,26 @@ function formatVideoStreamQuality(stream = {}) {
   if (height > 0) return `${height}P`
 
   return "当前可用档位"
+}
+
+function getVideoStreamDataSize(stream = {}) {
+  const size = Number(stream?.dataSize ?? stream?.data_size ?? 0)
+  return Number.isFinite(size) && size > 0 ? Math.floor(size) : 0
+}
+
+function getVideoSkipReason(aweme = {}) {
+  const durationSec = Number(aweme?.video?.duration || 0)
+  if (durationSec > DOUYIN_VIDEO_MAX_DURATION_SEC) {
+    return `视频时长超过30分钟，已跳过视频解析，请前往抖音查看原链接。\\n链接：${aweme?.link || "无"}`
+  }
+
+  const streams = getOrderedVideoStreams(aweme)
+  const sizedStreams = streams.map(getVideoStreamDataSize).filter(size => size > 0)
+  if (sizedStreams.length > 0 && sizedStreams.every(size => size > VIDEO_MAX_BYTES)) {
+    return `当前视频所有可用清晰度均超过 ${Math.round(VIDEO_MAX_BYTES / 1024 / 1024)}MB，已跳过视频发送，请前往抖音查看原链接。\\n链接：${aweme?.link || "无"}`
+  }
+
+  return ""
 }
 
 function isOversizedVideoError(err) {
@@ -505,13 +526,9 @@ async function handleDouyinParse(ctx) {
 
   await sendSummaryCard(ctx, aweme)
 
-  if (
-    aweme?.type === "video" &&
-    Number(aweme?.video?.duration || 0) > DOUYIN_VIDEO_MAX_DURATION_SEC
-  ) {
-    await ctx.reply(
-      `视频时长超过30分钟，已跳过视频解析，请前往抖音查看原链接。\n链接：${aweme?.link || "无"}`,
-    )
+  const skipReason = aweme?.type === "video" ? getVideoSkipReason(aweme) : ""
+  if (skipReason) {
+    await ctx.reply(skipReason)
     return true
   }
 
@@ -556,6 +573,7 @@ export {
   buildSummaryMessage,
   buildCookieImportGuide,
   extractFirstDouyinUrlFromContext,
+  getVideoSkipReason,
   handleCookieLoginCommand,
   handleDouyinParse,
   handleQrLoginCommand,
