@@ -4,6 +4,8 @@ import test from "node:test"
 import { fileURLToPath } from "node:url"
 
 import { createPluginTestHarness } from "../src/dev/plugin-test-harness.js"
+import { createUniversalBotApi } from "../src/Bot/api/universal-bot-api.js"
+import { resolveProtocol } from "../src/Bot/api/universal-bot-api-utils.js"
 import {
   patchImageSegmentsWithRkeyValue,
   sendLearningSegments,
@@ -163,6 +165,73 @@ test("synthetic command events prefer takeover protocol over local icqq adapter 
     assert.equal(event.protocol, "milky")
   } finally {
     globalThis.Bot = previousBot
+  }
+})
+
+test("resolveProtocol prefers ctx.bot adapter identity over takeover runtime fallback", () => {
+  const protocol = resolveProtocol({
+    ctx: {
+      bot: {
+        adapter: { name: "OneBotv11" },
+      },
+    },
+    runtimeBot: {
+      adapterType: "milky",
+    },
+  })
+
+  assert.equal(protocol, "onebotv11")
+})
+
+test("sendGroupMessageReaction prefers OneBot sendApi when takeover bot exposes milky wrapper", async () => {
+  const previousBot = globalThis.Bot
+  const previousRuntimeBot = globalThis.__xunlu_runtime_bot
+  const calls = []
+
+  const wrappedBot = {
+    __xunlu_takeover_state: { protocol: "milky" },
+    adapterType: "milky",
+    async sendGroupMessageReaction() {
+      calls.push({ kind: "wrapped-reaction" })
+      throw new Error("should not call wrapped reaction")
+    },
+  }
+
+  const ctxBot = {
+    adapter: { name: "OneBotv11" },
+    async sendApi(action, params) {
+      calls.push({ kind: "sendApi", action, params })
+      return { ok: true }
+    },
+  }
+
+  globalThis.Bot = wrappedBot
+  globalThis.__xunlu_runtime_bot = undefined
+
+  try {
+    const api = createUniversalBotApi()
+    await api.sendGroupMessageReaction.call(
+      {
+        bot: ctxBot,
+        group_id: 123,
+        message_id: "456",
+      },
+      { reaction: 277 },
+    )
+
+    assert.deepEqual(calls, [
+      {
+        kind: "sendApi",
+        action: "set_msg_emoji_like",
+        params: {
+          message_id: "456",
+          emoji_id: 277,
+        },
+      },
+    ])
+  } finally {
+    globalThis.Bot = previousBot
+    globalThis.__xunlu_runtime_bot = previousRuntimeBot
   }
 })
 

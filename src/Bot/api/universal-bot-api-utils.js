@@ -81,6 +81,35 @@ export function normalizeProtocol(value) {
   return "icqq"
 }
 
+function pickProtocolIdentity(raw) {
+  const value = String(raw || "").toLowerCase()
+  if (!value) return ""
+  if (value.includes("onebot") || value.includes("milky") || value.includes("icqq")) {
+    return value
+  }
+  return ""
+}
+
+function getAdapterIdentity(target) {
+  if (!target || typeof target !== "object") return ""
+  return pickProtocolIdentity(
+    target?.adapter?.name ?? target?.adapterType ?? target?.adapter_name ?? target?.constructor?.name,
+  )
+}
+
+function getSubAdapterIdentity(target) {
+  if (!target || typeof target !== "object") return ""
+  const botQQ = target.botQQ
+  if (botQQ === undefined || botQQ === null) return ""
+  const subBot = target[botQQ]
+  return pickProtocolIdentity(
+    subBot?.adapter?.name ??
+      subBot?.adapterType ??
+      subBot?.adapter_name ??
+      subBot?.constructor?.name,
+  )
+}
+
 export function resolveProtocol({ ctx, bot, runtimeBot, adapterHint } = {}) {
   const fromCtx = ctx && typeof ctx.protocol === "string" ? String(ctx.protocol).toLowerCase() : ""
   if (fromCtx) return normalizeProtocol(fromCtx)
@@ -89,24 +118,24 @@ export function resolveProtocol({ ctx, bot, runtimeBot, adapterHint } = {}) {
     ctx && typeof ctx.adapterType === "string" ? String(ctx.adapterType).toLowerCase() : ""
   if (fromCtxAdapter) return normalizeProtocol(fromCtxAdapter)
 
-  const fromRuntime =
-    runtimeBot && typeof runtimeBot.adapterType === "string"
-      ? String(runtimeBot.adapterType).toLowerCase()
-      : ""
+  const fromCtxBot = getAdapterIdentity(ctx?.bot)
+  if (fromCtxBot) return normalizeProtocol(fromCtxBot)
+
+  const fromCtxBotSubAdapter = getSubAdapterIdentity(ctx?.bot)
+  if (fromCtxBotSubAdapter) return normalizeProtocol(fromCtxBotSubAdapter)
+
+  const fromRuntime = getAdapterIdentity(runtimeBot)
   if (fromRuntime) return normalizeProtocol(fromRuntime)
 
-  const runtimeSubAdapterName = (() => {
-    if (!runtimeBot || typeof runtimeBot !== "object") return ""
-    const botQQ = runtimeBot.botQQ
-    if (botQQ === undefined || botQQ === null) return ""
-    const subBot = runtimeBot[botQQ]
-    const raw = subBot?.adapter?.name ?? subBot?.adapterType ?? subBot?.adapter_name
-    return raw ? String(raw).toLowerCase() : ""
-  })()
+  const runtimeSubAdapterName = getSubAdapterIdentity(runtimeBot)
   if (runtimeSubAdapterName) return normalizeProtocol(runtimeSubAdapterName)
 
-  const fromBot = bot && typeof bot.adapter === "string" ? String(bot.adapter).toLowerCase() : ""
+  const fromBot =
+    bot && typeof bot.adapter === "string" ? String(bot.adapter).toLowerCase() : getAdapterIdentity(bot)
   if (fromBot) return normalizeProtocol(fromBot)
+
+  const fromBotSubAdapter = getSubAdapterIdentity(bot)
+  if (fromBotSubAdapter) return normalizeProtocol(fromBotSubAdapter)
 
   const fromHint = adapterHint ? String(adapterHint).toLowerCase() : ""
   if (fromHint) return normalizeProtocol(fromHint)

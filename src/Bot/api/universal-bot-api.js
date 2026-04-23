@@ -27,6 +27,55 @@ import {
   toSendTargetObject,
 } from "./universal-bot-api-utils.js"
 
+function getOnebotReactionSendApiCandidate(target) {
+  if (!target || (typeof target !== "object" && typeof target !== "function")) return null
+
+  if (typeof target.__xunlu_raw_sendApi === "function") {
+    return target.__xunlu_raw_sendApi.bind(target)
+  }
+
+  if (target.__xunlu_takeover_state) return null
+
+  if (typeof target.sendApi === "function" && !target.sendApi?.__xunlu_universal) {
+    return target.sendApi.bind(target)
+  }
+
+  return null
+}
+
+function getOnebotReactionSendApi({ ctx, runtimeBot } = {}) {
+  return (
+    getOnebotReactionSendApiCandidate(ctx?.bot) ||
+    getOnebotReactionSendApiCandidate(globalThis.Bot) ||
+    getOnebotReactionSendApiCandidate(runtimeBot)
+  )
+}
+
+function getDirectOnebotReactionMethod(runtimeBot) {
+  if (!runtimeBot || (typeof runtimeBot !== "object" && typeof runtimeBot !== "function")) {
+    return null
+  }
+
+  if (typeof runtimeBot.__xunlu_raw_sendGroupMessageReaction === "function") {
+    return runtimeBot.__xunlu_raw_sendGroupMessageReaction.bind(runtimeBot)
+  }
+
+  if (runtimeBot.__xunlu_takeover_state) return null
+
+  const adapterIdentity = String(
+    runtimeBot?.adapterType ??
+      runtimeBot?.adapter?.name ??
+      runtimeBot?.adapter_name ??
+      runtimeBot?.constructor?.name ??
+      "",
+  ).toLowerCase()
+  if (!adapterIdentity.includes("onebot")) return null
+
+  return typeof runtimeBot.sendGroupMessageReaction === "function"
+    ? runtimeBot.sendGroupMessageReaction.bind(runtimeBot)
+    : null
+}
+
 export function createUniversalBotApi({ bot, adapterHint } = {}) {
   const api = {
     getBot() {
@@ -734,27 +783,23 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       }
 
       if (protocol === "onebotv11") {
-        const raw =
-          runtimeBot?.__xunlu_raw_sendGroupMessageReaction ||
-          runtimeBot?.sendGroupMessageReaction ||
-          null
         if (!messageId) throw new Error("[sendGroupMessageReaction] onebotv11 requires message_id")
         if (reactionRaw === undefined || reactionRaw === null || reactionRaw === "")
           throw new Error("[sendGroupMessageReaction] onebotv11 requires reaction")
 
-        if (raw) {
-          return await raw.call(runtimeBot, {
-            message_id: messageId,
-            emoji_id: Number(reactionRaw),
-          })
+        const params = {
+          message_id: messageId,
+          emoji_id: Number(reactionRaw),
         }
 
-        const sendApi = getYunzaiSendApi(runtimeBot)
+        const sendApi = getOnebotReactionSendApi({ ctx, runtimeBot })
         if (sendApi) {
-          return await sendApi("set_msg_emoji_like", {
-            message_id: messageId,
-            emoji_id: Number(reactionRaw),
-          })
+          return await sendApi("set_msg_emoji_like", params)
+        }
+
+        const raw = getDirectOnebotReactionMethod(runtimeBot)
+        if (raw) {
+          return await raw(params)
         }
 
         throw new Error("[sendGroupMessageReaction] onebotv11 API not available")
