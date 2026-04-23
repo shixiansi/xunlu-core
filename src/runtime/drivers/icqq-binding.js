@@ -9,6 +9,50 @@ function defaultNormalizeEnv(raw) {
   return "icqq"
 }
 
+function getForwardDebugLogger() {
+  const l = globalThis.logger
+  if (l && typeof l.info === "function") return l
+  return console
+}
+
+function summarizeForwardInput(messages = []) {
+  const list = Array.isArray(messages) ? messages : messages ? [messages] : []
+  return list.slice(0, 3).map(item => ({
+    user_id: item?.user_id ?? item?.uin ?? item?.id ?? null,
+    nickname: item?.nickname ?? item?.sender_name ?? item?.name ?? null,
+    contentTypes: (Array.isArray(item?.message) ? item.message : item?.message ? [item.message] : [])
+      .slice(0, 5)
+      .map(seg => (seg && typeof seg === "object" ? seg.type || typeof seg : typeof seg)),
+  }))
+}
+
+function summarizeForwardOutput(payload) {
+  if (Array.isArray(payload)) {
+    return {
+      shape: "array",
+      length: payload.length,
+      itemTypes: payload
+        .slice(0, 5)
+        .map(item => (item && typeof item === "object" ? item.type || typeof item : typeof item)),
+    }
+  }
+
+  if (payload && typeof payload === "object") {
+    return {
+      shape: "object",
+      type: payload.type || "",
+      keys: Object.keys(payload).slice(0, 8),
+      dataShape: Array.isArray(payload.data) ? "array" : typeof payload.data,
+    }
+  }
+
+  return { shape: typeof payload, preview: String(payload || "") }
+}
+
+function logForwardDebug(stage, detail = {}) {
+  getForwardDebugLogger().info?.(`[xunlu-core][forward-debug] ${stage}`, detail)
+}
+
 /**
  * icqq binding 负责把 yunzai / icqq / takeover 这条历史最重的协议分支封装起来。
  *
@@ -42,13 +86,49 @@ export function createIcqqBinding() {
 
       bot.sendMessage = sendMessage
       bot.makeGroupForwardMsg = async (msg, group_id) => {
+        const detail = {
+          envName,
+          group_id: group_id ?? null,
+          packageName: fileManager?.package?.name || "",
+          input: summarizeForwardInput(msg),
+        }
         if (envName == "OneBotv11" && fileManager?.package?.name != "trss-yunzai") {
           let { OneBotV11Adapter } = await import("../../Bot/adapter/index.js")
-          return new OneBotV11Adapter().makeForwardMsg(msg)
+          logForwardDebug("runtimeBot.makeGroupForwardMsg:route", {
+            ...detail,
+            route: "OneBotV11Adapter.makeForwardMsg",
+          })
+          const result = new OneBotV11Adapter().makeForwardMsg(msg)
+          logForwardDebug("runtimeBot.makeGroupForwardMsg:result", {
+            ...detail,
+            route: "OneBotV11Adapter.makeForwardMsg",
+            output: summarizeForwardOutput(result),
+          })
+          return result
         } else if (fileManager?.package?.name == "trss-yunzai") {
-          return { type: "node", data: msg }
+          logForwardDebug("runtimeBot.makeGroupForwardMsg:route", {
+            ...detail,
+            route: "trss-yunzai.node-wrapper",
+          })
+          const result = { type: "node", data: msg }
+          logForwardDebug("runtimeBot.makeGroupForwardMsg:result", {
+            ...detail,
+            route: "trss-yunzai.node-wrapper",
+            output: summarizeForwardOutput(result),
+          })
+          return result
         } else {
-          return await bot.pickGroup(group_id).makeForwardMsg(msg)
+          logForwardDebug("runtimeBot.makeGroupForwardMsg:route", {
+            ...detail,
+            route: "bot.pickGroup(...).makeForwardMsg",
+          })
+          const result = await bot.pickGroup(group_id).makeForwardMsg(msg)
+          logForwardDebug("runtimeBot.makeGroupForwardMsg:result", {
+            ...detail,
+            route: "bot.pickGroup(...).makeForwardMsg",
+            output: summarizeForwardOutput(result),
+          })
+          return result
         }
       }
 
