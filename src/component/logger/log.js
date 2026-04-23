@@ -57,9 +57,14 @@ export default function setLog() {
   const commandLogger = log4js.getLogger("command")
   const errorLogger = log4js.getLogger("error")
 
-  /* eslint-disable no-useless-call */
-  /** 全局变量 logger */
-  global.logger = {
+  const previousLogger =
+    globalThis.logger &&
+    (typeof globalThis.logger === "object" || typeof globalThis.logger === "function")
+      ? globalThis.logger
+      : null
+  const targetLogger = previousLogger || {}
+
+  const levelMethods = {
     trace() {
       defaultLogger.trace.call(defaultLogger, ...arguments)
     },
@@ -83,6 +88,24 @@ export default function setLog() {
       errorLogger.mark.call(commandLogger, ...arguments)
     },
   }
+
+  /* eslint-disable no-useless-call */
+  /** 全局变量 logger */
+  Object.assign(targetLogger, levelMethods)
+
+  const nestedLogger =
+    targetLogger.logger && typeof targetLogger.logger === "object" ? targetLogger.logger : {}
+
+  for (const [level, fn] of Object.entries(levelMethods)) {
+    nestedLogger[level] = (...args) => fn(...args)
+  }
+
+  if (typeof targetLogger.log !== "function") {
+    targetLogger.log = (...args) => targetLogger.info(...args)
+  }
+
+  targetLogger.logger = nestedLogger
+  global.logger = targetLogger
 
   logColor()
 }
