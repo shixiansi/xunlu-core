@@ -3,36 +3,73 @@ import chalk from "chalk"
 import cfg from "../../lib/config.js"
 import fs from "node:fs"
 
+function findInheritedDescriptor(target, key) {
+  let cursor = Object.getPrototypeOf(target)
+  while (cursor) {
+    const desc = Object.getOwnPropertyDescriptor(cursor, key)
+    if (desc) return desc
+    cursor = Object.getPrototypeOf(cursor)
+  }
+  return null
+}
+
 function setLoggerField(target, key, value) {
   if (!target || (typeof target !== "object" && typeof target !== "function")) return false
 
-  const desc = Object.getOwnPropertyDescriptor(target, key)
-  if (!desc) {
-    target[key] = value
-    return true
-  }
+  try {
+    const desc = Object.getOwnPropertyDescriptor(target, key)
+    if (desc) {
+      if (
+        (Object.prototype.hasOwnProperty.call(desc, "writable") && desc.writable) ||
+        typeof desc.set === "function"
+      ) {
+        return Reflect.set(target, key, value)
+      }
 
-  if ("writable" in desc && desc.writable) {
-    target[key] = value
-    return true
-  }
+      if (desc.configurable) {
+        Object.defineProperty(target, key, {
+          configurable: true,
+          enumerable: desc.enumerable ?? true,
+          writable: true,
+          value,
+        })
+        return true
+      }
 
-  if (typeof desc.set === "function") {
-    target[key] = value
-    return true
-  }
+      return false
+    }
 
-  if (desc.configurable) {
+    const inheritedDesc = findInheritedDescriptor(target, key)
+    if (inheritedDesc) {
+      if (typeof inheritedDesc.set === "function") {
+        return Reflect.set(target, key, value)
+      }
+
+      if (!Object.isExtensible(target)) return false
+
+      Object.defineProperty(target, key, {
+        configurable: true,
+        enumerable: inheritedDesc.enumerable ?? true,
+        writable: true,
+        value,
+      })
+      return true
+    }
+
+    if (!Object.isExtensible(target)) {
+      return Reflect.set(target, key, value)
+    }
+
     Object.defineProperty(target, key, {
       configurable: true,
-      enumerable: desc.enumerable ?? true,
+      enumerable: true,
       writable: true,
       value,
     })
     return true
+  } catch {
+    return false
   }
-
-  return false
 }
 
 /**
