@@ -6,6 +6,27 @@ import { installTestRuntime } from "./helpers/test-runtime.js"
 
 installTestRuntime(test)
 
+test("auto adapter order prefers icqq before onebotv11 and milky", async () => {
+  assert.deepEqual(takeoverTest.getAutoAdapterOrder(), ["icqq", "onebotv11", "milky"])
+
+  const runtimeBot = {
+    uin: 2548285036,
+    nickname: "icqq-bot",
+    pickGroup() {
+      return { kind: "icqq-group" }
+    },
+    pickFriend() {
+      return { kind: "icqq-friend" }
+    },
+  }
+
+  const result = await takeoverTest.connectAdapterByName("auto", { runtimeBot })
+
+  assert.equal(result.protocol, "icqq")
+  assert.equal(result.adapter, runtimeBot)
+  assert.equal(result.loginInfoRaw?.uin, 2548285036)
+})
+
 test("patchYunzaiBot binds Bot[uin] to raw adapter instead of proxy itself", () => {
   const rawBot = {
     uin: 2548285036,

@@ -144,9 +144,14 @@ function installTakeoverBotCompatProxy(bot) {
 function normalizeAdapterName(name) {
   const v = String(name || "").toLowerCase()
   if (v === "auto") return "auto"
+  if (v === "icqq") return "icqq"
   if (v === "milky") return "milky"
   if (v === "onebotv11" || v === "onebot-v11" || v === "onebot") return "onebotv11"
   return "auto"
+}
+
+function getAutoAdapterOrder() {
+  return ["icqq", "onebotv11", "milky"]
 }
 
 function preprocessOutboundMessage(input) {
@@ -211,6 +216,14 @@ function preprocessOutboundMessage(input) {
 
 function getLoginInfoFromAdapter(protocol, loginInfoRaw) {
   const loginInfo = loginInfoRaw && typeof loginInfoRaw === "object" ? loginInfoRaw : {}
+
+  if (protocol === "icqq") {
+    const uin = toInt(
+      loginInfo.uin ?? loginInfo.self_id ?? loginInfo.user_id ?? loginInfo.userId ?? loginInfo.botQQ,
+    )
+    const nickname = String(loginInfo.nickname ?? loginInfo.name ?? "")
+    return { uin, nickname }
+  }
 
   if (protocol === "milky") {
     const uin = toInt(loginInfo.uin ?? loginInfo.user_id ?? loginInfo.userId)
@@ -1199,8 +1212,45 @@ function patchYunzaiBot(bot, state, { loginInfo } = {}) {
   bot.isOnline = () => true
 }
 
-async function connectAdapterByName(adapterName, { botCfg = {}, onebotCfg = {} } = {}) {
+async function connectAdapterByName(
+  adapterName,
+  { botCfg = {}, onebotCfg = {}, runtimeBot = null } = {},
+) {
   const name = normalizeAdapterName(adapterName)
+
+  const tryIcqq = async runtimeBot => {
+    const candidate = runtimeBot && typeof runtimeBot === "object" ? runtimeBot : null
+    const loginInfoRaw =
+      typeof candidate?.getLoginInfo === "function"
+        ? await candidate.getLoginInfo().catch(() => null)
+        : null
+    const fallbackInfo = {
+      uin: candidate?.uin ?? candidate?.self_id ?? candidate?.user_id ?? candidate?.botQQ,
+      nickname: candidate?.nickname,
+    }
+    const loginInfo = loginInfoRaw && typeof loginInfoRaw === "object" ? loginInfoRaw : fallbackInfo
+    const uin = toInt(
+      loginInfo?.uin ??
+        loginInfo?.self_id ??
+        loginInfo?.user_id ??
+        loginInfo?.userId ??
+        loginInfo?.botQQ,
+    )
+    const hasIcqqApis = Boolean(
+      candidate &&
+        (typeof candidate.pickGroup === "function" ||
+          typeof candidate.pickFriend === "function" ||
+          typeof candidate.pickUser === "function" ||
+          typeof candidate.sendGroupMsg === "function" ||
+          typeof candidate.sendPrivateMsg === "function"),
+    )
+
+    if (!candidate || !hasIcqqApis || uin === undefined) {
+      throw new Error("[xunlu-core][takeover] icqq runtime bot unavailable")
+    }
+
+    return { protocol: "icqq", adapter: candidate, loginInfoRaw: loginInfo }
+  }
 
   const tryMilky = async () => {
     const adapter = new MilkyAdapter({ ...(botCfg || {}) })
@@ -1218,16 +1268,25 @@ async function connectAdapterByName(adapterName, { botCfg = {}, onebotCfg = {} }
     return { protocol: "onebotv11", adapter, loginInfoRaw }
   }
 
+  if (name === "icqq") return await tryIcqq(runtimeBot)
   if (name === "milky") return await tryMilky()
   if (name === "onebotv11") return await tryOnebot()
 
   // auto
-  try {
-    return await tryMilky()
-  } catch (err) {
-    logWarn("[xunlu-core][takeover] milky connect failed, fallback onebotv11:", err?.message || err)
+  for (const protocol of getAutoAdapterOrder()) {
+    try {
+      if (protocol === "icqq") return await tryIcqq(runtimeBot)
+      if (protocol === "onebotv11") return await tryOnebot()
+      if (protocol === "milky") return await tryMilky()
+    } catch (err) {
+      logWarn(
+        `[xunlu-core][takeover] ${protocol} connect failed, fallback next adapter:`,
+        err?.message || err,
+      )
+    }
   }
-  return await tryOnebot()
+
+  throw new Error("[xunlu-core][takeover] no available adapter found for auto mode")
 }
 
 export async function startYunzaiTakeover({ bot, ignoreSelf } = {}) {
@@ -1244,10 +1303,20 @@ export async function startYunzaiTakeover({ bot, ignoreSelf } = {}) {
 
   logInfo("[xunlu-core][takeover] starting...", { adapter: adapterName })
 
-  const { protocol, adapter, loginInfoRaw } = await connectAdapterByName(adapterName, { botCfg, onebotCfg })
+  const { protocol, adapter, loginInfoRaw } = await connectAdapterByName(adapterName, {
+    botCfg,
+    onebotCfg,
+    runtimeBot,
+  })
   const loginInfo = getLoginInfoFromAdapter(protocol, loginInfoRaw)
 
   logInfo("[xunlu-core][takeover] adapter ready:", { protocol, uin: loginInfo.uin, nickname: loginInfo.nickname })
+
+  if (protocol === "icqq") {
+    globalThis.__xunlu_runtime_bot = runtimeBot
+    runtimeBot.__xunlu_takeover_started = { protocol, loginInfo, adapterName }
+    return runtimeBot.__xunlu_takeover_started
+  }
 
   const state = createTakeoverState({
     bot: runtimeBot,
@@ -1272,6 +1341,10 @@ export async function startYunzaiTakeover({ bot, ignoreSelf } = {}) {
 }
 
 export const __test = {
+  connectAdapterByName,
+  getAutoAdapterOrder,
   patchYunzaiBot,
   installTakeoverBotCompatProxy,
 }
+
+export { installTakeoverBotCompatProxy }
