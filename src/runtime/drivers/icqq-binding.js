@@ -9,6 +9,23 @@ function defaultNormalizeEnv(raw) {
   return "icqq"
 }
 
+function getExplicitAdapterEnv(client) {
+  if (!client || typeof client !== "object") return ""
+
+  const botQQ = client?.botQQ
+  const subBot = botQQ !== undefined && botQQ !== null ? client?.[botQQ] : null
+  const raw =
+    subBot?.adapter?.name ??
+    subBot?.adapterType ??
+    subBot?.adapter_name ??
+    client?.adapter?.name ??
+    client?.adapterType ??
+    client?.adapter_name
+
+  if (!raw) return ""
+  return defaultNormalizeEnv(raw)
+}
+
 function getForwardDebugLogger() {
   const l = globalThis.logger
   if (l && typeof l.info === "function") return l
@@ -67,17 +84,22 @@ export function createIcqqBinding() {
         if (p === "milky") return "milky"
       } catch {}
 
+      const explicitAdapterEnv = getExplicitAdapterEnv(client)
+      if (explicitAdapterEnv && explicitAdapterEnv !== "icqq") {
+        return explicitAdapterEnv
+      }
+
       const botKeys = Object.keys(client || {})
       try {
         if (botKeys.includes("lain")) {
-          return defaultNormalizeEnv(client?.[client?.botQQ]?.adapter?.name)
+          return explicitAdapterEnv || "icqq"
         }
         if (botKeys.includes("uin") && botKeys.includes("QQNT")) {
-          return "icqq"
+          return explicitAdapterEnv || "icqq"
         }
-        return defaultNormalizeEnv(client?.[client?.botQQ]?.adapter?.name)
+        return explicitAdapterEnv || "icqq"
       } catch {
-        return "icqq"
+        return explicitAdapterEnv || "icqq"
       }
     },
 
