@@ -7,10 +7,19 @@ function isPositiveFiniteNumber(value) {
   return Number.isFinite(value) && value > 0
 }
 
+function normalizeRootPath(rootPath) {
+  const source = String(rootPath || "").trim()
+  if (!source) return ""
+
+  const resolved = path.resolve(source)
+  return resolved.endsWith(path.sep) ? resolved : `${resolved}${path.sep}`
+}
+
 export default class Downloader {
   constructor(rootPath) {
-    this.fileMage = new Filemage(rootPath)
-    this.rootPath = this.fileMage.RootPath
+    const normalizedRootPath = normalizeRootPath(rootPath)
+    this.fileMage = new Filemage(normalizedRootPath || rootPath)
+    this.rootPath = normalizeRootPath(this.fileMage.RootPath) || this.fileMage.RootPath
   }
 
   async downloadFile(url, savePath, options = {}) {
@@ -170,3 +179,5 @@ export default class Downloader {
     return this.downloadFile(url, savePath, { resume: true })
   }
 }
+
+export { normalizeRootPath }
