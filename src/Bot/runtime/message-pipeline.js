@@ -4,6 +4,7 @@ import {
 } from "../message/context.js"
 import { UniversalMessage, UniversalSegmentType } from "../message/universal-message.js"
 import { applyUniversalBotApi } from "../api/universal-bot-api.js"
+import { installTakeoverBotCompatProxy } from "../yunzai/takeover.js"
 import { normalizeEventTargetFields } from "./shared.js"
 
 /**
@@ -19,6 +20,10 @@ export class MessagePipeline {
 
   async prepareEvent(e) {
     if (!e || typeof e !== "object") return
+
+    if (e.__xunluTakeover && globalThis.Bot) {
+      globalThis.Bot = installTakeoverBotCompatProxy(globalThis.Bot)
+    }
 
     // 统一 self_id 格式，便于 atBot 判断
     e.self_id = Array.isArray(e.self_id) ? e.self_id[0] : e?.self_id

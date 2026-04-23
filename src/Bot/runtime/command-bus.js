@@ -26,11 +26,11 @@ export class CommandBus {
       const plugins = await loadPlugins(path.join(getRuntimePaths().rootDir, "src", "plugins"), options)
 
       for (const plugin of plugins) {
-        logger.info("加载插件:", plugin)
+        logger.debug("加载插件:", plugin)
         await this.registerPlugin(plugin)
       }
 
-      logger.info("插件加载完成，注册命令:", Object.keys(this.baseBot.plugins))
+      logger.debug("插件加载完成，注册命令:", Object.keys(this.baseBot.plugins))
     } catch (error) {
       logger.error("加载插件时出错:", error)
     }

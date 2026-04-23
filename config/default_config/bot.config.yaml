@@ -1,6 +1,6 @@
 #Milky服务器地址
 # bot 运行适配器：milky | onebotv11 | icqq | auto
-adapter: milky
+adapter: auto
 
 # 接管模式下是否额外启动 xunlu-core 自己的 icqq 监听（可能引入额外覆写/噪音，默认关闭）
 icqq_bridge_enable: false
