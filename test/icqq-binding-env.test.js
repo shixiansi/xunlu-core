@@ -21,3 +21,48 @@ test("icqq binding detects wrapped onebot adapter before QQNT heuristic", () => 
 
   assert.equal(envName, "OneBotv11")
 })
+
+test("icqq binding decorates event with wrapped onebot protocol before icqq fallback", async () => {
+  const binding = createIcqqBinding()
+  const previousBot = globalThis.Bot
+
+  try {
+    globalThis.Bot = {}
+
+    const event = await binding.decorateBindEvent(
+      {
+        bot: {
+          adapter: {
+            name: "OneBotv11",
+          },
+        },
+        group_id: 123,
+        user_id: 456,
+        message_id: "789",
+        message: [{ type: "text", data: { text: "hello" } }],
+      },
+      {
+        envName: "icqq",
+        client: {
+          uin: 10000,
+          QQNT: true,
+          botQQ: 2548285036,
+        },
+        pluginLoader: {
+          renderImg: async () => "",
+        },
+        fileManager: {
+          package: {
+            name: "Miao-Yunzai",
+          },
+        },
+        sendMessage: async () => ({ ok: true }),
+      },
+    )
+
+    assert.equal(event.protocol, "onebotv11")
+    assert.equal(event.adapterType, "OneBotV11")
+  } finally {
+    globalThis.Bot = previousBot
+  }
+})

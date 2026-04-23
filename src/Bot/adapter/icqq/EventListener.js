@@ -8,6 +8,7 @@ import { applyUniversalBotApi } from "../../api/universal-bot-api.js"
 import { rememberRuntimeLastGroupMessage } from "../../state/index.js"
 import { simulateIncomingMessage } from "../../message/cli-simulator.js"
 import { createIcqqBinding } from "../../../runtime/drivers/icqq-binding.js"
+import { normalizeProtocolName } from "../../runtime/shared.js"
 
 let BotEnv
 
@@ -213,10 +214,33 @@ function installIcqqRuntimeGroupSendHooks(bot) {
   globalThis.__xunlu_icqq_runtime_group_send_hooks_installed = true
 }
 
+function resolveLiveProtocol(ctx, runtimeBot) {
+  const candidates = [
+    ctx?.protocol,
+    ctx?.adapterType,
+    ctx?.bot?.adapter?.name,
+    ctx?.bot?.adapterType,
+    runtimeBot?.adapterType,
+    runtimeBot?.adapter?.name,
+    runtimeBot?.[runtimeBot?.botQQ]?.adapter?.name,
+    runtimeBot?.[runtimeBot?.botQQ]?.adapterType,
+    BotEnv,
+  ]
+
+  for (const candidate of candidates) {
+    const normalized = normalizeProtocolName(candidate)
+    if (normalized === "onebotv11" || normalized === "milky" || normalized === "icqq") {
+      return normalized
+    }
+  }
+
+  return "icqq"
+}
+
 const sendMessage = async (ctx, message) => {
   try {
-    const protocol = BotEnv === "OneBotv11" ? "onebotv11" : BotEnv === "milky" ? "milky" : "icqq"
     const runtimeBot = globalThis.__xunlu_runtime_bot || pluginLoader.Bot || globalThis.Bot
+    const protocol = resolveLiveProtocol(ctx, runtimeBot)
 
     const pickPrivate = userId => {
       const uid = Number(userId)

@@ -26,6 +26,16 @@ function getExplicitAdapterEnv(client) {
   return defaultNormalizeEnv(raw)
 }
 
+function resolveBindingEnvName({ envName, client, event } = {}) {
+  const explicitEventEnv = getExplicitAdapterEnv(event?.bot)
+  if (explicitEventEnv) return explicitEventEnv
+
+  const explicitClientEnv = getExplicitAdapterEnv(client)
+  if (explicitClientEnv) return explicitClientEnv
+
+  return defaultNormalizeEnv(envName)
+}
+
 function getForwardDebugLogger() {
   const l = globalThis.logger
   if (l && typeof l.info === "function") return l
@@ -165,10 +175,12 @@ export function createIcqqBinding() {
     },
 
     async decorateBindEvent(e, { envName, client, pluginLoader, fileManager, sendMessage } = {}) {
-      e.adapterType = "icqq"
+      const actualEnvName = resolveBindingEnvName({ envName, client, event: e })
+      e.adapterType = actualEnvName === "OneBotv11" ? "OneBotV11" : actualEnvName
       const targetE = e
 
-      const protocol = envName === "OneBotv11" ? "onebotv11" : envName === "milky" ? "milky" : "icqq"
+      const protocol =
+        actualEnvName === "OneBotv11" ? "onebotv11" : actualEnvName === "milky" ? "milky" : "icqq"
       const isTakeover = Boolean(client?.__xunlu_takeover_state?.protocol) && protocol !== "icqq"
       e.protocol = protocol
       e.__xunluTakeover = isTakeover
@@ -182,7 +194,7 @@ export function createIcqqBinding() {
         e.sub_type = e.sub_type || "normal"
       }
 
-      if (envName === "OneBotv11") {
+      if (actualEnvName === "OneBotv11") {
         e.adapterType = "OneBotV11"
 
         const getOneBotSendApi = () => {
@@ -234,7 +246,7 @@ export function createIcqqBinding() {
           }
           return await bot.getGroupMemberList(group_id)
         }
-      } else if (envName === "icqq") {
+      } else if (actualEnvName === "icqq") {
         const bot = globalThis.Bot
         e.recallMessage = async ({ peer_id, message_seq, isGroup }) => {
           try {
@@ -285,7 +297,7 @@ export function createIcqqBinding() {
         }
         e.getGroupMemberInfo = bot.getGroupMemberInfo.bind(bot)
         e.getGroupMemberList = bot.getGroupMemberList.bind(bot)
-      } else if (envName === "milky") {
+      } else if (actualEnvName === "milky") {
         e.adapterType = "milky"
         const bot = globalThis.Bot
 
