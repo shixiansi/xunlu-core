@@ -503,6 +503,13 @@ function normalizeIncomingText(ctx) {
     .trim()
 }
 
+function parseScopedHelpQuery(text) {
+  const raw = String(text || "").trim()
+  const match = raw.match(/^(荨鹿|xunlu)帮助(?:\s+(.*))?$/i)
+  if (!match) return null
+  return String(match[2] || "").trim()
+}
+
 function shouldSkipDirectHelpCommand(ctx, { currentEnv = env.CurEnv } = {}) {
   if (String(currentEnv || "").trim() !== "QQBot-YunZai") return false
   // 仅跳过插件环境中的原始“帮助”，避免和宿主帮助指令冲突。
@@ -739,7 +746,9 @@ async function replyHelp(ctx, query, options = {}) {
     "",
     "用法：",
     "- 帮助（独立运行可直接使用）",
+    "- 荨鹿帮助 / xunlu帮助",
     "- 帮助 <插件名或简称>",
+    "- 荨鹿帮助 <插件名或简称> / xunlu帮助 <插件名或简称>",
     "- <插件名或简称>帮助",
     "- 帮助 <关键词>",
     "",
@@ -770,6 +779,21 @@ async function replyHelp(ctx, query, options = {}) {
 export function register(bot) {
   if (!bot || typeof bot.registerCommand !== "function") return
 
+  bot.registerCommand(
+    [
+      "^(荨鹿|xunlu)帮助(\\s+.*)?$",
+      4400,
+      {
+        example: ["荨鹿帮助", "xunlu帮助 钓鱼"],
+        desc: "显式查看 xunlu-core 帮助，插件环境可用于避开宿主的通用帮助指令",
+      },
+    ],
+    async ctx => {
+      const rest = parseScopedHelpQuery(String(ctx?.msg || ""))
+      return await replyHelp(ctx, rest ?? "")
+    },
+  )
+
   // 帮助 / 帮助 <插件名|简称|关键词>
   bot.registerCommand(
     ["^帮助(\\s+.*)?$",
@@ -797,5 +821,6 @@ export function onBotEvent(event) {
 }
 
 export const __test = {
+  parseScopedHelpQuery,
   shouldSkipDirectHelpCommand,
 }

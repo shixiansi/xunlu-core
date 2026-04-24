@@ -201,3 +201,12 @@ test("help command only skips direct bare help inside Yunzai plugin env", () => 
     false,
   )
 })
+
+test("scoped xunlu help aliases parse summary and query forms", () => {
+  assert.equal(helpHandlersTest.parseScopedHelpQuery("xunlu帮助"), "")
+  assert.equal(helpHandlersTest.parseScopedHelpQuery("荨鹿帮助"), "")
+  assert.equal(helpHandlersTest.parseScopedHelpQuery("xunlu帮助 钓鱼"), "钓鱼")
+  assert.equal(helpHandlersTest.parseScopedHelpQuery("荨鹿帮助 鱼"), "鱼")
+  assert.equal(helpHandlersTest.parseScopedHelpQuery("帮助"), null)
+  assert.equal(helpHandlersTest.parseScopedHelpQuery("钓鱼帮助"), null)
+})
