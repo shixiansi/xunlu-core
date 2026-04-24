@@ -69,9 +69,26 @@ export function resolveStandaloneGroupPrefixConfig(groupId, configData = cfg.get
   }
 }
 
-export async function loadYunzaiGroupPrefixConfig(groupId, { loadGroupConfig, modulePath } = {}) {
+function normalizeBotId(botId) {
+  const text = normalizeString(botId)
+  return text || ""
+}
+
+async function callLoadGroupConfig(loadGroupConfig, { botId, groupId } = {}) {
+  if (typeof loadGroupConfig !== "function") return null
+  return loadGroupConfig.length >= 2
+    ? await loadGroupConfig(normalizeBotId(botId), groupId)
+    : await loadGroupConfig(groupId)
+}
+
+export async function loadYunzaiGroupPrefixConfig(groupId, { loadGroupConfig, modulePath, botId, selfId } = {}) {
+  const resolvedBotId = normalizeBotId(botId ?? selfId)
+
   if (typeof loadGroupConfig === "function") {
-    const groupConfig = await loadGroupConfig(groupId)
+    const groupConfig = await callLoadGroupConfig(loadGroupConfig, {
+      botId: resolvedBotId,
+      groupId,
+    })
     if (!groupConfig || typeof groupConfig !== "object") return null
     return {
       source: "yunzai",
@@ -85,7 +102,7 @@ export async function loadYunzaiGroupPrefixConfig(groupId, { loadGroupConfig, mo
   if (!yunzaiCfg || typeof yunzaiCfg.getGroup !== "function") return null
 
   try {
-    const groupConfig = await yunzaiCfg.getGroup(groupId)
+    const groupConfig = await yunzaiCfg.getGroup(resolvedBotId, groupId)
     if (!groupConfig || typeof groupConfig !== "object") return null
     return {
       source: "yunzai",
@@ -131,7 +148,11 @@ export async function applyPrefixCompatibilityToEvent(event, options = {}) {
     return finish({ allow: true, matchedAlias: "", strippedText: originalText, config: null })
   }
 
-  const config = await resolvePrefixConfig(event.group_id, options)
+  const config = await resolvePrefixConfig(event.group_id, {
+    ...options,
+    selfId: event.self_id,
+    botId: options.botId ?? event.self_id,
+  })
   const aliases = normalizePrefixAliases(config?.botAlias)
   const matchedAlias = aliases.find(alias => originalText.startsWith(alias)) || ""
   const strippedText =
@@ -146,7 +167,7 @@ export async function applyPrefixCompatibilityToEvent(event, options = {}) {
 
   let allow = true
   if (config?.source === "yunzai") {
-    const onlyReplyAt = Number(config.onlyReplyAt ?? 0) || 0
+    const onlyReplyAt = Number(config?.onlyReplyAt ?? 0) || 0
     if (onlyReplyAt !== 0 && aliases.length > 0) {
       allow = Boolean(event.atBot || event.hasAlias || (onlyReplyAt === 2 && event.isMaster))
     }
