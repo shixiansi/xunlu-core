@@ -669,8 +669,10 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       const sendTarget = toSendTargetObject(t)
       const candidateBots = collectMessageBotCandidates(ctx?.bot, runtimeBot, globalThis.Bot)
 
-      // onebot node 转发：必须透传，否则会被转换成文本
-      if (protocol === "onebotv11" && hasOnebotNodeSegments(message)) {
+      // 原生 onebot node 转发：必须透传，否则会被转换成文本。
+      // 这里不能只依赖 protocol 判定，因为某些运行时上下文（如定时任务）
+      // 可能拿不到准确协议，但消息结构本身已经是原生转发节点。
+      if (hasOnebotNodeSegments(message)) {
         for (const candidate of candidateBots) {
           const res = await sendMessageViaCandidate(candidate, t, message, sendTarget)
           if (!res) continue
@@ -678,11 +680,11 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
           return res
         }
 
-        throw new Error("[sendMessage] onebotv11 forward requires sendMsg or pickGroup/pickFriend")
+        throw new Error("[sendMessage] onebot node forward requires sendMsg or pickGroup/pickFriend")
       }
 
-      // milky forward 段：如果已经是原生 forward 格式则透传
-      if (protocol === "milky" && hasMilkyForwardSegments(message)) {
+      // 原生 milky forward 段：如果已经是原生 forward 格式则直接透传。
+      if (hasMilkyForwardSegments(message)) {
         for (const candidate of candidateBots) {
           const res = await sendMessageViaCandidate(candidate, t, message, sendTarget)
           if (!res) continue
