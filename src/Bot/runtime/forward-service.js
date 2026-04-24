@@ -74,6 +74,11 @@ export class ForwardService {
 
     try {
       const takeoverState = runtimeBot?.__xunlu_takeover_state
+      const hasConnectedForwardApi =
+        Boolean(
+          runtimeBot &&
+            (typeof runtimeBot?.sendApi === "function" || typeof runtimeBot?.callApi === "function"),
+        )
       const takeoverForwardTarget = (() => {
         if (!takeoverState || typeof takeoverState !== "object") return null
 
@@ -93,6 +98,22 @@ export class ForwardService {
         route = "takeoverForwardTarget.makeForwardMsg"
         logForwardDebug("makeForwardMsg:route", { route, target: e?.group_id ?? e?.user_id ?? null })
         forwardMsg = await takeoverForwardTarget.makeForwardMsg(forwardMsg)
+      } else if (
+        e?.isGroup &&
+        hasConnectedForwardApi &&
+        typeof runtimeBot?.makeGroupForwardMsg === "function"
+      ) {
+        route = "runtimeBot.makeGroupForwardMsg(connected-api)"
+        logForwardDebug("makeForwardMsg:route", { route, target: e?.group_id ?? null })
+        forwardMsg = await runtimeBot.makeGroupForwardMsg(forwardMsg, e.group_id)
+      } else if (
+        !e?.isGroup &&
+        hasConnectedForwardApi &&
+        typeof runtimeBot?.makePrivateForwardMsg === "function"
+      ) {
+        route = "runtimeBot.makePrivateForwardMsg(connected-api)"
+        logForwardDebug("makeForwardMsg:route", { route, target: e?.user_id ?? null })
+        forwardMsg = await runtimeBot.makePrivateForwardMsg(forwardMsg, e.user_id)
       } else if (e?.group?.makeForwardMsg) {
         route = "event.group.makeForwardMsg"
         logForwardDebug("makeForwardMsg:route", { route, target: e?.group_id ?? null })
