@@ -91,44 +91,70 @@ function collectMessageBotCandidates(...targets) {
 }
 
 async function sendMessageViaCandidate(candidate, target, message, sendTarget) {
-  if (!candidate || (typeof candidate !== "object" && typeof candidate !== "function")) return null
+  if (!candidate || (typeof candidate !== "object" && typeof candidate !== "function")) {
+    return { handled: false, result: null }
+  }
 
   if (typeof candidate.sendMsg === "function") {
-    return await candidate.sendMsg(sendTarget, message)
+    return {
+      handled: true,
+      result: await candidate.sendMsg(sendTarget, message),
+    }
   }
 
   if (target?.scene === "group") {
     const groupId = toInt(target.group_id) ?? target.group_id
 
     if (typeof candidate.sendGroupMsg === "function") {
-      return await candidate.sendGroupMsg(groupId, message)
+      return {
+        handled: true,
+        result: await candidate.sendGroupMsg(groupId, message),
+      }
     }
 
     if (typeof candidate.pickGroup === "function") {
       const group = candidate.pickGroup(groupId)
-      if (group?.sendMsg) return await group.sendMsg(message)
+      if (group?.sendMsg) {
+        return {
+          handled: true,
+          result: await group.sendMsg(message),
+        }
+      }
     }
 
-    return null
+    return { handled: false, result: null }
   }
 
   const userId = toInt(target?.user_id) ?? target?.user_id
 
   if (typeof candidate.sendPrivateMsg === "function") {
-    return await candidate.sendPrivateMsg(userId, message)
+    return {
+      handled: true,
+      result: await candidate.sendPrivateMsg(userId, message),
+    }
   }
 
   if (typeof candidate.pickFriend === "function") {
     const friend = candidate.pickFriend(userId)
-    if (friend?.sendMsg) return await friend.sendMsg(message)
+    if (friend?.sendMsg) {
+      return {
+        handled: true,
+        result: await friend.sendMsg(message),
+      }
+    }
   }
 
   if (typeof candidate.pickUser === "function") {
     const user = candidate.pickUser(userId)
-    if (user?.sendMsg) return await user.sendMsg(message)
+    if (user?.sendMsg) {
+      return {
+        handled: true,
+        result: await user.sendMsg(message),
+      }
+    }
   }
 
-  return null
+  return { handled: false, result: null }
 }
 
 export function createUniversalBotApi({ bot, adapterHint } = {}) {
@@ -674,10 +700,11 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       // 可能拿不到准确协议，但消息结构本身已经是原生转发节点。
       if (hasOnebotNodeSegments(message)) {
         for (const candidate of candidateBots) {
-          const res = await sendMessageViaCandidate(candidate, t, message, sendTarget)
-          if (!res) continue
+          const attempt = await sendMessageViaCandidate(candidate, t, message, sendTarget)
+          if (!attempt?.handled) continue
+          if (attempt.result === false) continue
           rememberOutgoingGroupMessage(sendTarget, message, { ctx, runtimeBot })
-          return res
+          return attempt.result
         }
 
         throw new Error("[sendMessage] onebot node forward requires sendMsg or pickGroup/pickFriend")
@@ -686,10 +713,11 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       // 原生 milky forward 段：如果已经是原生 forward 格式则直接透传。
       if (hasMilkyForwardSegments(message)) {
         for (const candidate of candidateBots) {
-          const res = await sendMessageViaCandidate(candidate, t, message, sendTarget)
-          if (!res) continue
+          const attempt = await sendMessageViaCandidate(candidate, t, message, sendTarget)
+          if (!attempt?.handled) continue
+          if (attempt.result === false) continue
           rememberOutgoingGroupMessage(sendTarget, message, { ctx, runtimeBot })
-          return res
+          return attempt.result
         }
         throw new Error("[sendMessage] milky forward requires sendMsg")
       }
@@ -699,10 +727,11 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       const outSegments = universalMsg.convertTo(protocol)
 
       for (const candidate of candidateBots) {
-        const res = await sendMessageViaCandidate(candidate, t, outSegments, sendTarget)
-        if (!res) continue
+        const attempt = await sendMessageViaCandidate(candidate, t, outSegments, sendTarget)
+        if (!attempt?.handled) continue
+        if (attempt.result === false) continue
         rememberOutgoingGroupMessage(sendTarget, outSegments, { ctx, runtimeBot })
-        return res
+        return attempt.result
       }
 
       // icqq/yunzai fallback
