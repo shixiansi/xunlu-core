@@ -157,40 +157,47 @@ test("repeat mute defaults to globally disabled", () => {
   assert.equal(getGlobalRepeatMuteEnabled(db), false)
 })
 
-test("help command only allows explicit xunlu prefixes inside Yunzai plugin env", () => {
+test("help command only skips direct bare help inside Yunzai plugin env", () => {
   assert.equal(
-    helpHandlersTest.shouldAllowHelpResponse(
+    helpHandlersTest.shouldSkipDirectHelpCommand(
       { raw_message: "帮助", msg: "帮助" },
+      { currentEnv: "QQBot-YunZai" },
+    ),
+    true,
+  )
+  assert.equal(
+    helpHandlersTest.shouldSkipDirectHelpCommand(
+      { raw_message: "帮助 钓鱼", msg: "帮助 钓鱼" },
       { currentEnv: "QQBot-YunZai" },
     ),
     false,
   )
   assert.equal(
-    helpHandlersTest.shouldAllowHelpResponse(
+    helpHandlersTest.shouldSkipDirectHelpCommand(
+      { raw_message: "钓鱼帮助", msg: "钓鱼帮助" },
+      { currentEnv: "QQBot-YunZai" },
+    ),
+    false,
+  )
+  assert.equal(
+    helpHandlersTest.shouldSkipDirectHelpCommand(
       { raw_message: "云崽帮助", msg: "帮助", __xunluOriginalMsg: "云崽帮助" },
       { currentEnv: "QQBot-YunZai" },
     ),
     false,
   )
   assert.equal(
-    helpHandlersTest.shouldAllowHelpResponse(
-      { raw_message: "荨鹿帮助", msg: "帮助", __xunluOriginalMsg: "荨鹿帮助" },
+    helpHandlersTest.shouldSkipDirectHelpCommand(
+      { raw_message: "xunlu帮助", msg: "xunlu帮助", __xunluOriginalMsg: "xunlu帮助" },
       { currentEnv: "QQBot-YunZai" },
     ),
-    true,
+    false,
   )
   assert.equal(
-    helpHandlersTest.shouldAllowHelpResponse(
-      { raw_message: "xunlu帮助", msg: "帮助", __xunluOriginalMsg: "xunlu帮助" },
-      { currentEnv: "QQBot-YunZai" },
-    ),
-    true,
-  )
-  assert.equal(
-    helpHandlersTest.shouldAllowHelpResponse(
+    helpHandlersTest.shouldSkipDirectHelpCommand(
       { raw_message: "帮助", msg: "帮助" },
       { currentEnv: "xunlu-core" },
     ),
-    true,
+    false,
   )
 })

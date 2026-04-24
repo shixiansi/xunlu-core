@@ -3,8 +3,6 @@ import path from "node:path"
 
 import env from "../../../lib/env.js"
 
-const XUNLU_HELP_PREFIXES = ["荨鹿", "xunlu"]
-
 function nowText() {
   const d = new Date()
   const pad = n => String(n).padStart(2, "0")
@@ -505,15 +503,10 @@ function normalizeIncomingText(ctx) {
     .trim()
 }
 
-function hasExplicitXunluHelpPrefix(ctx, { rawText = normalizeIncomingText(ctx) } = {}) {
-  const text = String(rawText || "").trim().toLowerCase()
-  return XUNLU_HELP_PREFIXES.some(prefix => text.startsWith(String(prefix).toLowerCase()))
-}
-
-function shouldAllowHelpResponse(ctx, { currentEnv = env.CurEnv } = {}) {
-  if (String(currentEnv || "").trim() !== "QQBot-YunZai") return true
-  // 在插件环境里，帮助必须显式带上“荨鹿/xunlu”，避免抢占宿主的通用帮助指令。
-  return hasExplicitXunluHelpPrefix(ctx)
+function shouldSkipDirectHelpCommand(ctx, { currentEnv = env.CurEnv } = {}) {
+  if (String(currentEnv || "").trim() !== "QQBot-YunZai") return false
+  // 仅跳过插件环境中的原始“帮助”，避免和宿主帮助指令冲突。
+  return normalizeIncomingText(ctx) === "帮助"
 }
 
 function normalizeHelpItem(item) {
@@ -745,8 +738,7 @@ async function replyHelp(ctx, query, options = {}) {
     headerLine,
     "",
     "用法：",
-    "- 帮助（独立运行）",
-    "- 荨鹿帮助 / xunlu帮助（插件环境）",
+    "- 帮助（独立运行可直接使用）",
     "- 帮助 <插件名或简称>",
     "- <插件名或简称>帮助",
     "- 帮助 <关键词>",
@@ -783,7 +775,7 @@ export function register(bot) {
     ["^帮助(\\s+.*)?$",
       { example: ["帮助", "帮助 钓鱼", "帮助 鱼"], desc: "默认展示大插件列表，带上插件名或简称可查看详细功能" }],
     async ctx => {
-      if (!shouldAllowHelpResponse(ctx)) return false
+      if (shouldSkipDirectHelpCommand(ctx)) return false
       const raw = String(ctx?.msg || "").trim()
       const rest = raw.replace(/^帮助/, "").trim()
       return await replyHelp(ctx, rest)
@@ -793,7 +785,6 @@ export function register(bot) {
   bot.registerCommand(
     ["^([^\\s]{1,24})帮助$", 4500, { example: ["钓鱼帮助", "鱼帮助"], desc: "按插件名或简称查看该插件的详细帮助" }],
     async ctx => {
-      if (!shouldAllowHelpResponse(ctx)) return false
       const raw = String(ctx?.msg || "").trim()
       const rest = raw.replace(/帮助$/, "").trim()
       return await replyHelp(ctx, rest, { strictPluginOnly: true })
@@ -806,6 +797,5 @@ export function onBotEvent(event) {
 }
 
 export const __test = {
-  hasExplicitXunluHelpPrefix,
-  shouldAllowHelpResponse,
+  shouldSkipDirectHelpCommand,
 }
