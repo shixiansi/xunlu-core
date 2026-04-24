@@ -1205,8 +1205,7 @@ export function register(bot) {
 
   //直播推送   群名称 属性名是uid
   bot.setTask("0 * * * * *", async ctx => {
-    const runtimeBot = globalThis.Bot
-    if (!runtimeBot || typeof runtimeBot.sendMessage !== "function") return
+    if (!bot || typeof bot.sendMessage !== "function") return
 
     let glist = getBilibiliGroupList()
     if (glist.length == 0) return
@@ -1228,7 +1227,7 @@ export function register(bot) {
 
           if (roomInfo && roomInfo?.live_status == 1 && !item?.live?.live_time) {
             const authorInfo = await Bili.getUserBaseInfo(roomInfo?.uid).catch(() => null)
-            const rendered = await renderBilibiliCard(runtimeBot, {
+            const rendered = await renderBilibiliCard(bot, {
               nickname: item.nickname || authorInfo?.name || "B站主播",
               avatar: authorInfo?.face || roomInfo?.user_cover || "",
               publishedAt: roomInfo?.live_time || "",
@@ -1246,7 +1245,7 @@ export function register(bot) {
               saveId: `push_live_${room_id}`,
             })
 
-            let res = await runtimeBot.sendMessage({ group_id: g }, rendered)
+            let res = await bot.sendMessage({ group_id: g }, rendered)
             if (res === false) throw new Error("直播推送消息失败")
 
             logger.info(`[Bilibili] 直播推送成功，房间ID：${room_id}，群ID：${g}`)
@@ -1256,7 +1255,7 @@ export function register(bot) {
             const startAt = moment(live_time)
             const liveTime = startAt.isValid() ? moment().diff(startAt) : 0
             if (liveTime < 60 * 60 * 1000) {
-              await runtimeBot.sendMessage({ group_id: g }, [
+              await bot.sendMessage({ group_id: g }, [
                 segment.image(user_cover),
                 `\n标题：${title}\n分区：${area_name}\n开播时间：${live_time}\n已结束直播，直播时长：${moment.utc(liveTime).format("HH:mm:ss")}`,
               ])
@@ -1275,8 +1274,7 @@ export function register(bot) {
 
   //动态推送
   bot.setTask("10 * * * * *", async ctx => {
-    const runtimeBot = globalThis.Bot
-    if (!runtimeBot || typeof runtimeBot.sendMessage !== "function") return
+    if (!bot || typeof bot.sendMessage !== "function") return
 
     let glist = getBilibiliGroupList()
     if (glist.length == 0) return
@@ -1295,8 +1293,8 @@ export function register(bot) {
           if (item.unpush && item.unpush.includes(typeKey)) continue
           if (result.id === item.upuid) continue
 
-          const dynamicMessage = await renderDynamicMessage(runtimeBot, result)
-          const sendResult = await runtimeBot.sendMessage({ group_id: g }, dynamicMessage)
+          const dynamicMessage = await renderDynamicMessage(bot, result)
+          const sendResult = await bot.sendMessage({ group_id: g }, dynamicMessage)
           if (sendResult === false) {
             throw new Error("动态主消息发送失败")
           }
@@ -1327,12 +1325,12 @@ export function register(bot) {
                 forwardImgList,
                 "动态图片",
               )
-              await runtimeBot.sendMessage({ group_id: g }, forwardMsg)
+              await bot.sendMessage({ group_id: g }, forwardMsg)
             } catch (err) {
               logger.error?.(
                 `[Bilibili] 动态图片转发失败，改为直接发送图片：${err?.message || err}`,
               )
-              await runtimeBot.sendMessage({ group_id: g }, forwardImgList)
+              await bot.sendMessage({ group_id: g }, forwardImgList)
             } finally {
               cleanupTempFiles(cleanupPaths, "动态图片转发缓存")
             }
