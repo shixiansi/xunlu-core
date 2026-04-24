@@ -65,7 +65,11 @@ function parseEmojiIdsFromText(text) {
 
 function isReactionConfigCommand(msg) {
   const s = String(msg || "").trim()
-  return /^(?:[#＃])?表情回应/.test(s) || /^(?:[#＃])?关闭表情回应$/.test(s)
+  return (
+    /^(?:[#＃])?表情回应/.test(s) ||
+    /^(?:[#＃])?关闭表情回应$/.test(s) ||
+    /^(?:[#＃])?贴表情(?:开启|关闭)$/.test(s)
+  )
 }
 
 function resolveReactionForCtx(ctx) {
@@ -142,6 +146,11 @@ function resolveMessageReactionItems(ctx) {
 
 function isMessageEmojiReactionEnabled() {
   return cfg.getConfig("bot")?.message_emoji_reaction_enabled !== false
+}
+
+function setMessageEmojiReactionEnabled(enabled) {
+  cfg.getConfigReader("bot").set("message_emoji_reaction_enabled", Boolean(enabled))
+  return isMessageEmojiReactionEnabled()
 }
 
 export function register(bot) {
@@ -234,6 +243,27 @@ export function register(bot) {
     async ctx => {
       disableUserReaction(ctx?.user_id)
       return await ctx.reply("已关闭表情回应（仅对你生效）")
+    },
+  )
+
+  bot.registerCommand(
+    [
+      "^(?:[#＃])?贴表情(开启|关闭)$",
+      1000,
+      {
+        example: ["#贴表情开启", "#贴表情关闭"],
+        desc: "开启或关闭全局消息自动贴表情",
+      },
+    ],
+    async ctx => {
+      if (!ctx?.isMaster) {
+        return await ctx.reply("只有主人才能设置全局贴表情开关")
+      }
+
+      const matched = String(ctx?.msg || "").match(/贴表情(开启|关闭)$/)
+      const enabled = matched?.[1] === "开启"
+      const current = setMessageEmojiReactionEnabled(enabled)
+      return await ctx.reply(`已${current ? "开启" : "关闭"}全局贴表情`)
     },
   )
 

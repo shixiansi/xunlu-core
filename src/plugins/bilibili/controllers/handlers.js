@@ -753,12 +753,12 @@ async function makeDynamicImageForward(baseBot, ctx, groupId, msgList = [], desc
   const normalizedList = await buildDynamicForwardNodes(forwardCtx, msgList)
 
   if (baseBot && typeof baseBot.makeForwardMsg === "function") {
-    const forwardMsg = await baseBot.makeForwardMsg(forwardCtx, msgList, desc)
+    const forwardMsg = await baseBot.makeForwardMsg(forwardCtx, normalizedList, desc)
     if (isNativeForwardPayload(forwardMsg)) return forwardMsg
   }
 
   if (ctx && typeof ctx.makeGroupForwardMsg === "function") {
-    const forwardMsg = await ctx.makeGroupForwardMsg(forwardCtx, msgList, desc)
+    const forwardMsg = await ctx.makeGroupForwardMsg(forwardCtx, normalizedList, desc)
     if (isNativeForwardPayload(forwardMsg)) return forwardMsg
   }
 

@@ -30,6 +30,40 @@ function withBotConfigOverride(overrides = {}) {
   }
 }
 
+function withWritableBotConfig(overrides = {}) {
+  const rawGetConfig = cfg.getConfig.bind(cfg)
+  const rawGetConfigReader = cfg.getConfigReader.bind(cfg)
+  const state = {
+    ...(rawGetConfig("bot") || {}),
+    ...overrides,
+  }
+
+  cfg.getConfig = function patchedGetConfig(name, configType) {
+    if (name === "bot") return { ...state }
+    return rawGetConfig(name, configType)
+  }
+
+  cfg.getConfigReader = function patchedGetConfigReader(name, configType) {
+    if (name !== "bot") return rawGetConfigReader(name, configType)
+    return {
+      set(key, value) {
+        state[key] = value
+      },
+      setData(data = {}) {
+        Object.assign(state, data)
+      },
+    }
+  }
+
+  return {
+    state,
+    restore() {
+      cfg.getConfig = rawGetConfig
+      cfg.getConfigReader = rawGetConfigReader
+    },
+  }
+}
+
 async function withHarness(options, fn) {
   const harness = await createPluginTestHarness(options)
   try {
@@ -95,6 +129,78 @@ test("message emoji reaction switch does not disable user default reactions", as
         res.apiCalls.some(call => /set_msg_emoji_like/i.test(String(call?.name || ""))),
         "expected user default reaction API call",
       )
+    })
+  } finally {
+    restore()
+  }
+})
+
+test("master can toggle global emoji reaction switch via command", async () => {
+  const { state, restore } = withWritableBotConfig({
+    masterQQ: [20004],
+    message_emoji_reaction_enabled: true,
+  })
+
+  try {
+    await withHarness({ plugins: [otherPlugin], protocol: "onebotv11" }, async harness => {
+      const closeRes = await harness.emitMessage({
+        scene: "group",
+        text: "#贴表情关闭",
+        group_id: 123,
+        user_id: 20004,
+      })
+
+      assert.equal(closeRes.ok, true)
+      assert.match(closeRes.replies[0]?.text || "", /已关闭全局贴表情/)
+      assert.equal(state.message_emoji_reaction_enabled, false)
+
+      const messageRes = await harness.emitMessage({
+        scene: "group",
+        text: "哈哈😂",
+        group_id: 123,
+        user_id: 20005,
+      })
+
+      assert.equal(messageRes.ok, true)
+      assert.ok(
+        !messageRes.apiCalls.some(call => /set_msg_emoji_like/i.test(String(call?.name || ""))),
+        "did not expect auto emoji reaction after command disabled it",
+      )
+
+      const openRes = await harness.emitMessage({
+        scene: "group",
+        text: "#贴表情开启",
+        group_id: 123,
+        user_id: 20004,
+      })
+
+      assert.equal(openRes.ok, true)
+      assert.match(openRes.replies[0]?.text || "", /已开启全局贴表情/)
+      assert.equal(state.message_emoji_reaction_enabled, true)
+    })
+  } finally {
+    restore()
+  }
+})
+
+test("non-master cannot toggle global emoji reaction switch", async () => {
+  const { state, restore } = withWritableBotConfig({
+    masterQQ: [29999],
+    message_emoji_reaction_enabled: true,
+  })
+
+  try {
+    await withHarness({ plugins: [otherPlugin], protocol: "onebotv11" }, async harness => {
+      const res = await harness.emitMessage({
+        scene: "group",
+        text: "#贴表情关闭",
+        group_id: 123,
+        user_id: 20006,
+      })
+
+      assert.equal(res.ok, true)
+      assert.match(res.replies[0]?.text || "", /只有主人才能设置全局贴表情开关/)
+      assert.equal(state.message_emoji_reaction_enabled, true)
     })
   } finally {
     restore()

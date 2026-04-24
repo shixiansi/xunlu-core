@@ -5,6 +5,7 @@ import {
   getStatsKings,
 } from "../model/stats.js"
 import { getDefaultRangeDays, getQunDailyConfig } from "../model/config.js"
+import { getGroupPushConfig, setGroupPushConfig } from "../model/push-store.js"
 import { getPreviousDateKey, toDateKey } from "../model/store.js"
 import { buildWordCloudList } from "../model/words.js"
 
@@ -50,6 +51,25 @@ function getWordsTitle(days) {
 
 function getCommandTitle(days) {
   return days <= 1 ? "今日指令统计" : `${days}天指令统计`
+}
+
+function formatOnOff(enabled) {
+  return enabled ? "开启" : "关闭"
+}
+
+function getPushKindLabel(kind) {
+  if (kind === "stats") return "水群统计推送"
+  if (kind === "words") return "关键词统计推送"
+  if (kind === "commands") return "指令统计推送"
+  return "群总结推送"
+}
+
+function resolvePushKind(rawKind = "") {
+  const text = String(rawKind || "").trim()
+  if (text === "水群统计") return "stats"
+  if (text === "关键词统计" || text === "词频统计") return "words"
+  if (text === "指令统计") return "commands"
+  return ""
 }
 
 function makeStatsFallback(rangeStats, kings) {
@@ -149,6 +169,12 @@ async function replyRender(ctx, tpl, data, fallbackText) {
   }
 
   return await ctx.reply(fallbackText)
+}
+
+async function checkUserAdminOrMaster(ctx) {
+  if (ctx?.isMaster) return true
+  if (typeof ctx?.isGroupAdmin === "function") return await ctx.isGroupAdmin()
+  return Boolean(ctx?.isOwner || ctx?.isAdmin)
 }
 
 async function sendRender(bot, groupId, tpl, data, fallbackText) {
@@ -321,6 +347,21 @@ async function handleCommandCommand(ctx, days) {
   )
 }
 
+async function handlePushToggleCommand(ctx, rawKind, enabled) {
+  if (!ctx?.group_id) return await ctx.reply("请在群聊中使用该设置")
+  if (!(await checkUserAdminOrMaster(ctx))) {
+    return await ctx.reply("只有主人或群管理才能设置群总结推送")
+  }
+
+  const kind = resolvePushKind(rawKind)
+  if (!kind) return await ctx.reply("未知推送类型")
+
+  const next = setGroupPushConfig(ctx.group_id, { [kind]: enabled })
+  return await ctx.reply(
+    `${getPushKindLabel(kind)}已${formatOnOff(next?.[kind])}（群:${ctx.group_id}）`,
+  )
+}
+
 async function runDailyPush(bot, ctxLike) {
   const config = getQunDailyConfig()
   if (!config.push.enabled) return false
@@ -342,6 +383,12 @@ async function runDailyPush(bot, ctxLike) {
   const dateKey = getPreviousDateKey()
   for (const [groupId] of groupMap instanceof Map ? groupMap : new Map()) {
     try {
+      const groupPush = getGroupPushConfig(groupId)
+      const shouldSendStats = config.push.include_stats && groupPush.stats
+      const shouldSendWords = config.push.include_words && groupPush.words
+      const shouldSendCommands = config.push.include_commands && groupPush.commands
+      if (!shouldSendStats && !shouldSendWords && !shouldSendCommands) continue
+
       await getOrBuildDailyGroupStats(groupId, dateKey)
       const rangeStats = await buildRangeGroupStats(groupId, dateKey, 1)
       const memberMap = await getMemberMap(runtime, groupId)
@@ -349,7 +396,7 @@ async function runDailyPush(bot, ctxLike) {
       rangeStats.topImages = decorateParticipantsWithMembers(rangeStats.topImages, memberMap)
       const kings = getStatsKings(rangeStats, memberMap)
 
-      if (config.push.include_stats) {
+      if (shouldSendStats) {
         await sendRender(
           bot,
           groupId,
@@ -359,7 +406,7 @@ async function runDailyPush(bot, ctxLike) {
         ).catch(err => console.warn("[qun-daily] send stats failed:", err?.message || err))
       }
 
-      if (config.push.include_words) {
+      if (shouldSendWords) {
         await sendRender(
           bot,
           groupId,
@@ -369,7 +416,7 @@ async function runDailyPush(bot, ctxLike) {
         ).catch(err => console.warn("[qun-daily] send words failed:", err?.message || err))
       }
 
-      if (config.push.include_commands) {
+      if (shouldSendCommands) {
         const commandRenderData = buildCommandRenderData(rangeStats, memberMap)
         await sendRender(
           bot,
@@ -390,6 +437,28 @@ async function runDailyPush(bot, ctxLike) {
 
 export function register(bot) {
   if (!bot || typeof bot.registerCommand !== "function") return
+
+  bot.registerCommand(
+    [
+      "^(?:[#＃])?(水群统计|关键词统计|词频统计|指令统计)推送(开启|关闭)$",
+      {
+        example: [
+          "#水群统计推送开启",
+          "#关键词统计推送开启",
+          "#指令统计推送关闭",
+        ],
+        desc: "开启或关闭当前群的日报总结推送",
+      },
+    ],
+    async ctx => {
+      const matched = String(ctx?.msg || "").match(
+        /^(?:[#＃])?(水群统计|关键词统计|词频统计|指令统计)推送(开启|关闭)$/,
+      )
+      const rawKind = matched?.[1] || ""
+      const enabled = matched?.[2] === "开启"
+      return await handlePushToggleCommand(ctx, rawKind, enabled)
+    },
+  )
 
   bot.registerCommand(
     [

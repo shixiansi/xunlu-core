@@ -4,6 +4,7 @@ import path from "node:path"
 import test from "node:test"
 import { fileURLToPath } from "node:url"
 
+import { segment } from "../src/Bot/message/index.js"
 import { createPluginTestHarness } from "../src/dev/plugin-test-harness.js"
 import bilibiliPlugin from "../src/plugins/bilibili/index.js"
 import Bili from "../src/plugins/bilibili/model/Bilili.js"
@@ -30,6 +31,26 @@ function cleanupGroupData(groupId) {
 
 function readGroupData(groupId) {
   return JSON.parse(fs.readFileSync(getGroupDataFile(groupId), "utf8"))
+}
+
+function writeGroupData(groupId, data) {
+  fs.mkdirSync(path.dirname(getGroupDataFile(groupId)), { recursive: true })
+  fs.writeFileSync(getGroupDataFile(groupId), JSON.stringify(data, null, 2), "utf8")
+}
+
+function createNativeForwardPayload(messages = []) {
+  return [
+    {
+      type: "forward",
+      data: {
+        messages: messages.map(item => ({
+          user_id: Number(item?.user_id || item?.uin || 10000),
+          sender_name: String(item?.sender_name || item?.nickname || item?.name || "Bilibili动态"),
+          segments: Array.isArray(item?.message) ? item.message : [item?.message],
+        })),
+      },
+    },
+  ]
 }
 
 async function withHarness(options, fn) {
@@ -431,4 +452,204 @@ test("bilibili live room links reply with rendered image card", async () => {
       )
     },
   )
+})
+
+test("dynamic image push falls through to native forward builder with normalized nodes", async () => {
+  const groupId = 991007
+  const uid = "123"
+  const savedPaths = []
+  cleanupGroupData(groupId)
+  writeGroupData(groupId, {
+    [uid]: {
+      uid,
+      upuid: "old-dynamic",
+      nickname: "测试UP",
+      img: "https://example.com/avatar.png",
+    },
+  })
+
+  try {
+    await withPatchedMethods(
+      Bili,
+      {
+        async getUpdateDynamic() {
+          return {
+            id: "dynamic-3",
+            type: "图文",
+            text: "测试动态图片转发",
+            author: {
+              nickname: "测试UP",
+              img: "https://example.com/avatar.png",
+            },
+            date: "2026年04月24日 12:00:00",
+            erm: "https://www.bilibili.com/opus/3",
+            imglist: ["https://example.com/dynamic-image.jpg"],
+          }
+        },
+      },
+      async () => {
+        await withPatchedMethods(
+          Download.prototype,
+          {
+            async downloadFile(_url, savePath) {
+              savedPaths.push(savePath)
+              const full = path.resolve(repoRoot, savePath)
+              fs.mkdirSync(path.dirname(full), { recursive: true })
+              fs.writeFileSync(full, Buffer.from("fake-image"))
+              return true
+            },
+          },
+          async () => {
+            await withHarness({}, async harness => {
+              const sent = []
+              let fallbackBuilderInput = null
+              const originalSendMessage = globalThis.Bot.sendMessage
+              const originalForwardBuilder = globalThis.Bot.makeGroupForwardMsg
+              const originalBaseForward = harness.bot.makeForwardMsg
+
+              harness.bot.makeForwardMsg = async () => [segment.image("https://example.com/not-forward-1.jpg")]
+              globalThis.Bot.makeGroupForwardMsg = async messages => {
+                fallbackBuilderInput = messages
+                return createNativeForwardPayload(messages)
+              }
+              globalThis.Bot.sendMessage = async (target, message) => {
+                sent.push({ target, message })
+                return { message_id: String(sent.length), seq: sent.length }
+              }
+
+              try {
+                const res = await harness.runTask({
+                  index: 1,
+                  ctxLike: {
+                    async makeGroupForwardMsg() {
+                      return [segment.image("https://example.com/not-forward-2.jpg")]
+                    },
+                  },
+                })
+
+                assert.equal(res.ok, true)
+                assert.equal(sent.length, 2)
+                assert.ok(Array.isArray(fallbackBuilderInput))
+                assert.ok(fallbackBuilderInput.every(item => item && typeof item === "object"))
+                assert.ok(
+                  fallbackBuilderInput.every(item => Object.prototype.hasOwnProperty.call(item, "message")),
+                )
+
+                const forwardPayload = Array.isArray(sent[1].message) ? sent[1].message : [sent[1].message]
+                assert.ok(forwardPayload.some(item => item?.type === "forward"))
+                assert.ok(!forwardPayload.some(item => item?.type === "image"))
+              } finally {
+                harness.bot.makeForwardMsg = originalBaseForward
+                globalThis.Bot.makeGroupForwardMsg = originalForwardBuilder
+                globalThis.Bot.sendMessage = originalSendMessage
+              }
+            })
+          },
+        )
+      },
+    )
+  } finally {
+    cleanupGroupData(groupId)
+    for (const item of savedPaths) {
+      try {
+        fs.unlinkSync(path.resolve(repoRoot, item))
+      } catch {}
+    }
+  }
+})
+
+test("dynamic image push falls back to direct images when all forward builders fail", async () => {
+  const groupId = 991008
+  const uid = "123"
+  const savedPaths = []
+  cleanupGroupData(groupId)
+  writeGroupData(groupId, {
+    [uid]: {
+      uid,
+      upuid: "old-dynamic",
+      nickname: "测试UP",
+      img: "https://example.com/avatar.png",
+    },
+  })
+
+  try {
+    await withPatchedMethods(
+      Bili,
+      {
+        async getUpdateDynamic() {
+          return {
+            id: "dynamic-4",
+            type: "图文",
+            text: "测试动态图片兜底",
+            author: {
+              nickname: "测试UP",
+              img: "https://example.com/avatar.png",
+            },
+            date: "2026年04月24日 12:10:00",
+            erm: "https://www.bilibili.com/opus/4",
+            imglist: ["https://example.com/dynamic-fallback.jpg"],
+          }
+        },
+      },
+      async () => {
+        await withPatchedMethods(
+          Download.prototype,
+          {
+            async downloadFile(_url, savePath) {
+              savedPaths.push(savePath)
+              const full = path.resolve(repoRoot, savePath)
+              fs.mkdirSync(path.dirname(full), { recursive: true })
+              fs.writeFileSync(full, Buffer.from("fake-image"))
+              return true
+            },
+          },
+          async () => {
+            await withHarness({}, async harness => {
+              const sent = []
+              const originalSendMessage = globalThis.Bot.sendMessage
+              const originalForwardBuilder = globalThis.Bot.makeGroupForwardMsg
+              const originalBaseForward = harness.bot.makeForwardMsg
+
+              harness.bot.makeForwardMsg = async () => [segment.image("https://example.com/not-forward-1.jpg")]
+              globalThis.Bot.makeGroupForwardMsg = async () => [segment.image("https://example.com/not-forward-3.jpg")]
+              globalThis.Bot.sendMessage = async (target, message) => {
+                sent.push({ target, message })
+                return { message_id: String(sent.length), seq: sent.length }
+              }
+
+              try {
+                const res = await harness.runTask({
+                  index: 1,
+                  ctxLike: {
+                    async makeGroupForwardMsg() {
+                      return [segment.image("https://example.com/not-forward-2.jpg")]
+                    },
+                  },
+                })
+
+                assert.equal(res.ok, true)
+                assert.equal(sent.length, 2)
+                const fallbackPayload = Array.isArray(sent[1].message)
+                  ? sent[1].message
+                  : [sent[1].message]
+                assert.ok(fallbackPayload.some(item => item?.type === "image"))
+                assert.ok(!fallbackPayload.some(item => item?.type === "forward"))
+              } finally {
+                harness.bot.makeForwardMsg = originalBaseForward
+                globalThis.Bot.makeGroupForwardMsg = originalForwardBuilder
+                globalThis.Bot.sendMessage = originalSendMessage
+              }
+            })
+          },
+        )
+      },
+    )
+  } finally {
+    cleanupGroupData(groupId)
+    for (const item of savedPaths) {
+      try {
+        fs.unlinkSync(path.resolve(repoRoot, item))
+      } catch {}
+    }
+  }
 })
