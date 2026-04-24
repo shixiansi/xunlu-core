@@ -100,3 +100,20 @@ test("message coercion drops button segments instead of stringifying them", () =
   assert.equal(universal.segments[0].type, UniversalSegmentType.TEXT)
   assert.equal(renderUniversalSegments(universal.segments), "前缀")
 })
+
+test("derived fields keep existing ctx.msg instead of remounting from segments", () => {
+  const ctx = {
+    msg: "帮助",
+    message: [
+      UniversalMessageSegment.text("云崽 帮助"),
+      UniversalMessageSegment.image({ url: "https://example.com/a.png" }),
+    ],
+    self_id: 10000,
+  }
+
+  applyDerivedFieldsFromUniversalSegments(ctx)
+
+  assert.equal(ctx.msg, "帮助")
+  assert.equal(ctx.url, "")
+  assert.deepEqual(ctx.img, ["https://example.com/a.png"])
+})

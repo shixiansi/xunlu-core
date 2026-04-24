@@ -62,8 +62,18 @@ function applyDerivedFieldsFromUniversalSegments(ctx) {
     .map(seg => getSegmentText(seg))
     .join("")
 
-  ctx.msg = String(text).replace(/＃/g, "#").trim()
-  ctx.url = ctx.msg.match(URL_REGEXP)?.[0] || ""
+  const hasExistingMsg =
+    ctx.msg !== undefined &&
+    ctx.msg !== null &&
+    String(ctx.msg).trim() !== ""
+
+  if (!hasExistingMsg) {
+    ctx.msg = String(text).replace(/＃/g, "#").trim()
+  }
+
+  const msgText = String(hasExistingMsg ? ctx.msg : text).replace(/＃/g, "#").trim()
+  if (!hasExistingMsg) ctx.msg = msgText
+  ctx.url = msgText.match(URL_REGEXP)?.[0] || ""
 
   ctx.img = ctx.message
     .filter(seg => normalizeDerivedSegmentType(seg?.type) === UniversalSegmentType.IMAGE)
