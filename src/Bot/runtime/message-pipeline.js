@@ -5,6 +5,7 @@ import {
 import { UniversalMessage, UniversalSegmentType } from "../message/universal-message.js"
 import { applyUniversalBotApi } from "../api/universal-bot-api.js"
 import { installTakeoverBotCompatProxy } from "../yunzai/takeover.js"
+import { applyPrefixCompatibilityToEvent } from "./prefix-compat.js"
 import { normalizeEventTargetFields } from "./shared.js"
 
 /**
@@ -182,6 +183,8 @@ export class MessagePipeline {
     if (Array.isArray(masters) && (masters.includes(uidNum) || masters.includes(uid))) {
       e.isMaster = true
     }
+
+    await applyPrefixCompatibilityToEvent(e)
 
     normalizeEventTargetFields(e)
     attachStandardMessageApis(e)
