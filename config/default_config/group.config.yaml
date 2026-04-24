@@ -1,0 +1,4 @@
+default:
+  prefix_enabled: false
+  botAlias:
+    - "#"

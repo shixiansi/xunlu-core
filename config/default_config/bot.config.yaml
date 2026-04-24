@@ -32,6 +32,8 @@ accessToken:
 
 image_display: true
 
+message_emoji_reaction_enabled: true
+
 suffix_text: "[face:277][face:123]"
 
 # 是否使用TLS

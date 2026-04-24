@@ -1,5 +1,6 @@
 import lodash from "lodash"
 import { segment } from "../../../Bot/message/index.js"
+import cfg from "../../../lib/config.js"
 import {
   disableUserReaction,
   getUserReactionConfig,
@@ -64,7 +65,7 @@ function parseEmojiIdsFromText(text) {
 
 function isReactionConfigCommand(msg) {
   const s = String(msg || "").trim()
-  return /^[#＃]表情回应/.test(s) || /^[#＃]关闭表情回应$/.test(s)
+  return /^(?:[#＃])?表情回应/.test(s) || /^(?:[#＃])?关闭表情回应$/.test(s)
 }
 
 function resolveReactionForCtx(ctx) {
@@ -139,6 +140,10 @@ function resolveMessageReactionItems(ctx) {
   return uniqueReactionItems([...emojiItems, ...faceItems], 10)
 }
 
+function isMessageEmojiReactionEnabled() {
+  return cfg.getConfig("bot")?.message_emoji_reaction_enabled !== false
+}
+
 export function register(bot) {
   if (!bot || !bot.registerCommand) return
   //第一个参数是数组第一个是命令，第二个是事件,如果是其他事件就是事件列表中的事件名称，第二个是方法，第三个是下文函数
@@ -150,7 +155,7 @@ export function register(bot) {
     // 跳过配置命令本身（避免对设置消息也回应）
     if (isReactionConfigCommand(ctx?.msg)) return false
 
-    const messageReactionItems = resolveMessageReactionItems(ctx)
+    const messageReactionItems = isMessageEmojiReactionEnabled() ? resolveMessageReactionItems(ctx) : []
     const messageReactions = messageReactionItems.map(item => item.id)
 
     const { enabled, reactions } = resolveReactionForCtx(ctx)
@@ -191,10 +196,10 @@ export function register(bot) {
     return false
   })
 
-  // #表情回应<face>：开启并设置当前用户的表情回应
+  // #表情回应<face>：开启并设置当前用户的消息表情回应
   bot.registerCommand(
     [
-      "^[#＃]表情回应(\\s*.*)?$",
+      "^(?:[#＃])?表情回应(\\s*.*)?$",
       1000,
       {
         example: ["#表情回应277", "#表情回应 277 233", "#表情回应😭😂"],
@@ -203,7 +208,7 @@ export function register(bot) {
     ],
     async ctx => {
       const raw = String(ctx?.msg || "")
-      const rest = raw.replace(/^[#＃]表情回应/, "").trim()
+      const rest = raw.replace(/^(?:[#＃])?表情回应/, "").trim()
 
       const faceIdsText = parseFaceIdsFromText(rest).map(id => ({ id, kind: "face" }))
       const emojiIdsText = parseEmojiIdsFromText(rest).map(id => ({ id, kind: "emoji" }))
@@ -225,7 +230,7 @@ export function register(bot) {
 
   // #关闭表情回应：关闭当前用户
   bot.registerCommand(
-    ["^[#＃]关闭表情回应$", 1000, { example: "#关闭表情回应", desc: "关闭当前用户的消息表情回应" }],
+    ["^(?:[#＃])?关闭表情回应$", 1000, { example: "#关闭表情回应", desc: "关闭当前用户的消息表情回应" }],
     async ctx => {
       disableUserReaction(ctx?.user_id)
       return await ctx.reply("已关闭表情回应（仅对你生效）")
@@ -341,5 +346,4 @@ export function register(bot) {
       return await ctx.reply(`撤回失败：${err?.message || err}`, true)
     }
   })
-
 }

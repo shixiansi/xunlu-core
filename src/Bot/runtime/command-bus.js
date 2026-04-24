@@ -9,6 +9,7 @@ import {
   invokeYunzaiCommandByReg as invokeYunzaiRecordedCommandByReg,
   invokeYunzaiCommandByText,
 } from "../yunzai/command-bridge.js"
+import { applyPrefixCompatibilityToEvent, buildCommandTextCandidates } from "./prefix-compat.js"
 import { normalizeOptionalString, resolveSyntheticProtocol } from "./shared.js"
 
 /**
@@ -392,6 +393,7 @@ export class CommandBus {
     const result = await this.processNormalCommands(event, {
       rawCommand: text,
       plugin: options?.plugin,
+      skipPrefixCompat: true,
     })
     if (result !== false && result !== undefined && result !== null) {
       return result
@@ -501,6 +503,12 @@ export class CommandBus {
   }
 
   async processNormalCommands(e, options = {}) {
+    let prefixState = null
+    if (!options?.skipPrefixCompat) {
+      prefixState = await applyPrefixCompatibilityToEvent(e, options?.prefixCompat)
+      if (!prefixState?.allow) return false
+    }
+
     const commandText = String(options?.rawCommand ?? e?.msg ?? e?.raw_message ?? "").trim()
     const plugin = String(options?.plugin || "").trim()
     let regs = this.getOrderedCommands()
@@ -508,13 +516,25 @@ export class CommandBus {
     for (let r of regs) {
       if (plugin && String(r?.plugin || "") !== plugin) continue
       if (r.event && !this.baseBot.filtEvent(e, r)) continue
-      if (new RegExp(r.reg).test(commandText)) {
+
+      let matchedText = ""
+      for (const candidateText of buildCommandTextCandidates(commandText, prefixState)) {
+        if (new RegExp(r.reg).test(candidateText)) {
+          matchedText = candidateText
+          break
+        }
+      }
+
+      if (matchedText) {
         try {
           logger.debug("触发命令:", r)
-          e.raw_message = commandText
-          e.msg = commandText
+          const previousMsg = e.msg
+          e.msg = matchedText
           let res = await this.invokeMatchedCommand(r, e)
-          if (!res) continue
+          if (!res) {
+            e.msg = previousMsg
+            continue
+          }
           return res
         } catch (err) {
           logger.error("处理命令时出错:", err)
