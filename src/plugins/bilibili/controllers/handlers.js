@@ -752,6 +752,11 @@ async function makeDynamicImageForward(baseBot, ctx, groupId, msgList = [], desc
   }
   const normalizedList = await buildDynamicForwardNodes(forwardCtx, msgList)
 
+  if (baseBot && typeof baseBot.makeGroupForwardMsg === "function") {
+    const forwardMsg = await baseBot.makeGroupForwardMsg(forwardCtx, normalizedList, desc)
+    if (isNativeForwardPayload(forwardMsg)) return forwardMsg
+  }
+
   if (baseBot && typeof baseBot.makeForwardMsg === "function") {
     const forwardMsg = await baseBot.makeForwardMsg(forwardCtx, normalizedList, desc)
     if (isNativeForwardPayload(forwardMsg)) return forwardMsg
@@ -1242,7 +1247,7 @@ export function register(bot) {
             })
 
             let res = await runtimeBot.sendMessage({ group_id: g }, rendered)
-            if (!res) throw new Error("直播推送消息失败")
+            if (res === false) throw new Error("直播推送消息失败")
 
             logger.info(`[Bilibili] 直播推送成功，房间ID：${room_id}，群ID：${g}`)
             writeLiveData(g, u, roomInfo)
@@ -1292,7 +1297,7 @@ export function register(bot) {
 
           const dynamicMessage = await renderDynamicMessage(runtimeBot, result)
           const sendResult = await runtimeBot.sendMessage({ group_id: g }, dynamicMessage)
-          if (!sendResult) {
+          if (sendResult === false) {
             throw new Error("动态主消息发送失败")
           }
 
