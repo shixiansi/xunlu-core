@@ -77,18 +77,6 @@ function resolveOnebotMediaTarget(
   return { ok: true, kind: ref.kind, value: ref.value }
 }
 
-function fileUriToLocalPath(value) {
-  const input = String(value || "").trim()
-  if (!input) return ""
-  if (!/^file:\/\//i.test(input)) return input
-
-  try {
-    return fileURLToPath(input)
-  } catch {
-    return input.replace(/^file:\/\//i, "")
-  }
-}
-
 /**
  * OneBot V11 反向WS适配器（Milky标准风格）
  * 完整实现OneBot V11 API，兼容Milky适配器调用风格
@@ -217,19 +205,7 @@ class OneBotV11Adapter {
     return Object.keys(resp).length === 0
   }
 
-  #readLocalMediaAsBase64(file, { kind = "", fixJpegHeader = false } = {}) {
-    const localPath =
-      kind === "fileUri" || /^file:\/\//i.test(String(file || ""))
-        ? fileUriToLocalPath(file)
-        : String(file || "").trim()
-    if (!localPath) return ""
-
-    const buf = fs.readFileSync(localPath)
-    const normalized = fixJpegHeader ? this.#fixCorruptedJpegHeader(buf) : buf
-    return `base64://${normalized.toString("base64")}`
-  }
-
-  #normalizeOnebotFile(file, { mediaType = "" } = {}) {
+  #normalizeOnebotFile(file) {
     if (!file) return ""
 
     // Buffer -> base64://
@@ -242,15 +218,7 @@ class OneBotV11Adapter {
     if (!resolved.ok) throw new Error(resolved.message)
 
     const f = String(resolved.value || "").trim()
-    const kind = String(resolved.kind || "").trim()
     if (!f) return ""
-
-    if (["absolutePath", "relativePath", "basename", "fileUri"].includes(kind) && mediaType !== "file") {
-      return this.#readLocalMediaAsBase64(resolved.value, {
-        kind,
-        fixJpegHeader: mediaType === "image",
-      })
-    }
 
     // Already supported forms
     if (f.startsWith("base64://")) {
@@ -260,7 +228,7 @@ class OneBotV11Adapter {
     if (f.startsWith("http://") || f.startsWith("https://") || f.startsWith("file://")) return f
 
     // data URI -> base64://...
-    if (f.startsWith("data:")) {
+    if (f.startsWith("data:image/")) {
       const idx = f.indexOf(",")
       if (idx > -1 && idx < f.length - 1) {
         return `base64://${f.slice(idx + 1)}`
@@ -306,7 +274,7 @@ class OneBotV11Adapter {
   }
 
   #normalizeOutgoingMediaSegment(item, type) {
-    const file = this.#normalizeOnebotFile(this.#pickOutgoingMediaValue(item), { mediaType: type })
+    const file = this.#normalizeOnebotFile(this.#pickOutgoingMediaValue(item))
     if (!file) throw new Error(`[OneBotV11Adapter] ${type} segment missing file/url/path/fileId`)
     const nextData = item?.data && typeof item.data === "object" ? { ...item.data, file } : { file }
     return { ...item, type, data: nextData }

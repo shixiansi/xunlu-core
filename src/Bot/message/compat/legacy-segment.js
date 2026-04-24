@@ -1,5 +1,6 @@
 import fs from "fs"
 import path from "path"
+import { fileURLToPath } from "node:url"
 
 import { UniversalMessageSegment } from "../core/universal-segment.js"
 
@@ -15,6 +16,18 @@ function shouldPreserveAsPath(value) {
   )
 }
 
+function resolveLocalPath(value) {
+  const input = String(value || "").trim()
+  if (!input) return ""
+  if (!input.startsWith("file://")) return input
+
+  try {
+    return fileURLToPath(input)
+  } catch {
+    return input.replace(/^file:\/\//, "")
+  }
+}
+
 function normalizeSegmentFileData(type, file, name) {
   const data = { file, ...(name ? { name } : {}) }
 
@@ -25,7 +38,7 @@ function normalizeSegmentFileData(type, file, name) {
 
   if (typeof data.file !== "string") return data
 
-  const localPath = data.file.replace(/^file:\/\//, "")
+  const localPath = resolveLocalPath(data.file)
   if (!data.path && shouldPreserveAsPath(data.file)) {
     data.path = data.file
   }
@@ -35,7 +48,8 @@ function normalizeSegmentFileData(type, file, name) {
     data.name = path.basename(localPath)
   }
   if (type === "video") {
-    data.path = localPath
+    data.file = `base64://${fs.readFileSync(localPath).toString("base64")}`
+    delete data.path
     return data
   }
 

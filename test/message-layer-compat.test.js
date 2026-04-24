@@ -1,5 +1,9 @@
+import fs from "node:fs"
+import os from "node:os"
+import path from "node:path"
 import assert from "node:assert/strict"
 import test from "node:test"
+import { pathToFileURL } from "node:url"
 
 import {
   UniversalMessage,
@@ -69,12 +73,21 @@ test("message layer wrappers keep coerce and derived ctx fields compatible", asy
 
 test("legacy segment compatibility still produces universal media segments", () => {
   const imageSeg = segment.image(Buffer.from("abc"))
-  const videoSeg = segment.video("file:///tmp/demo.mp4")
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "xunlu-segment-video-"))
+  const videoPath = path.join(tempDir, "demo.mp4")
+  fs.writeFileSync(videoPath, Buffer.from("fake-mp4-payload"))
 
-  assert.equal(imageSeg.type, UniversalSegmentType.IMAGE)
-  assert.match(String(imageSeg.data.file || ""), /^base64:\/\//)
-  assert.equal(videoSeg.type, UniversalSegmentType.VIDEO)
-  assert.equal(videoSeg.data.file, "file:///tmp/demo.mp4")
+  try {
+    const videoSeg = segment.video(pathToFileURL(videoPath).href)
+
+    assert.equal(imageSeg.type, UniversalSegmentType.IMAGE)
+    assert.match(String(imageSeg.data.file || ""), /^base64:\/\//)
+    assert.equal(videoSeg.type, UniversalSegmentType.VIDEO)
+    assert.match(String(videoSeg.data.file || ""), /^base64:\/\//)
+    assert.equal(videoSeg.data.path, undefined)
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true })
+  }
 })
 
 test("message coercion drops button segments instead of stringifying them", () => {
