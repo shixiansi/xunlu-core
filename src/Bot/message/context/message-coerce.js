@@ -211,6 +211,8 @@ function coerceOneInputToUniversalSegments(input) {
       }
       case "forward":
         return [UniversalMessageSegment.forward(data)]
+      case "button":
+        return []
       default:
         return [UniversalMessageSegment.text(JSON.stringify(input))]
     }

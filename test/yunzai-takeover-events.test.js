@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events"
 import test from "node:test"
 
 import { startMilkyTakeoverBridge, startOnebotTakeoverBridge } from "../src/Bot/yunzai/events/index.js"
+import { __test as takeoverTest } from "../src/Bot/yunzai/takeover.js"
 import { installTestRuntime } from "./helpers/test-runtime.js"
 
 installTestRuntime(test)
@@ -206,4 +207,28 @@ test("milky takeover event bridge emits yunzai-shaped message, notice, and reque
   })
 
   assert.equal(bot.events.length, 3)
+})
+
+test("takeover outbound sanitizing drops button segments for non-QQBot adapters", () => {
+  const sanitized = takeoverTest.sanitizeOutboundMessageForAdapter([
+    { type: "text", data: { text: "hello" } },
+    { type: "button", data: { text: "click" } },
+  ], {
+    bot: { adapter: { id: "OneBotv11" } },
+  })
+
+  assert.deepEqual(sanitized, [{ type: "text", data: { text: "hello" } }])
+})
+
+test("takeover outbound sanitizing keeps button segments for QQBot adapters", () => {
+  const message = [
+    { type: "text", data: { text: "hello" } },
+    { type: "button", data: { text: "click" } },
+  ]
+
+  const sanitized = takeoverTest.sanitizeOutboundMessageForAdapter(message, {
+    bot: { adapter: { id: "QQBot" } },
+  })
+
+  assert.deepEqual(sanitized, message)
 })

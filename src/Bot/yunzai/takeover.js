@@ -214,6 +214,29 @@ function preprocessOutboundMessage(input) {
   return convertOne(input)
 }
 
+function isButtonSegment(segment) {
+  return Boolean(
+    segment &&
+      typeof segment === "object" &&
+      !Array.isArray(segment) &&
+      String(segment.type || "").trim() === "button",
+  )
+}
+
+function isOfficialBotAdapter({ bot, adapter } = {}) {
+  return String(bot?.adapter?.id || adapter?.id || "").trim() === "QQBot"
+}
+
+function sanitizeOutboundMessageForAdapter(input, context = {}) {
+  if (isOfficialBotAdapter(context)) return input
+
+  if (Array.isArray(input)) {
+    return input.filter(segment => !isButtonSegment(segment))
+  }
+
+  return isButtonSegment(input) ? null : input
+}
+
 function getLoginInfoFromAdapter(protocol, loginInfoRaw) {
   const loginInfo = loginInfoRaw && typeof loginInfoRaw === "object" ? loginInfoRaw : {}
 
@@ -432,9 +455,14 @@ function createTakeoverState({ bot, protocol, adapter, ignoreSelf = true }) {
     }
 
     const preprocessed = preprocessOutboundMessage(message)
-    const universal = coerceToUniversalMessage(preprocessed)
+    const sanitized = sanitizeOutboundMessageForAdapter(preprocessed, {
+      bot: state.bot,
+      adapter: state.adapter,
+    })
+    const universal = coerceToUniversalMessage(sanitized)
 
     const segments = Array.isArray(universal?.segments) ? [...universal.segments] : []
+    if (!segments.length) return null
 
     if (quote) {
       const ref = quoteRef || { msgId: state._lastMessageId, seq: state._lastMessageSeq }
@@ -1343,7 +1371,9 @@ export async function startYunzaiTakeover({ bot, ignoreSelf } = {}) {
 export const __test = {
   connectAdapterByName,
   getAutoAdapterOrder,
+  isOfficialBotAdapter,
   patchYunzaiBot,
+  sanitizeOutboundMessageForAdapter,
   installTakeoverBotCompatProxy,
 }
 

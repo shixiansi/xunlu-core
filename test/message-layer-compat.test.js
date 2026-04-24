@@ -76,3 +76,14 @@ test("legacy segment compatibility still produces universal media segments", () 
   assert.equal(videoSeg.type, UniversalSegmentType.VIDEO)
   assert.equal(videoSeg.data.file, "file:///tmp/demo.mp4")
 })
+
+test("message coercion drops button segments instead of stringifying them", () => {
+  const universal = coerceToUniversalMessage([
+    { type: "text", data: { text: "前缀" } },
+    { type: "button", data: { text: "按钮" } },
+  ])
+
+  assert.equal(universal.segments.length, 1)
+  assert.equal(universal.segments[0].type, UniversalSegmentType.TEXT)
+  assert.equal(renderUniversalSegments(universal.segments), "前缀")
+})
