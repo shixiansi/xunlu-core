@@ -45,6 +45,8 @@ export class ForwardService {
       if (!message) continue
       const itemUserId = message?.user_id ?? message?.uin ?? message?.id ?? userInfo.user_id
       const explicitName = message?.nickname ?? message?.sender_name ?? message?.name
+      const messageContent =
+        message?.content ?? message?.message ?? message?.segments ?? message
       const itemName = explicitName ?? userInfo.nickname
       const m = {
         ...userInfo,
@@ -58,7 +60,7 @@ export class ForwardService {
         m.sender_name = itemName
         m.name = itemName
       }
-      message?.content ? (m.message = message.content) : (m.message = message)
+      m.message = messageContent
       message?.time ? (m.time = message.time) : ""
       forwardMsg.push(m)
     }
