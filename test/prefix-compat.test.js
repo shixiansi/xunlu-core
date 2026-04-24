@@ -2,6 +2,8 @@ import assert from "node:assert/strict"
 import test from "node:test"
 
 import { CommandBus } from "../src/Bot/runtime/command-bus.js"
+import { __test as repeatMuteStoreTest, getGlobalRepeatMuteEnabled } from "../src/plugins/fudu-ban/model/store.js"
+import { __test as helpHandlersTest } from "../src/plugins/help/controllers/handlers.js"
 import {
   applyPrefixCompatibilityToEvent,
   buildCommandTextCandidates,
@@ -148,4 +150,47 @@ test("processNormalCommands matches alias-stripped commands that still require h
   } finally {
     globalThis.logger = previousLogger
   }
+})
+
+test("repeat mute defaults to globally disabled", () => {
+  const db = repeatMuteStoreTest.createDefaultDb()
+  assert.equal(getGlobalRepeatMuteEnabled(db), false)
+})
+
+test("help command only allows explicit xunlu prefixes inside Yunzai plugin env", () => {
+  assert.equal(
+    helpHandlersTest.shouldAllowHelpResponse(
+      { raw_message: "帮助", msg: "帮助" },
+      { currentEnv: "QQBot-YunZai" },
+    ),
+    false,
+  )
+  assert.equal(
+    helpHandlersTest.shouldAllowHelpResponse(
+      { raw_message: "云崽帮助", msg: "帮助", __xunluOriginalMsg: "云崽帮助" },
+      { currentEnv: "QQBot-YunZai" },
+    ),
+    false,
+  )
+  assert.equal(
+    helpHandlersTest.shouldAllowHelpResponse(
+      { raw_message: "荨鹿帮助", msg: "帮助", __xunluOriginalMsg: "荨鹿帮助" },
+      { currentEnv: "QQBot-YunZai" },
+    ),
+    true,
+  )
+  assert.equal(
+    helpHandlersTest.shouldAllowHelpResponse(
+      { raw_message: "xunlu帮助", msg: "帮助", __xunluOriginalMsg: "xunlu帮助" },
+      { currentEnv: "QQBot-YunZai" },
+    ),
+    true,
+  )
+  assert.equal(
+    helpHandlersTest.shouldAllowHelpResponse(
+      { raw_message: "帮助", msg: "帮助" },
+      { currentEnv: "xunlu-core" },
+    ),
+    true,
+  )
 })

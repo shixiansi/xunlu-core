@@ -3,6 +3,8 @@ import path from "node:path"
 
 import env from "../../../lib/env.js"
 
+const XUNLU_HELP_PREFIXES = ["荨鹿", "xunlu"]
+
 function nowText() {
   const d = new Date()
   const pad = n => String(n).padStart(2, "0")
@@ -498,6 +500,22 @@ function normalizePluginName(item) {
   return m ? m[1] : id || "unknown"
 }
 
+function normalizeIncomingText(ctx) {
+  return String(ctx?.__xunluOriginalMsg ?? ctx?.raw_message ?? ctx?.msg ?? "")
+    .trim()
+}
+
+function hasExplicitXunluHelpPrefix(ctx, { rawText = normalizeIncomingText(ctx) } = {}) {
+  const text = String(rawText || "").trim().toLowerCase()
+  return XUNLU_HELP_PREFIXES.some(prefix => text.startsWith(String(prefix).toLowerCase()))
+}
+
+function shouldAllowHelpResponse(ctx, { currentEnv = env.CurEnv } = {}) {
+  if (String(currentEnv || "").trim() !== "QQBot-YunZai") return true
+  // 在插件环境里，帮助必须显式带上“荨鹿/xunlu”，避免抢占宿主的通用帮助指令。
+  return hasExplicitXunluHelpPrefix(ctx)
+}
+
 function normalizeHelpItem(item) {
   const plugin = normalizePluginName(item)
   const reg = String(item?.reg || "")
@@ -723,7 +741,17 @@ async function replyHelp(ctx, query, options = {}) {
   }
 
   // 降级文本输出（simulate 环境通常会走这里）
-  const lines = [headerLine, "", "用法：", "- 帮助", "- 帮助 <插件名或简称>", "- <插件名或简称>帮助", "- 帮助 <关键词>", ""]
+  const lines = [
+    headerLine,
+    "",
+    "用法：",
+    "- 帮助（独立运行）",
+    "- 荨鹿帮助 / xunlu帮助（插件环境）",
+    "- 帮助 <插件名或简称>",
+    "- <插件名或简称>帮助",
+    "- 帮助 <关键词>",
+    "",
+  ]
   if (summaryMode) {
     for (const p of overviewPlugins) {
       const short = p.shortName && p.shortName !== p.title ? `，简称：${p.shortName}` : ""
@@ -755,6 +783,7 @@ export function register(bot) {
     ["^帮助(\\s+.*)?$",
       { example: ["帮助", "帮助 钓鱼", "帮助 鱼"], desc: "默认展示大插件列表，带上插件名或简称可查看详细功能" }],
     async ctx => {
+      if (!shouldAllowHelpResponse(ctx)) return false
       const raw = String(ctx?.msg || "").trim()
       const rest = raw.replace(/^帮助/, "").trim()
       return await replyHelp(ctx, rest)
@@ -764,6 +793,7 @@ export function register(bot) {
   bot.registerCommand(
     ["^([^\\s]{1,24})帮助$", 4500, { example: ["钓鱼帮助", "鱼帮助"], desc: "按插件名或简称查看该插件的详细帮助" }],
     async ctx => {
+      if (!shouldAllowHelpResponse(ctx)) return false
       const raw = String(ctx?.msg || "").trim()
       const rest = raw.replace(/帮助$/, "").trim()
       return await replyHelp(ctx, rest, { strictPluginOnly: true })
@@ -773,4 +803,9 @@ export function register(bot) {
 
 export function onBotEvent(event) {
   void event
+}
+
+export const __test = {
+  hasExplicitXunluHelpPrefix,
+  shouldAllowHelpResponse,
 }

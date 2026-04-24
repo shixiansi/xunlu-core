@@ -18,11 +18,11 @@ export function getDbPath() {
   return DB_PATH
 }
 
-function defaultDb() {
+function createDefaultDb() {
   return {
     version: 2,
     settings: {
-      enabled: true,
+      enabled: false,
     },
     groups: {},
   }
@@ -35,15 +35,15 @@ export function normalizeId(value) {
 
 export function loadDb() {
   ensureDataDir()
-  if (!fs.existsSync(DB_PATH)) return defaultDb()
+  if (!fs.existsSync(DB_PATH)) return createDefaultDb()
 
   try {
     const raw = fs.readFileSync(DB_PATH, "utf8")
     const data = raw ? JSON.parse(raw) : null
-    if (!data || typeof data !== "object") return defaultDb()
+    if (!data || typeof data !== "object") return createDefaultDb()
     if (!data.groups || typeof data.groups !== "object") data.groups = {}
     if (!data.settings || typeof data.settings !== "object") data.settings = {}
-    if (data.settings.enabled === undefined) data.settings.enabled = true
+    if (data.settings.enabled === undefined) data.settings.enabled = false
     else data.settings.enabled = Boolean(data.settings.enabled)
     if (!data.version) data.version = 2
 
@@ -68,7 +68,7 @@ export function loadDb() {
 
     return data
   } catch {
-    return defaultDb()
+    return createDefaultDb()
   }
 }
 
@@ -164,4 +164,8 @@ export function setGroupRepeatMuteEnabled(group, enabled) {
 
   group.config.enabled = Boolean(enabled)
   return group.config.enabled
+}
+
+export const __test = {
+  createDefaultDb,
 }
