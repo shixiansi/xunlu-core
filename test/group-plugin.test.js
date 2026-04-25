@@ -148,6 +148,9 @@ test("onebot recall relay falls back to normal private messages when native forw
       protocol: "onebotv11",
       user_id: 3021392873,
       sendMessage: async (target, message) => {
+        if (Array.isArray(message) && message[0]?.type === "node") {
+          throw new Error("native forward unavailable")
+        }
         sent.push({ target, message })
         return true
       },
@@ -186,6 +189,85 @@ test("onebot recall relay falls back to normal private messages when native forw
   assert.equal(sent[0]?.message?.[1]?.type, "text")
   assert.match(String(sent[0]?.message?.[1]?.data?.content || ""), /@2548285036/)
   assert.equal(sent[0]?.message?.[2]?.type, "image")
+})
+
+test("onebot forward relay payload uses normalized node content instead of runtime makeForwardMsg shape", async () => {
+  const previousBot = globalThis.Bot
+  const runtime = createProtocolMock({ protocol: "onebotv11", selfId: 3239716086 })
+  globalThis.Bot = runtime.bot
+
+  try {
+    const api = createUniversalBotApi()
+    const ok = await sendMasterPayload(
+      {
+        protocol: "onebotv11",
+        group_id: 1061170515,
+        user_id: 1765629830,
+        bot: runtime.bot,
+        sendMessage: api.sendMessage,
+        callApi: async (action, params) => {
+          if (action === "get_forward_msg") {
+            assert.deepEqual(params, { message_id: "forward-relay-1" })
+            return {
+              messages: [
+                {
+                  content: [
+                    {
+                      type: "image",
+                      data: {
+                        file: "04BABB6378C40E88B1EA28D58285253B.jpg",
+                        url: "https://multimedia.nt.qq.com.cn/download?appid=1407&fileid=relay-img",
+                      },
+                    },
+                  ],
+                  sender: {
+                    nickname: "白泽",
+                    user_id: 1094950020,
+                  },
+                  time: 1777107494,
+                  message_format: "array",
+                  message_type: "group",
+                },
+                {
+                  content: [{ type: "text", data: { text: "荨鹿更新" } }],
+                  sender: {
+                    nickname: "时先思",
+                    user_id: 1765629830,
+                  },
+                  time: 1777107537,
+                  message_format: "array",
+                  message_type: "group",
+                },
+              ],
+            }
+          }
+          return await runtime.bot.callApi(action, params)
+        },
+      },
+      1765629830,
+      {
+        __xunlu_notice_forward_relay__: true,
+        title: "[荨鹿通知][群撤回消息]",
+        forward_id: "forward-relay-1",
+      },
+    )
+
+    assert.ok(ok)
+    const sendCall = runtime.calls.find(call => call?.name === "send_private_forward_msg")
+    assert.ok(sendCall)
+    assert.equal(sendCall?.params?.messages?.length, 2)
+    assert.equal(sendCall?.params?.messages?.[0]?.data?.name, "白泽")
+    assert.match(
+      String(sendCall?.params?.messages?.[0]?.data?.content?.[0]?.data?.file || ""),
+      /^https:\/\/multimedia\.nt\.qq\.com\.cn\/download\?appid=1407&fileid=relay-img.*rkey=/,
+    )
+    assert.equal(
+      sendCall?.params?.messages?.[1]?.data?.content?.[0]?.data?.text,
+      "荨鹿更新",
+    )
+  } finally {
+    globalThis.Bot = previousBot
+  }
 })
 
 test("onebot recalled message prefers api result when db only has basename media refs", async () => {

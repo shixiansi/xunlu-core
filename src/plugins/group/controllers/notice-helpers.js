@@ -1030,6 +1030,14 @@ async function sendForwardRelayToMaster(ctx, uid, payload) {
   }
 
   const proto = String(ctx?.protocol || "").toLowerCase()
+  if (proto === "onebotv11") {
+    return await sendPrivateForwardPayloadToMaster(ctx, uid, {
+      __xunlu_notice_private_forward__: true,
+      title: String(payload?.title || "").trim(),
+      msg_list: msgList,
+    })
+  }
+
   try {
     const forwardPayload = await makePrivateForwardPayloadForUser(uid, msgList)
     await sendMasterRawPayload(ctx, uid, forwardPayload)
