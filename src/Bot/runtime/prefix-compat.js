@@ -195,13 +195,14 @@ export async function applyPrefixCompatibilityToEvent(event, options = {}) {
 export function buildCommandTextCandidates(text, prefixState) {
   const normalizedText = normalizeString(text)
   const out = []
-  const pushUnique = value => {
-    const next = normalizeString(value)
-    if (!next || out.includes(next)) return
+  const pushUnique = (value, { allowEmpty = false } = {}) => {
+    const next = allowEmpty ? String(value ?? "") : normalizeString(value)
+    if (!allowEmpty && !next) return
+    if (out.includes(next)) return
     out.push(next)
   }
 
-  pushUnique(normalizedText)
+  pushUnique(normalizedText, { allowEmpty: true })
 
   if (prefixState?.matchedAlias && normalizedText && !/^[#＃]/.test(normalizedText)) {
     pushUnique(`#${normalizedText}`)

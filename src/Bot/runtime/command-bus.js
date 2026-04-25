@@ -517,15 +517,17 @@ export class CommandBus {
       if (plugin && String(r?.plugin || "") !== plugin) continue
       if (r.event && !this.baseBot.filtEvent(e, r)) continue
 
+      let matched = false
       let matchedText = ""
       for (const candidateText of buildCommandTextCandidates(commandText, prefixState)) {
         if (new RegExp(r.reg).test(candidateText)) {
+          matched = true
           matchedText = candidateText
           break
         }
       }
 
-      if (matchedText) {
+      if (matched) {
         try {
           logger.debug("触发命令:", r)
           const previousMsg = e.msg

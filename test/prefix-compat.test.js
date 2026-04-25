@@ -118,6 +118,11 @@ test("buildCommandTextCandidates adds hash fallback for alias-stripped commands"
   assert.deepEqual(candidates, ["定时发送 每天 08:00 | 早安", "#定时发送 每天 08:00 | 早安", "＃定时发送 每天 08:00 | 早安"])
 })
 
+test("buildCommandTextCandidates keeps an empty candidate for event-only dispatch", () => {
+  const candidates = buildCommandTextCandidates("", null)
+  assert.deepEqual(candidates, [""])
+})
+
 test("processNormalCommands matches alias-stripped commands that still require hash", async () => {
   let seenMsg = ""
   const previousLogger = globalThis.logger
@@ -171,6 +176,56 @@ test("processNormalCommands matches alias-stripped commands that still require h
     assert.equal(result, true)
     assert.equal(seenMsg, "#定时发送 每天 08:00 | 早安")
     assert.equal(event.raw_message, "云崽 定时发送 每天 08:00 | 早安")
+  } finally {
+    globalThis.logger = previousLogger
+  }
+})
+
+test("processNormalCommands dispatches notice handlers with empty reg even when raw text is empty", async () => {
+  let triggered = false
+  const previousLogger = globalThis.logger
+  globalThis.logger = {
+    debug() {},
+    error() {},
+  }
+  const baseBot = {
+    adapter: "onebotv11",
+    plugins: {
+      "group-notice": {
+        id: "group-notice",
+        plugin: "group",
+        reg: "",
+        event: "notice.group.recall",
+        priority: 100,
+        trackUsage: false,
+        fnc: async () => {
+          triggered = true
+          return true
+        },
+      },
+    },
+    filtEvent() {
+      return true
+    },
+  }
+
+  const bus = new CommandBus(baseBot)
+  const event = {
+    post_type: "notice",
+    notice_type: "group",
+    sub_type: "recall",
+    raw_message: "",
+    msg: "",
+    group_id: 1061170515,
+  }
+
+  try {
+    const result = await bus.processNormalCommands(event, {
+      skipPrefixCompat: true,
+    })
+
+    assert.equal(result, true)
+    assert.equal(triggered, true)
   } finally {
     globalThis.logger = previousLogger
   }
