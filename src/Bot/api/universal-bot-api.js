@@ -1156,7 +1156,7 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
           return await rawAccept.call(runtimeBot, { flag, sub_type, reason: input.reason })
         }
 
-        const sendApi = getYunzaiSendApi(runtimeBot)
+        const sendApi = getOnebotReactionSendApi({ ctx, runtimeBot }) || getYunzaiSendApi(runtimeBot)
         if (sendApi) {
           return await sendApi("set_group_add_request", {
             flag,
@@ -1222,7 +1222,7 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
           return await rawReject.call(runtimeBot, { flag, sub_type, reason: input.reason })
         }
 
-        const sendApi = getYunzaiSendApi(runtimeBot)
+        const sendApi = getOnebotReactionSendApi({ ctx, runtimeBot }) || getYunzaiSendApi(runtimeBot)
         if (sendApi) {
           return await sendApi("set_group_add_request", {
             flag,

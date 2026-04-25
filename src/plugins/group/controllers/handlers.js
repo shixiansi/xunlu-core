@@ -1335,6 +1335,14 @@ export function register(bot) {
       .catch(err => console.warn("[group] callFnc tts failed:", err?.message || err))
   })
   bot.registerCommand(["", "notice.group.decrease"], async ctx => {
+    if (toInt(ctx?.user_id) === toInt(ctx?.self_id)) {
+      await cleanupGroupScopedPluginData(ctx?.group_id, {
+        reason: "notice-group-decrease-self",
+      }).catch(err => {
+        console.warn("[group] cleanup failed after bot removed from group:", err?.message || err)
+      })
+      return false
+    }
     console.log("减员的ctx", ctx)
     let userInfo = await ctx.getUserInfo({ user_id: ctx.user_id })
     ctx.reply(`把${userInfo.nickname || "不知名的家伙"}丢出群了！`)
