@@ -184,6 +184,9 @@ function normalizeMediaData(type, raw = {}) {
 
   const data = { file }
   if (id !== undefined) data.id = id
+  if (refs.url !== undefined) data.url = refs.url
+  if (refs.path !== undefined) data.path = refs.path
+  if (refs.fileId !== undefined) data.fileId = refs.fileId
 
   const name = pickFirstValue([raw.name, raw.file_name], value =>
     toOptionalString(value, { trim: false }),

@@ -1,7 +1,10 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
+import { createUniversalBotApi } from "../src/Bot/api/universal-bot-api.js"
+import { UniversalMessage } from "../src/Bot/message/universal-message.js"
 import MessageDB from "../src/db/MessageDB.js"
+import { createProtocolMock } from "../src/dev/protocol-mock.js"
 import cfg from "../src/lib/config.js"
 import { __test as groupHandlersTest, register } from "../src/plugins/group/controllers/handlers.js"
 import { sendMasterPayload } from "../src/plugins/group/controllers/notice-helpers.js"
@@ -226,5 +229,68 @@ test("onebot recalled message prefers api result when db only has basename media
     )
   } finally {
     MessageDB.getMessageById = originalGetMessageById
+  }
+})
+
+test("onebot image conversion prefers remote url over basename cache file", () => {
+  const segments = UniversalMessage.fromOnebotV11([
+    {
+      type: "image",
+      data: {
+        file: "d49909aad05917b179067d4cf89044d9.jpg",
+        url: "https://multimedia.nt.qq.com.cn/download?appid=1407&fileid=abc123",
+      },
+    },
+  ]).convertTo("onebotv11")
+
+  assert.equal(
+    segments[0]?.data?.file,
+    "https://multimedia.nt.qq.com.cn/download?appid=1407&fileid=abc123",
+  )
+})
+
+test("onebot private relay keeps image url through the real send pipeline", async () => {
+  const previousBot = globalThis.Bot
+  const runtime = createProtocolMock({ protocol: "onebotv11", selfId: 3239716086 })
+  globalThis.Bot = runtime.bot
+
+  try {
+    const api = createUniversalBotApi()
+    const ok = await sendMasterPayload(
+      {
+        protocol: "onebotv11",
+        bot: runtime.bot,
+        sendMessage: api.sendMessage,
+      },
+      1765629830,
+      [
+        {
+          type: "node",
+          data: {
+            uin: "3021392873",
+            name: "不知江月待何人",
+            content: [
+              {
+                type: "image",
+                data: {
+                  file: "E2B6EAC88EF6531CB0B7DE0BC0BED6A2.jpg",
+                  url: "https://multimedia.nt.qq.com.cn/download?appid=1407&fileid=img123",
+                },
+              },
+            ],
+          },
+        },
+      ],
+    )
+
+    assert.equal(ok, true)
+    const sendCall = runtime.calls.find(call => call?.name === "send_private_msg")
+    assert.ok(sendCall)
+    assert.equal(
+      sendCall?.params?.message?.[1]?.data?.file,
+      "https://multimedia.nt.qq.com.cn/download?appid=1407&fileid=img123",
+    )
+  } finally {
+    globalThis.Bot = previousBot
   }
 })

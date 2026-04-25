@@ -738,7 +738,7 @@ function normalizePrivateRelaySegments(segments = []) {
 
     if (["image", "video", "record", "file"].includes(String(seg.type || ""))) {
       const data = seg?.data && typeof seg.data === "object" ? seg.data : {}
-      const mediaRef = data.file ?? data.url ?? data.uri ?? data.path
+      const mediaRef = data.url ?? data.temp_url ?? data.uri ?? data.path ?? data.file
       if (!isResolvableMediaRef(mediaRef)) {
         const labels = {
           image: "[图片]",
