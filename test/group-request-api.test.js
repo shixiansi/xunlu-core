@@ -73,6 +73,52 @@ test("onebot rejectGroupRequest prefers ctx.bot sendApi over runtime icqq setGro
   }
 })
 
+test("onebot acceptGroupRequest prefers ctx.bot sendApi over runtime icqq setGroupAddRequest", async () => {
+  const previousBot = globalThis.Bot
+  const previousRuntimeBot = globalThis.__xunlu_runtime_bot
+  const calls = []
+
+  globalThis.Bot = {
+    setGroupAddRequest() {
+      throw new Error("should not use icqq setGroupAddRequest")
+    },
+  }
+  globalThis.__xunlu_runtime_bot = undefined
+
+  try {
+    const api = createUniversalBotApi()
+    const result = await api.acceptGroupRequest.call(
+      {
+        protocol: "onebotv11",
+        bot: {
+          adapter: { name: "OneBotv11" },
+          async sendApi(action, params) {
+            calls.push({ action, params })
+            return { ok: true }
+          },
+        },
+      },
+      { flag: "flag-2", sub_type: "add", reason: "allow" },
+    )
+
+    assert.deepEqual(calls, [
+      {
+        action: "set_group_add_request",
+        params: {
+          flag: "flag-2",
+          sub_type: "add",
+          approve: true,
+          reason: "allow",
+        },
+      },
+    ])
+    assert.deepEqual(result, { ok: true })
+  } finally {
+    globalThis.Bot = previousBot
+    globalThis.__xunlu_runtime_bot = previousRuntimeBot
+  }
+})
+
 test("group decrease does not reply when the removed member is the bot itself", async () => {
   const commands = collectHandlers(registerGroup)
   const handler = findHandler(

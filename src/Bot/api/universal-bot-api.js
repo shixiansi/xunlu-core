@@ -1151,9 +1151,11 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
         const flag = input.flag
         if (!flag) throw new Error("[acceptGroupRequest] onebotv11 requires flag")
         const sub_type = mapOnebotGroupRequestSubType(input)
-        const rawAccept = getRawMethod(runtimeBot, "acceptGroupRequest", api.acceptGroupRequest)
-        if (rawAccept) {
-          return await rawAccept.call(runtimeBot, { flag, sub_type, reason: input.reason })
+        const requestCandidates = collectMessageBotCandidates(ctx?.bot, runtimeBot, globalThis.Bot)
+        for (const candidate of requestCandidates) {
+          const rawAccept = getRawMethod(candidate, "acceptGroupRequest", api.acceptGroupRequest)
+          if (!rawAccept) continue
+          return await rawAccept.call(candidate, { flag, sub_type, reason: input.reason })
         }
 
         const sendApi = getOnebotReactionSendApi({ ctx, runtimeBot }) || getYunzaiSendApi(runtimeBot)
@@ -1217,9 +1219,11 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
         const flag = input.flag
         if (!flag) throw new Error("[rejectGroupRequest] onebotv11 requires flag")
         const sub_type = mapOnebotGroupRequestSubType(input)
-        const rawReject = getRawMethod(runtimeBot, "rejectGroupRequest", api.rejectGroupRequest)
-        if (rawReject) {
-          return await rawReject.call(runtimeBot, { flag, sub_type, reason: input.reason })
+        const requestCandidates = collectMessageBotCandidates(ctx?.bot, runtimeBot, globalThis.Bot)
+        for (const candidate of requestCandidates) {
+          const rawReject = getRawMethod(candidate, "rejectGroupRequest", api.rejectGroupRequest)
+          if (!rawReject) continue
+          return await rawReject.call(candidate, { flag, sub_type, reason: input.reason })
         }
 
         const sendApi = getOnebotReactionSendApi({ ctx, runtimeBot }) || getYunzaiSendApi(runtimeBot)
