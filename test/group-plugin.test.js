@@ -419,3 +419,67 @@ test("recalled forward placeholder resolves by forward id and get_forward_msg", 
     MessageDB.getMessageById = originalGetMessageById
   }
 })
+
+test("recalled forward placeholder prefers group getForwardMsg when available", async () => {
+  const originalGetMessageById = MessageDB.getMessageById.bind(MessageDB)
+  MessageDB.getMessageById = async () => ({
+    message: [
+      {
+        type: "text",
+        data: {
+          text: "[聊天记录]",
+        },
+      },
+    ],
+  })
+
+  try {
+    const calls = []
+    const ctx = {
+      protocol: "onebotv11",
+      group_id: 1061170515,
+      message_id: "9002",
+      group: {
+        async getForwardMsg(forwardId) {
+          calls.push({ kind: "group", forwardId })
+          return [
+            {
+              type: "node",
+              data: {
+                uin: "10002",
+                name: "Bob",
+                content: [{ type: "text", data: { text: "forward-from-group-api" } }],
+              },
+            },
+          ]
+        },
+      },
+      callApi: async (action, params) => {
+        if (action === "get_msg") {
+          return {
+            raw_message: "[CQ:forward,id=forward-9002]",
+            message: [{ type: "text", data: { text: "[聊天记录]" } }],
+          }
+        }
+        throw new Error(`unexpected action: ${action} ${JSON.stringify(params)}`)
+      },
+    }
+
+    const recalled = await groupHandlersTest.getRecalledMessageSafe(ctx)
+    assert.equal(recalled?.forward_id, "forward-9002")
+    assert.equal(recalled?.forward_messages?.length, 1)
+
+    const msgList = await groupHandlersTest.buildNoticeForwardMsgList(ctx, {
+      sender: { userId: 10002, name: "Bob" },
+      message: recalled,
+      time: 1777090001,
+    })
+
+    assert.equal(msgList.length, 1)
+    assert.equal(msgList[0]?.content?.[0]?.type, "text")
+    assert.equal(msgList[0]?.content?.[0]?.data?.text, "forward-from-group-api")
+    assert.deepEqual(calls, [{ kind: "group", forwardId: "forward-9002" }])
+  } finally {
+    MessageDB.getMessageById = originalGetMessageById
+  }
+})

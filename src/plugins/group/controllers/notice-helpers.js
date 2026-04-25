@@ -971,6 +971,57 @@ async function fetchForwardMessagesBySegment(ctx, seg) {
   if (!forwardId) return []
 
   const proto = String(ctx?.protocol || "").toLowerCase()
+  if (proto === "onebotv11") {
+    const groupForwardGetter =
+      (ctx?.group && typeof ctx.group.getForwardMsg === "function"
+        ? ctx.group.getForwardMsg.bind(ctx.group)
+        : null) ||
+      (ctx?.group_id && typeof runtimeBot?.pickGroup === "function"
+        ? runtimeBot.pickGroup(toInt(ctx.group_id) ?? ctx.group_id)?.getForwardMsg?.bind(
+            runtimeBot.pickGroup(toInt(ctx.group_id) ?? ctx.group_id),
+          )
+        : null)
+
+    if (typeof groupForwardGetter === "function") {
+      try {
+        const detail = await withTimeout(
+          Promise.resolve().then(() => groupForwardGetter(forwardId)),
+          2500,
+          null,
+        )
+        if (Array.isArray(detail) && detail.length) return detail
+        if (Array.isArray(detail?.messages) && detail.messages.length) return detail.messages
+      } catch {}
+    }
+
+    const privateForwardGetter =
+      (ctx?.friend && typeof ctx.friend.getForwardMsg === "function"
+        ? ctx.friend.getForwardMsg.bind(ctx.friend)
+        : null) ||
+      (ctx?.user_id && typeof runtimeBot?.pickFriend === "function"
+        ? runtimeBot.pickFriend(toInt(ctx.user_id) ?? ctx.user_id)?.getForwardMsg?.bind(
+            runtimeBot.pickFriend(toInt(ctx.user_id) ?? ctx.user_id),
+          )
+        : null) ||
+      (ctx?.user_id && typeof runtimeBot?.pickUser === "function"
+        ? runtimeBot.pickUser(toInt(ctx.user_id) ?? ctx.user_id)?.getForwardMsg?.bind(
+            runtimeBot.pickUser(toInt(ctx.user_id) ?? ctx.user_id),
+          )
+        : null)
+
+    if (typeof privateForwardGetter === "function") {
+      try {
+        const detail = await withTimeout(
+          Promise.resolve().then(() => privateForwardGetter(forwardId)),
+          2500,
+          null,
+        )
+        if (Array.isArray(detail) && detail.length) return detail
+        if (Array.isArray(detail?.messages) && detail.messages.length) return detail.messages
+      } catch {}
+    }
+  }
+
   if (proto === "milky" && typeof runtimeBot?.getForwardMessage === "function") {
     try {
       const detail = await withTimeout(
@@ -996,7 +1047,7 @@ async function fetchForwardMessagesBySegment(ctx, seg) {
     2500,
     null,
   ).catch(() => null)
-  const onebotMessages = onebotRes?.messages ?? onebotRes?.data?.messages
+  const onebotMessages = onebotRes?.messages ?? onebotRes?.data?.messages ?? onebotRes?.data
   if (Array.isArray(onebotMessages) && onebotMessages.length) return onebotMessages
 
   const milkyRes = await withTimeout(
