@@ -85,7 +85,7 @@ test("today history command forwards stored messages instead of throwing", async
     const commands = createRegisteredCommands()
     const handler = findCommand(
       commands,
-      item => Array.isArray(item.command) && item.command[0] === "^今日发言记录$",
+      item => Array.isArray(item.command) && String(item.command[0]).includes("今日发言记录"),
     )
 
     const replies = []
@@ -117,7 +117,7 @@ test("group join approval command requires admin or master", async () => {
   const commands = createRegisteredCommands()
   const handler = findCommand(
     commands,
-    item => Array.isArray(item.command) && item.command[0] === "(开门|关门)",
+    item => Array.isArray(item.command) && String(item.command[0]).includes("开门"),
   )
 
   const replies = []
@@ -140,7 +140,7 @@ test("group join approval command requires admin or master", async () => {
   assert.equal(replies[0], "需要管理员权限")
 })
 
-test("onebot recall relay falls back to normal private messages instead of private forward", async () => {
+test("onebot recall relay falls back to normal private messages when native forward is unavailable", async () => {
   const sent = []
 
   const ok = await sendMasterPayload(
@@ -163,7 +163,7 @@ test("onebot recall relay falls back to normal private messages instead of priva
               message: [
                 { type: "at", data: { qq: "2548285036" } },
                 { type: "image", data: { file: "https://example.com/test.jpg" } },
-                { type: "text", data: { text: " 可莉可莉 进入了酒馆" } },
+                { type: "text", data: { text: " 测试图文" } },
               ],
             },
           ],
@@ -249,7 +249,7 @@ test("onebot image conversion prefers remote url over basename cache file", () =
   )
 })
 
-test("onebot private relay keeps image url through the real send pipeline", async () => {
+test("onebot private forward payload prefers native private forward through the real send pipeline", async () => {
   const previousBot = globalThis.Bot
   const runtime = createProtocolMock({ protocol: "onebotv11", selfId: 3239716086 })
   globalThis.Bot = runtime.bot
@@ -263,12 +263,13 @@ test("onebot private relay keeps image url through the real send pipeline", asyn
         sendMessage: api.sendMessage,
       },
       1765629830,
-      [
-        {
-          type: "node",
-          data: {
-            uin: "3021392873",
-            name: "不知江月待何人",
+      {
+        __xunlu_notice_private_forward__: true,
+        title: "转发详情",
+        msg_list: [
+          {
+            user_id: 3021392873,
+            nickname: "不知江月待何人",
             content: [
               {
                 type: "image",
@@ -279,18 +280,70 @@ test("onebot private relay keeps image url through the real send pipeline", asyn
               },
             ],
           },
-        },
-      ],
+        ],
+      },
     )
 
-    assert.equal(ok, true)
-    const sendCall = runtime.calls.find(call => call?.name === "send_private_msg")
+    assert.ok(ok)
+    const sendCall = runtime.calls.find(call => call?.name === "send_private_forward_msg")
     assert.ok(sendCall)
     assert.equal(
-      sendCall?.params?.message?.[1]?.data?.file,
+      sendCall?.params?.messages?.[0]?.data?.content?.[0]?.data?.file,
       "https://multimedia.nt.qq.com.cn/download?appid=1407&fileid=img123",
     )
   } finally {
     globalThis.Bot = previousBot
   }
+})
+
+test("onebot private forward payload falls back to plain private messages when native forward send fails", async () => {
+  const sent = []
+
+  const ok = await sendMasterPayload(
+    {
+      protocol: "onebotv11",
+      sendMessage: async (target, message) => {
+        if (Array.isArray(message) && message[0]?.type === "node") {
+          throw new Error("native private forward timeout")
+        }
+        sent.push({ target, message })
+        return true
+      },
+    },
+    1765629830,
+    {
+      __xunlu_notice_private_forward__: true,
+      title: "转发详情",
+      msg_list: [
+        {
+          user_id: 3021392873,
+          nickname: "不知江月待何人",
+          content: [
+            {
+              type: "image",
+              data: {
+                file: "E2B6EAC88EF6531CB0B7DE0BC0BED6A2.jpg",
+                url: "https://multimedia.nt.qq.com.cn/download?appid=1407&fileid=img123",
+              },
+            },
+            {
+              type: "text",
+              data: {
+                text: "测试图文",
+              },
+            },
+          ],
+        },
+      ],
+    },
+  )
+
+  assert.equal(ok, true)
+  assert.equal(sent.length, 1)
+  assert.equal(sent[0]?.message?.[1]?.type, "image")
+  assert.equal(
+    sent[0]?.message?.[1]?.data?.file,
+    "https://multimedia.nt.qq.com.cn/download?appid=1407&fileid=img123",
+  )
+  assert.equal(sent[0]?.message?.[2]?.type, "text")
 })

@@ -117,8 +117,20 @@ function normalizeNotifyPayloads(message) {
   return message === undefined || message === null || message === false ? [] : [message]
 }
 
+function isNoticePrivateForwardPayload(payload) {
+  return Boolean(
+    payload &&
+      typeof payload === "object" &&
+      payload.__xunlu_notice_private_forward__ === true &&
+      Array.isArray(payload.msg_list),
+  )
+}
+
 export async function sendMasterPayload(ctx, uid, message) {
   const proto = String(ctx?.protocol || "").toLowerCase()
+  if (isNoticePrivateForwardPayload(message)) {
+    return await sendPrivateForwardPayloadToMaster(ctx, uid, message)
+  }
   if (isNoticeForwardRelayPayload(message)) {
     const sent = await sendForwardRelayToMaster(ctx, uid, message).catch(err => {
       console.warn("[group] notify master forward relay failed:", err?.message || err)
@@ -131,7 +143,12 @@ export async function sendMasterPayload(ctx, uid, message) {
   if (proto === "onebotv11") {
     const fallbackMsgList = normalizeForwardPayloadForPrivateFallback(ctx, uid, message)
     if (fallbackMsgList.length) {
-      return await sendForwardRelayFallbackToMaster(ctx, uid, {}, fallbackMsgList)
+      try {
+        return await sendMasterRawPayload(ctx, uid, message)
+      } catch (err) {
+        console.warn("[group] private forward payload fallback:", err?.message || err)
+        return await sendForwardRelayFallbackToMaster(ctx, uid, {}, fallbackMsgList)
+      }
     }
   }
 
@@ -713,6 +730,30 @@ async function makePrivateForwardPayloadForUser(userId, msgList = []) {
   throw new Error("private forward API not available")
 }
 
+function buildOnebotPrivateForwardNodes(msgList = []) {
+  const list = Array.isArray(msgList) ? msgList : []
+  return list
+    .map(item => {
+      const userId = normalizeForwardUserId(item?.user_id, 10001)
+      const senderName = normalizeForwardSenderName(
+        item?.nickname ?? item?.sender_name ?? item?.name,
+        userId,
+      )
+      const content = coerceToUniversalMessage(item?.content ?? []).convertTo("onebotv11")
+      if (!Array.isArray(content) || !content.length) return null
+      return {
+        type: "node",
+        data: {
+          uin: String(userId),
+          name: senderName,
+          content,
+          ...(item?.time ? { time: item.time } : {}),
+        },
+      }
+    })
+    .filter(Boolean)
+}
+
 function normalizePrivateRelaySegments(segments = []) {
   const list = Array.isArray(segments) ? segments : []
   const out = []
@@ -759,6 +800,30 @@ function normalizePrivateRelaySegments(segments = []) {
 
 function normalizeForwardPayloadForPrivateFallback(ctx, uid, message) {
   if (!Array.isArray(message) || !message.length) return []
+  const nodeList = message.filter(item => String(item?.type || "").toLowerCase() === "node")
+  if (nodeList.length === message.length) {
+    return nodeList
+      .map(item => {
+        const data = item?.data && typeof item.data === "object" ? item.data : {}
+        const userId = normalizeForwardUserId(
+          [data.uin, data.user_id, item.user_id, item.uin, item.sender_id, item.senderId],
+          ctx?.user_id ?? ctx?.sender_id ?? ctx?.self_id ?? uid,
+        )
+        const nickname = normalizeForwardSenderName(data.name, userId)
+        const content = toForwardSafeSegments(data.content ?? [], {})
+        if (!content.length) return null
+        return {
+          user_id: userId,
+          nickname,
+          sender_name: nickname,
+          name: nickname,
+          content,
+          ...(data.time ? { time: data.time } : {}),
+        }
+      })
+      .filter(Boolean)
+  }
+
   return normalizeForwardApiMessages(message, {
     fallbackUserId: ctx?.user_id ?? ctx?.sender_id ?? ctx?.self_id ?? uid,
   })
@@ -768,9 +833,14 @@ async function sendForwardRelayFallbackToMaster(ctx, uid, payload, msgList = [])
   const title = String(payload?.title || "").trim()
   const list = Array.isArray(msgList) ? msgList : []
   let sent = false
+  const proto = String(ctx?.protocol || "").toLowerCase()
 
   for (const item of list) {
-    const content = normalizePrivateRelaySegments(item?.content)
+    const relayContent =
+      proto === "onebotv11"
+        ? coerceToUniversalMessage(item?.content ?? []).convertTo("onebotv11")
+        : item?.content
+    const content = normalizePrivateRelaySegments(relayContent)
     if (!content.length) continue
 
     const senderName = normalizeForwardSenderName(
@@ -787,6 +857,24 @@ async function sendForwardRelayFallbackToMaster(ctx, uid, payload, msgList = [])
   }
 
   return sent
+}
+
+async function sendPrivateForwardPayloadToMaster(ctx, uid, payload) {
+  const msgList = Array.isArray(payload?.msg_list) ? payload.msg_list : []
+  if (!msgList.length) return false
+
+  const nodes = buildOnebotPrivateForwardNodes(msgList)
+  if (!nodes.length) {
+    return await sendForwardRelayFallbackToMaster(ctx, uid, payload, msgList)
+  }
+
+  try {
+    await sendMasterRawPayload(ctx, uid, nodes)
+    return true
+  } catch (err) {
+    console.warn("[group] onebot private forward payload fallback:", err?.message || err)
+    return await sendForwardRelayFallbackToMaster(ctx, uid, payload, msgList)
+  }
 }
 
 async function sendForwardRelayToMaster(ctx, uid, payload) {
@@ -808,16 +896,16 @@ async function sendForwardRelayToMaster(ctx, uid, payload) {
   }
 
   const proto = String(ctx?.protocol || "").toLowerCase()
-  if (proto === "onebotv11") {
-    return await sendForwardRelayFallbackToMaster(ctx, uid, payload, msgList)
-  }
-
   try {
     const forwardPayload = await makePrivateForwardPayloadForUser(uid, msgList)
     await sendMasterRawPayload(ctx, uid, forwardPayload)
     return true
   } catch (err) {
-    console.warn("[group] private forward relay fallback:", err?.message || err)
+    if (proto !== "onebotv11") {
+      console.warn("[group] private forward relay fallback:", err?.message || err)
+    } else {
+      console.warn("[group] onebot private forward relay fallback:", err?.message || err)
+    }
     return await sendForwardRelayFallbackToMaster(ctx, uid, payload, msgList)
   }
 }
@@ -932,6 +1020,14 @@ export async function buildNoticeForwardMsgList(ctx, { sender, message, time } =
 async function buildNoticeForwardPayload(ctx, { title, sender, message, time } = {}) {
   const msgList = await buildNoticeForwardMsgList(ctx, { sender, message, time })
   if (!msgList.length) return null
+
+  if (String(ctx?.protocol || "").toLowerCase() === "onebotv11") {
+    return {
+      __xunlu_notice_private_forward__: true,
+      title: title || "",
+      msg_list: msgList,
+    }
+  }
 
   try {
     if (ctx && typeof ctx.makeGroupForwardMsg === "function") {

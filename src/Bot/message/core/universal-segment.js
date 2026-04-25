@@ -163,11 +163,11 @@ function normalizeMediaData(type, raw = {}) {
 
   const file =
     pickPrimaryMediaReference(
-      raw.file,
       raw.url,
       raw.uri,
       raw.temp_url,
       raw.path,
+      raw.file,
       raw.fileId,
       raw.resource_id,
       raw.file_id,
