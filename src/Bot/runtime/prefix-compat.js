@@ -142,6 +142,12 @@ export async function applyPrefixCompatibilityToEvent(event, options = {}) {
     return result
   }
 
+  if (String(event.post_type || "message").toLowerCase() !== "message") {
+    if (event.msg === undefined) event.msg = originalText
+    if (event.hasAlias === undefined) event.hasAlias = false
+    return finish({ allow: true, matchedAlias: "", strippedText: originalText, config: null })
+  }
+
   if (!event.group_id || event.isPrivate) {
     if (event.msg === undefined) event.msg = originalText
     if (event.hasAlias === undefined) event.hasAlias = false

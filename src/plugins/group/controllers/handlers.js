@@ -33,6 +33,7 @@ import {
   normalizeNoticeMessageSegments,
   sendMasterPayload,
   sendToMasters,
+  toForwardSafeSegments,
 } from "./notice-helpers.js"
 import {
   cleanupGroupScopedPluginData,
@@ -1301,7 +1302,7 @@ export function register(bot) {
       type: "join_request",
       group_id: ctx.group_id,
     }
-    ctx.reply([
+    await ctx.reply([
       {
         type: "text",
         data: {
@@ -1311,7 +1312,7 @@ export function register(bot) {
       {
         type: "image",
         data: {
-          uri: `https://q1.qlogo.cn/g?b=qq&nk=${user_id}}&s=100`,
+          uri: `https://q1.qlogo.cn/g?b=qq&nk=${user_id}&s=100`,
         },
       },
       {
@@ -1323,12 +1324,15 @@ export function register(bot) {
     ])
   })
   bot.registerCommand(["(开门|关门)"], async ctx => {
+    if (!ctx.group_id) return ctx.reply("请在群内使用")
+    if (!(await checkUserAdminOrMaster(ctx))) return ctx.reply("需要管理员权限")
+
     const replied = await ctx.getReplyMessage?.()
     if (!replied) return ctx.reply("未获取到申请信息")
 
     const text = (replied.message || [])
       .filter(seg => seg?.type === "text")
-      .map(seg => seg?.data?.content || "")
+      .map(seg => seg?.data?.content || seg?.data?.text || "")
       .join("")
 
     if (!text.includes("临时通行证ID")) return ctx.reply("未获取到申请信息")
@@ -1336,12 +1340,14 @@ export function register(bot) {
     const passID = text.split("ID:")[1]?.trim()
     if (!passID || !groupPass[passID]) return ctx.reply("未获取到申请信息")
 
-    if (ctx.msg == "开门") {
+    if (String(ctx.msg || "").trim() === "开门") {
       await ctx.acceptGroupRequest(groupPass[passID])
+      delete groupPass[passID]
       return ctx.reply("已开门！")
     }
 
     await ctx.rejectGroupRequest(groupPass[passID])
+    delete groupPass[passID]
     return ctx.reply("已经把这个家伙拒之门外了！")
   })
   bot.registerCommand(["", "notice.group.increase"], async ctx => {
@@ -1364,7 +1370,7 @@ export function register(bot) {
     let msglist = []
     for (let [key, value] of member_list) {
       msglist.push([
-        segment.image(`https://q1.qlogo.cn/g?b=qq&nk=${value.user_id}}&s=100`),
+        segment.image(`https://q1.qlogo.cn/g?b=qq&nk=${value.user_id}&s=100`),
         `昵称：${value.nickname}\n群名片：${value.card}\nQQ号：${value.user_id}\n等级：${value.level}\n加入时间:${moment(value.join_time * 1000).format("YYYY-MM-DD HH:mm:ss")}`,
       ])
     }

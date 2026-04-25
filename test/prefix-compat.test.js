@@ -60,6 +60,30 @@ test("yunzai onlyReplyAt=2 blocks non-master messages without alias or at", asyn
   assert.equal(event.hasAlias, false)
 })
 
+test("group notice events bypass prefix gating even when onlyReplyAt=2", async () => {
+  const event = {
+    post_type: "notice",
+    notice_type: "group",
+    sub_type: "recall",
+    group_id: 123,
+    raw_message: "",
+    atBot: false,
+    isMaster: false,
+  }
+
+  const result = await applyPrefixCompatibilityToEvent(event, {
+    envName: "QQBot-YunZai",
+    loadGroupConfig: async () => ({
+      onlyReplyAt: 2,
+      botAlias: ["云崽"],
+    }),
+  })
+
+  assert.equal(result.allow, true)
+  assert.equal(event.msg, "")
+  assert.equal(event.hasAlias, false)
+})
+
 test("standalone symbol prefix keeps original ctx.msg for hash-style commands", async () => {
   const event = {
     isGroup: true,

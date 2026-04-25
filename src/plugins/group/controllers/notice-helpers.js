@@ -246,7 +246,7 @@ function patchImageSegmentsRkey(segments, rkeySuffix) {
   return changed ? out : list
 }
 
-function toForwardSafeSegments(content, { rkeySuffix } = {}) {
+export function toForwardSafeSegments(content, { rkeySuffix } = {}) {
   const segments = Array.isArray(content) ? content : content ? [content] : []
   const out = []
 
