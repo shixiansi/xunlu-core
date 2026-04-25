@@ -6,6 +6,7 @@ import {
   getUserReactionConfig,
   setUserReactionConfig,
 } from "../model/reaction-store.js"
+import { handleRecallCommand } from "../../shared/recall-command.js"
 
 // 记录各协议是否支持 reaction，避免“API not available”刷屏
 const reactionApiSupport = new Map()
@@ -334,54 +335,9 @@ export function register(bot) {
   // 引用撤回：回复一条消息并发送“引用撤回”，机器人尝试撤回被引用的那条消息（需要权限）
   bot.registerCommand(["^(引用撤回|#?撤回)$", 1000], async ctx => {
     const normalizedCommand = String(ctx?.msg ?? "").trim()
-    if (ctx?.isMaster && normalizedCommand === "撤回") {
+    if (normalizedCommand === "撤回") {
       return false
     }
-
-    const replied = await ctx.getReplyMessage?.()
-    if (!replied) return ctx.reply("请先回复需要撤回的消息，再发送：撤回 / 引用撤回")
-
-    if (!ctx?.isMaster) {
-      const selfId = Number(ctx?.self_id ?? globalThis.Bot?.uin ?? globalThis.Bot?.user_id ?? 0)
-      const senderRaw =
-        replied?.sender_id ??
-        replied?.user_id ??
-        replied?.sender?.user_id ??
-        replied?.data?.sender_id ??
-        replied?.data?.user_id ??
-        replied?.data?.sender?.user_id ??
-        replied?.sender?.userId ??
-        replied?.sender?.uid ??
-        replied?.sender?.uin ??
-        replied?.sender_uid ??
-        replied?.senderUid
-
-      const senderId =
-        senderRaw !== undefined && senderRaw !== null && senderRaw !== "" ? Number(senderRaw) : NaN
-
-      if (!selfId || !Number.isFinite(senderId) || senderId !== selfId) {
-        return ctx.reply("你只能撤回机器人自己发出的消息哦～请引用机器人消息再试试")
-      }
-    }
-
-    const seq =
-      replied?.seq ?? replied?.message_seq ?? replied?.messageSeq ?? replied?.messageRef?.seq
-    const message_id =
-      replied?.message_id ?? replied?.messageId ?? replied?.msgId ?? replied?.messageRef?.msgId
-
-    try {
-      const res = await ctx.recallMessage({
-        peer_id: ctx?.peer_id ?? ctx?.group_id ?? ctx?.user_id,
-        message_seq: seq,
-        message_id,
-        isGroup: Boolean(ctx?.group_id),
-      })
-      if (res === false) {
-        throw new Error("协议端未撤回该消息（可能权限不足或消息不支持撤回）")
-      }
-      return await ctx.reply("好哒～已尝试撤回这条消息啦", true, { recallMsg: 3 })
-    } catch (err) {
-      return await ctx.reply(`撤回失败：${err?.message || err}`, true)
-    }
+    return await handleRecallCommand(ctx)
   })
 }

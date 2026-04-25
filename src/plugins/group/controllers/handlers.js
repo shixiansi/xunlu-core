@@ -39,6 +39,7 @@ import {
   cleanupGroupScopedPluginData,
   reconcileGroupScopedPlugins,
 } from "../services/group-scope-maintenance.js"
+import { handleRecallCommand } from "../../shared/recall-command.js"
 const filemage = new Filemage()
 const groupPass = {}
 
@@ -987,42 +988,11 @@ export function register(bot) {
   )
 
   bot.registerCommand(
-    ["^(|#)撤回$", { example: ["#撤回"], desc: "撤回 Bot 发送的消息（需回复那条消息，主人）" }],
-    async ctx => {
-      if (!ctx.isMaster) return await ctx.reply("仅主人可用")
-      const replied = await ctx.getReplyMessage?.()
-      if (!replied) return await ctx.reply("请先回复要撤回的消息")
-
-      const senderId = toInt(
-        replied.user_id ??
-          replied.sender_id ??
-          replied?.sender?.user_id ??
-          replied?.data?.user_id ??
-          replied?.data?.sender_id ??
-          replied?.data?.sender?.user_id,
-      )
-      const selfId = toInt(ctx.self_id)
-      if (!selfId || !senderId || senderId !== selfId) {
-        return await ctx.reply("只能撤回 bot 自己发的消息（请回复 bot 发出的那条）")
-      }
-
-      const isGroup = Boolean(ctx.group_id ?? replied.group_id ?? replied.peer_id)
-      const peer_id = isGroup
-        ? toInt(ctx.group_id ?? replied.group_id ?? replied.peer_id)
-        : toInt(ctx.user_id ?? replied.user_id ?? replied.peer_id)
-
-      const message_id = replied.message_id ?? replied.messageId ?? replied?.data?.message_id
-      const message_seq = replied.message_seq ?? replied.seq ?? replied?.data?.message_seq
-
-      await ctx.recallMessage({
-        peer_id,
-        message_id,
-        message_seq,
-        isGroup,
-      })
-
-      return await ctx.reply("已尝试撤回")
-    },
+    [
+      "^(|#)撤回$",
+      { example: ["#撤回"], desc: "回复消息后撤回：主人可撤回他人；其他人仅可撤回 bot 消息" },
+    ],
+    async ctx => await handleRecallCommand(ctx, { missingReplyText: "请先回复需要撤回的消息，再发送：撤回" }),
   )
 
   bot.registerCommand(
