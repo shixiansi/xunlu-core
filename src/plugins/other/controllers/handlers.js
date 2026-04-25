@@ -333,6 +333,11 @@ export function register(bot) {
 
   // 引用撤回：回复一条消息并发送“引用撤回”，机器人尝试撤回被引用的那条消息（需要权限）
   bot.registerCommand(["^(引用撤回|#?撤回)$", 1000], async ctx => {
+    const rawCommand = String(ctx?.raw_message ?? ctx?.msg ?? "").trim()
+    if (ctx?.isMaster && /^(?:#)?撤回$/.test(rawCommand)) {
+      return false
+    }
+
     const replied = await ctx.getReplyMessage?.()
     if (!replied) return ctx.reply("请先回复需要撤回的消息，再发送：撤回 / 引用撤回")
 
