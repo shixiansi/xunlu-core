@@ -501,6 +501,17 @@ function extractNoticeText(segments) {
     .trim()
 }
 
+function hasMeaningfulForwardContent(segments) {
+  const list = Array.isArray(segments) ? segments : []
+  if (!list.length) return false
+  return list.some(seg => {
+    const type = String(seg?.type || "").toLowerCase()
+    if (type !== "text") return true
+    const text = String(seg?.data?.content ?? seg?.data?.text ?? seg?.text ?? "").trim()
+    return Boolean(text)
+  })
+}
+
 function analyzeNoticeMessage(segments) {
   const list = Array.isArray(segments) ? segments : []
   const text = clampText(extractNoticeText(list), 160)
@@ -586,16 +597,43 @@ export function normalizeForwardApiMessages(messages, { rkeySuffix, fallbackUser
   for (const item of list) {
     if (!item || typeof item !== "object") continue
 
+    const pickForwardContent = (...candidates) => {
+      for (const candidate of candidates) {
+        const normalized = toForwardSafeSegments(normalizeNoticeMessageSegments(candidate), {
+          rkeySuffix,
+        })
+        if (hasMeaningfulForwardContent(normalized)) return normalized
+      }
+      return []
+    }
+
     if (item.type === "node") {
       const data = item.data && typeof item.data === "object" ? item.data : {}
       const userId = normalizeForwardUserId(
-        [data.uin, data.user_id, item.user_id, item.uin, item.sender_id, item.senderId],
+        [
+          data.uin,
+          data.user_id,
+          item.user_id,
+          item.uin,
+          item.sender_id,
+          item.senderId,
+          item.sender?.user_id,
+        ],
         fallbackUserId,
       )
-      const nickname = normalizeForwardSenderName(data.name, userId)
-      const content = toForwardSafeSegments(normalizeNoticeMessageSegments(data.content ?? []), {
-        rkeySuffix,
-      })
+      const nickname = normalizeForwardSenderName(
+        data.name ?? item.nickname ?? item.sender_name ?? item.name ?? item.sender?.name ?? item.sender?.nickname,
+        userId,
+      )
+      const content = pickForwardContent(
+        data.content,
+        data.message,
+        item.message,
+        item.content,
+        item.segments,
+        item.raw_message,
+        data.raw_message,
+      )
       out.push({
         user_id: userId,
         nickname,
@@ -607,22 +645,40 @@ export function normalizeForwardApiMessages(messages, { rkeySuffix, fallbackUser
       continue
     }
 
-    const userId = normalizeForwardUserId(
-      [item.user_id, item.uin, item.qq, item.sender_id, item.senderId, item.sender?.user_id, item.sender?.id],
-      fallbackUserId,
-    )
-    const nickname = normalizeForwardSenderName(
-      item.nickname ?? item.sender_name ?? item.name ?? item.sender?.name,
-      userId,
-    )
-    const content = toForwardSafeSegments(
-      normalizeNoticeMessageSegments(item.message ?? item.content ?? item.segments ?? []),
-      { rkeySuffix },
-    )
-    out.push({
-      user_id: userId,
-      nickname,
-      sender_name: nickname,
+      const userId = normalizeForwardUserId(
+        [
+          item.user_id,
+          item.uin,
+          item.qq,
+          item.sender_id,
+          item.senderId,
+          item.sender?.user_id,
+          item.sender?.id,
+        ],
+        fallbackUserId,
+      )
+      const nickname = normalizeForwardSenderName(
+        item.nickname ??
+          item.sender_name ??
+          item.name ??
+          item.sender?.card ??
+          item.sender?.name ??
+          item.sender?.nickname,
+        userId,
+      )
+      const content = pickForwardContent(
+        item.message,
+        item.content,
+        item.segments,
+        item.raw_message,
+        item.rawMessage,
+        item.message?.message,
+        item.message?.content,
+      )
+      out.push({
+        user_id: userId,
+        nickname,
+        sender_name: nickname,
       name: nickname,
       content,
       ...(item.time ? { time: item.time } : {}),

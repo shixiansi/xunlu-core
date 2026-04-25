@@ -483,3 +483,24 @@ test("recalled forward placeholder prefers group getForwardMsg when available", 
     MessageDB.getMessageById = originalGetMessageById
   }
 })
+
+test("normalizeForwardApiMessages falls back to sender info and raw_message for sparse forward items", () => {
+  const nodes = groupHandlersTest.normalizeForwardApiMessages([
+    {
+      user_id: 1765629830,
+      sender: {
+        user_id: 1765629830,
+        nickname: "时先思",
+        card: "时先思",
+      },
+      message: [{ type: "text" }],
+      raw_message: "真实转发内容",
+      time: 1777106128,
+    },
+  ])
+
+  assert.equal(nodes.length, 1)
+  assert.equal(nodes[0]?.nickname, "时先思")
+  assert.equal(nodes[0]?.content?.[0]?.type, "text")
+  assert.equal(nodes[0]?.content?.[0]?.data?.text, "真实转发内容")
+})
