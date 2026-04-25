@@ -280,8 +280,44 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       const timesRaw = input.times ?? input.count
       const times = Math.max(1, Math.floor(Number(timesRaw ?? 1)))
 
+      const likeCandidates = collectMessageBotCandidates(ctx?.bot, runtimeBot, globalThis.Bot)
+
+      const tryRawSendLike = async candidates => {
+        for (const candidate of candidates) {
+          const raw = getRawMethod(candidate, "sendLike", api.sendProfileLike)
+          if (!raw) continue
+          return await raw.call(candidate, user_id, times)
+        }
+        return undefined
+      }
+
+      const tryThumbUp = async candidates => {
+        for (const candidate of candidates) {
+          const thumbTarget =
+            typeof candidate?.pickFriend === "function"
+              ? candidate.pickFriend(user_id)
+              : typeof candidate?.pickUser === "function"
+                ? candidate.pickUser(user_id)
+                : null
+          if (!thumbTarget?.thumbUp) continue
+          return await thumbTarget.thumbUp(times)
+        }
+        return undefined
+      }
+
       if (protocol === "onebotv11") {
-        return await api.sendApi.call(ctx ?? api, "send_like", { user_id, times })
+        const rawLikeResult = await tryRawSendLike(likeCandidates)
+        if (rawLikeResult !== undefined) return rawLikeResult
+
+        const thumbUpResult = await tryThumbUp(likeCandidates)
+        if (thumbUpResult !== undefined) return thumbUpResult
+
+        const sendApi = getOnebotReactionSendApi({ ctx, runtimeBot })
+        if (sendApi) {
+          return await sendApi("send_like", { user_id, times })
+        }
+
+        throw new Error("[sendProfileLike] API not available")
       }
 
       if (protocol === "milky") {
@@ -300,19 +336,14 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       }
 
       // icqq: prefer native client API, fallback to yunzai/onebot-style send_like when available.
-      const rawSendLike = getRawMethod(runtimeBot, "sendLike", api.sendProfileLike)
-      if (rawSendLike) {
-        return await rawSendLike.call(runtimeBot, user_id, times)
+      const rawLikeResult = await tryRawSendLike(likeCandidates)
+      if (rawLikeResult !== undefined) {
+        return rawLikeResult
       }
 
-      const thumbTarget =
-        typeof runtimeBot?.pickFriend === "function"
-          ? runtimeBot.pickFriend(user_id)
-          : typeof runtimeBot?.pickUser === "function"
-            ? runtimeBot.pickUser(user_id)
-            : null
-      if (thumbTarget?.thumbUp) {
-        return await thumbTarget.thumbUp(times)
+      const thumbUpResult = await tryThumbUp(likeCandidates)
+      if (thumbUpResult !== undefined) {
+        return thumbUpResult
       }
 
       try {
