@@ -1454,8 +1454,11 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
   }
 
   try {
-    api.sendApi.__xunlu_universal = true
-    api.callApi.__xunlu_universal = true
+    for (const value of Object.values(api)) {
+      if (typeof value === "function") {
+        value.__xunlu_universal = true
+      }
+    }
   } catch {}
 
   return api

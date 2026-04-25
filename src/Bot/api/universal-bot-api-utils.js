@@ -153,7 +153,11 @@ export function getRawMethod(runtimeBot, methodName, selfFn) {
   if (typeof raw === "function") return raw
 
   const fn = runtimeBot?.[methodName]
-  if (typeof fn === "function" && fn !== selfFn) return fn
+  if (typeof fn === "function") {
+    if (fn === selfFn) return null
+    if (fn?.__xunlu_universal) return null
+    return fn
+  }
 
   return null
 }
