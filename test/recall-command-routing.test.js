@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 
 import { register as registerOther } from "../src/plugins/other/controllers/handlers.js"
+import { attachStandardMessageApis } from "../src/Bot/message/context/message-apis.js"
 import { installTestRuntime } from "./helpers/test-runtime.js"
 
 installTestRuntime(test)
@@ -93,4 +94,31 @@ test("other plugin still handles explicit 引用撤回", async () => {
 
   assert.equal(result, true)
   assert.equal(replies[0], "请先回复需要撤回的消息，再发送：撤回 / 引用撤回")
+})
+
+test("onebot getReplyMessage flattens nested data sender fields", async () => {
+  const ctx = attachStandardMessageApis({
+    protocol: "onebotv11",
+    message: [{ type: "reply", data: { id: "1738847808" } }],
+    async getMsg(messageId) {
+      assert.equal(messageId, "1738847808")
+      return {
+        status: "ok",
+        data: {
+          message_id: "1738847808",
+          user_id: 3239716086,
+          sender: {
+            user_id: 3239716086,
+            nickname: "纳西妲",
+          },
+          message: [{ type: "text", data: { text: "开始执行重启，请稍等..." } }],
+        },
+      }
+    },
+  })
+
+  const replied = await ctx.getReplyMessage()
+  assert.equal(replied?.user_id, 3239716086)
+  assert.equal(replied?.sender?.user_id, 3239716086)
+  assert.equal(replied?.message?.[0]?.type, "text")
 })

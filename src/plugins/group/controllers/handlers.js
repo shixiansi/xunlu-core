@@ -993,7 +993,14 @@ export function register(bot) {
       const replied = await ctx.getReplyMessage?.()
       if (!replied) return await ctx.reply("请先回复要撤回的消息")
 
-      const senderId = toInt(replied.user_id ?? replied.sender_id ?? replied?.sender?.user_id)
+      const senderId = toInt(
+        replied.user_id ??
+          replied.sender_id ??
+          replied?.sender?.user_id ??
+          replied?.data?.user_id ??
+          replied?.data?.sender_id ??
+          replied?.data?.sender?.user_id,
+      )
       const selfId = toInt(ctx.self_id)
       if (!selfId || !senderId || senderId !== selfId) {
         return await ctx.reply("只能撤回 bot 自己发的消息（请回复 bot 发出的那条）")

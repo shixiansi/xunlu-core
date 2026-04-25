@@ -347,6 +347,9 @@ export function register(bot) {
         replied?.sender_id ??
         replied?.user_id ??
         replied?.sender?.user_id ??
+        replied?.data?.sender_id ??
+        replied?.data?.user_id ??
+        replied?.data?.sender?.user_id ??
         replied?.sender?.userId ??
         replied?.sender?.uid ??
         replied?.sender?.uin ??

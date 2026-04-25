@@ -38,24 +38,28 @@ function attachStandardMessageApis(ctx) {
         }
 
         const res = await ctx.getMsg(messageId)
+        const base =
+          res?.data && typeof res.data === "object"
+            ? { ...(res && typeof res === "object" ? res : {}), ...res.data }
+            : res
         const rawSegments =
-          res?.message?.message ??
-          res?.message ??
-          res?.segments ??
+          base?.message?.message ??
+          base?.message ??
+          base?.segments ??
           res?.data?.message ??
           res?.data?.segments
 
         if (Array.isArray(rawSegments)) {
           const universalMessage = UniversalMessage.from("onebotv11", rawSegments)
           return {
-            ...(res && typeof res === "object" ? res : {}),
+            ...(base && typeof base === "object" ? base : {}),
             protocol: "onebotv11",
             universalMessage,
             message: universalMessage.segments,
           }
         }
 
-        return res
+        return base
       }
 
       if (ctx.protocol === "icqq") {
