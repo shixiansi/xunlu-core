@@ -118,6 +118,7 @@ function normalizeNotifyPayloads(message) {
 }
 
 export async function sendMasterPayload(ctx, uid, message) {
+  const proto = String(ctx?.protocol || "").toLowerCase()
   if (isNoticeForwardRelayPayload(message)) {
     const sent = await sendForwardRelayToMaster(ctx, uid, message).catch(err => {
       console.warn("[group] notify master forward relay failed:", err?.message || err)
@@ -125,6 +126,13 @@ export async function sendMasterPayload(ctx, uid, message) {
     })
     if (sent) return sent
     return false
+  }
+
+  if (proto === "onebotv11") {
+    const fallbackMsgList = normalizeForwardPayloadForPrivateFallback(ctx, uid, message)
+    if (fallbackMsgList.length) {
+      return await sendForwardRelayFallbackToMaster(ctx, uid, {}, fallbackMsgList)
+    }
   }
 
   return await sendMasterRawPayload(ctx, uid, message)
@@ -338,6 +346,15 @@ function makeNoticeImageSegment(url, summary = "") {
       ...(summary ? { summary } : {}),
     },
   }
+}
+
+function isResolvableMediaRef(value) {
+  const raw = String(value || "").trim()
+  if (!raw) return false
+  if (/^(https?:|file:|base64:)/i.test(raw)) return true
+  if (/^[a-z]:[\\/]/i.test(raw)) return true
+  if (/^[\\/]{1,2}/.test(raw)) return true
+  return false
 }
 
 async function resolveNoticeUser(
@@ -696,6 +713,82 @@ async function makePrivateForwardPayloadForUser(userId, msgList = []) {
   throw new Error("private forward API not available")
 }
 
+function normalizePrivateRelaySegments(segments = []) {
+  const list = Array.isArray(segments) ? segments : []
+  const out = []
+
+  for (const seg of list) {
+    if (!seg || typeof seg !== "object") continue
+
+    if (seg.type === "at") {
+      const target = seg?.data?.qq ?? seg?.data?.target ?? seg?.data?.user_id ?? ""
+      out.push(makeNoticeTextSegment(`@${target}`))
+      continue
+    }
+
+    if (seg.type === "atAll") {
+      out.push(makeNoticeTextSegment("@全体"))
+      continue
+    }
+
+    if (seg.type === "reply") {
+      out.push(makeNoticeTextSegment("[回复]"))
+      continue
+    }
+
+    if (["image", "video", "record", "file"].includes(String(seg.type || ""))) {
+      const data = seg?.data && typeof seg.data === "object" ? seg.data : {}
+      const mediaRef = data.file ?? data.url ?? data.uri ?? data.path
+      if (!isResolvableMediaRef(mediaRef)) {
+        const labels = {
+          image: "[图片]",
+          video: "[视频]",
+          record: "[语音]",
+          file: `[文件${data.name ? `:${data.name}` : ""}]`,
+        }
+        out.push(makeNoticeTextSegment(labels[String(seg.type || "")] || `[${seg.type}]`))
+        continue
+      }
+    }
+
+    out.push(seg)
+  }
+
+  return out
+}
+
+function normalizeForwardPayloadForPrivateFallback(ctx, uid, message) {
+  if (!Array.isArray(message) || !message.length) return []
+  return normalizeForwardApiMessages(message, {
+    fallbackUserId: ctx?.user_id ?? ctx?.sender_id ?? ctx?.self_id ?? uid,
+  })
+}
+
+async function sendForwardRelayFallbackToMaster(ctx, uid, payload, msgList = []) {
+  const title = String(payload?.title || "").trim()
+  const list = Array.isArray(msgList) ? msgList : []
+  let sent = false
+
+  for (const item of list) {
+    const content = normalizePrivateRelaySegments(item?.content)
+    if (!content.length) continue
+
+    const senderName = normalizeForwardSenderName(
+      item?.nickname ?? item?.sender_name ?? item?.name,
+      item?.user_id,
+    )
+    const prefix = []
+    if (title || senderName) {
+      prefix.push(makeNoticeTextSegment(`${title || "转发详情"}\n发送者：${senderName}\n`))
+    }
+
+    await sendMasterRawPayload(ctx, uid, [...prefix, ...content])
+    sent = true
+  }
+
+  return sent
+}
+
 async function sendForwardRelayToMaster(ctx, uid, payload) {
   const forwardId = String(payload?.forward_id || "").trim()
   if (!forwardId) return false
@@ -714,9 +807,19 @@ async function sendForwardRelayToMaster(ctx, uid, payload) {
     throw new Error(`forward ${forwardId} resolved to empty messages`)
   }
 
-  const forwardPayload = await makePrivateForwardPayloadForUser(uid, msgList)
-  await sendMasterRawPayload(ctx, uid, forwardPayload)
-  return true
+  const proto = String(ctx?.protocol || "").toLowerCase()
+  if (proto === "onebotv11") {
+    return await sendForwardRelayFallbackToMaster(ctx, uid, payload, msgList)
+  }
+
+  try {
+    const forwardPayload = await makePrivateForwardPayloadForUser(uid, msgList)
+    await sendMasterRawPayload(ctx, uid, forwardPayload)
+    return true
+  } catch (err) {
+    console.warn("[group] private forward relay fallback:", err?.message || err)
+    return await sendForwardRelayFallbackToMaster(ctx, uid, payload, msgList)
+  }
 }
 
 async function expandNoticeForwardSegments(ctx, segments, { rkeySuffix } = {}) {
@@ -985,6 +1088,26 @@ export function isDegradedForwardPlaceholderRecord(record) {
   return ["[forward]", "[转发]", "[转发消息]"].includes(text)
 }
 
+function hasResolvableMediaSegments(input) {
+  return collectNoticeMessageSegmentCandidates(input).some(candidate =>
+    (Array.isArray(candidate) ? candidate : []).some(seg => {
+      const type = String(seg?.type || "").toLowerCase()
+      if (!["image", "video", "record", "file"].includes(type)) return false
+      const data = seg?.data && typeof seg.data === "object" ? seg.data : {}
+      const mediaRef =
+        data.url ??
+        data.temp_url ??
+        data.uri ??
+        data.file ??
+        data.path ??
+        seg?.url ??
+        seg?.file ??
+        seg?.path
+      return isResolvableMediaRef(mediaRef)
+    }),
+  )
+}
+
 export async function fetchRecalledMessageViaApi(ctx, ref = {}) {
   const apiCall = getContextApiCall(ctx)
   if (typeof apiCall !== "function") return null
@@ -1098,6 +1221,7 @@ async function findRecalledMessageFromDbFallback(ctx, { groupId, senderId, ref }
 export async function getRecalledMessageSafe(ctx) {
   const groupId = toInt(ctx?.group_id)
   const senderId = ctx?.user_id ?? ctx?.sender_id ?? ctx?.operator_id
+  const proto = String(ctx?.protocol || "").toLowerCase()
   const ref = getRecallMessageRef(ctx)
   const candidates = []
   let cachedRecord = null
@@ -1109,21 +1233,30 @@ export async function getRecalledMessageSafe(ctx) {
       try {
         const record = await MessageDB.getMessageById(groupId, id)
         if (!record) continue
-        if (!isDegradedForwardPlaceholderRecord(record)) return record
+        if (!isDegradedForwardPlaceholderRecord(record) && (proto !== "onebotv11" || hasResolvableMediaSegments(record))) {
+          return record
+        }
         cachedRecord = record
       } catch {}
     }
   }
 
-  if (String(ctx?.protocol || "").toLowerCase() === "milky" && (cachedRecord || ref.msgId || ref.seq !== undefined)) {
+  if ((proto === "milky" || proto === "onebotv11") && (cachedRecord || ref.msgId || ref.seq !== undefined)) {
     const apiRecord = await fetchRecalledMessageViaApi(ctx, ref)
     if (apiRecord) return apiRecord
   }
 
-  if (ctx && typeof ctx.getMessage === "function" && (ref.msgId || ref.seq !== undefined)) {
+  const getMessageFn =
+    ctx && typeof ctx.getMessage === "function"
+      ? async ({ msgId, seq }) => await ctx.getMessage({ msgId, seq })
+      : ctx && typeof ctx.getMsg === "function"
+        ? async ({ msgId, seq }) => await ctx.getMsg(msgId ?? seq)
+        : null
+
+  if (getMessageFn && (ref.msgId || ref.seq !== undefined)) {
     try {
       const direct = await withTimeout(
-        ctx.getMessage({ msgId: ref.msgId || undefined, seq: ref.seq }),
+        getMessageFn({ msgId: ref.msgId || undefined, seq: ref.seq }),
         2000,
         null,
       )
@@ -1131,13 +1264,13 @@ export async function getRecalledMessageSafe(ctx) {
     } catch {}
     if (ref.msgId) {
       try {
-        const byMsgId = await withTimeout(ctx.getMessage({ msgId: ref.msgId }), 2000, null)
+        const byMsgId = await withTimeout(getMessageFn({ msgId: ref.msgId }), 2000, null)
         if (byMsgId && !isDegradedForwardPlaceholderRecord(byMsgId)) return byMsgId
       } catch {}
     }
     if (ref.seq !== undefined) {
       try {
-        const bySeq = await withTimeout(ctx.getMessage({ seq: ref.seq }), 2000, null)
+        const bySeq = await withTimeout(getMessageFn({ seq: ref.seq }), 2000, null)
         if (bySeq && !isDegradedForwardPlaceholderRecord(bySeq)) return bySeq
       } catch {}
     }

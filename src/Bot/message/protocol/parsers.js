@@ -26,7 +26,9 @@ function fromOnebotV11Segment(segment) {
       })
     case "image":
       return UniversalMessageSegment.image({
-        file: data.file ?? data.url ?? segment.file ?? segment.url,
+        file: data.file ?? segment.file,
+        url: data.url ?? segment.url,
+        path: data.path ?? segment.path,
         id: data.file ?? data.file_id,
         width: data.width,
         height: data.height,
@@ -34,13 +36,17 @@ function fromOnebotV11Segment(segment) {
       })
     case "record":
       return UniversalMessageSegment.record({
-        file: data.file ?? data.url ?? segment.file ?? segment.url,
+        file: data.file ?? segment.file,
+        url: data.url ?? segment.url,
+        path: data.path ?? segment.path,
         id: data.file ?? data.file_id,
         duration: data.duration,
       })
     case "video":
       return UniversalMessageSegment.video({
-        file: data.file ?? data.url ?? segment.file ?? segment.url,
+        file: data.file ?? segment.file,
+        url: data.url ?? segment.url,
+        path: data.path ?? segment.path,
         id: data.file ?? data.file_id,
         duration: data.duration,
         width: data.width,
@@ -48,7 +54,9 @@ function fromOnebotV11Segment(segment) {
       })
     case "file":
       return UniversalMessageSegment.file({
-        file: data.file ?? data.url ?? segment.file ?? segment.url,
+        file: data.file ?? segment.file,
+        url: data.url ?? segment.url,
+        path: data.path ?? segment.path,
         id: data.file ?? data.file_id,
         name: data.name,
         size: data.size,

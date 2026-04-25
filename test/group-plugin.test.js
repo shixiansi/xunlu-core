@@ -1,8 +1,10 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
+import MessageDB from "../src/db/MessageDB.js"
 import cfg from "../src/lib/config.js"
-import { register } from "../src/plugins/group/controllers/handlers.js"
+import { __test as groupHandlersTest, register } from "../src/plugins/group/controllers/handlers.js"
+import { sendMasterPayload } from "../src/plugins/group/controllers/notice-helpers.js"
 import { setGroupNoticeConfig } from "../src/plugins/group/model/notice-store.js"
 import { installTestRuntime } from "./helpers/test-runtime.js"
 
@@ -133,4 +135,96 @@ test("group join approval command requires admin or master", async () => {
 
   assert.equal(result, true)
   assert.equal(replies[0], "需要管理员权限")
+})
+
+test("onebot recall relay falls back to normal private messages instead of private forward", async () => {
+  const sent = []
+
+  const ok = await sendMasterPayload(
+    {
+      protocol: "onebotv11",
+      user_id: 3021392873,
+      sendMessage: async (target, message) => {
+        sent.push({ target, message })
+        return true
+      },
+      callApi: async (action, params) => {
+        assert.equal(action, "get_forward_msg")
+        assert.deepEqual(params, { message_id: "forward-1" })
+        return {
+          messages: [
+            {
+              user_id: 3021392873,
+              nickname: "音仔",
+              time: 1777096878,
+              message: [
+                { type: "at", data: { qq: "2548285036" } },
+                { type: "image", data: { file: "https://example.com/test.jpg" } },
+                { type: "text", data: { text: " 可莉可莉 进入了酒馆" } },
+              ],
+            },
+          ],
+        }
+      },
+    },
+    1765629830,
+    {
+      __xunlu_notice_forward_relay__: true,
+      title: "[荨鹿通知][群撤回消息]",
+      forward_id: "forward-1",
+    },
+  )
+
+  assert.equal(ok, true)
+  assert.equal(sent.length, 1)
+  assert.equal(sent[0]?.target, "1765629830")
+  assert.equal(sent[0]?.message?.[0]?.type, "text")
+  assert.match(String(sent[0]?.message?.[0]?.data?.content || ""), /群撤回消息/)
+  assert.equal(sent[0]?.message?.[1]?.type, "text")
+  assert.match(String(sent[0]?.message?.[1]?.data?.content || ""), /@2548285036/)
+  assert.equal(sent[0]?.message?.[2]?.type, "image")
+})
+
+test("onebot recalled message prefers api result when db only has basename media refs", async () => {
+  const originalGetMessageById = MessageDB.getMessageById.bind(MessageDB)
+  MessageDB.getMessageById = async () => ({
+    message: [
+      {
+        type: "image",
+        data: {
+          file: "d49909aad05917b179067d4cf89044d9.jpg",
+        },
+      },
+    ],
+  })
+
+  try {
+    const result = await groupHandlersTest.getRecalledMessageSafe({
+      protocol: "onebotv11",
+      group_id: 1061170515,
+      message_id: "1308650024",
+      callApi: async (action, params) => {
+        assert.equal(action, "get_msg")
+        assert.deepEqual(params, { message_id: "1308650024" })
+        return {
+          message: [
+            {
+              type: "image",
+              data: {
+                file: "d49909aad05917b179067d4cf89044d9.jpg",
+                url: "https://multimedia.nt.qq.com.cn/download?appid=1407&fileid=abc123",
+              },
+            },
+          ],
+        }
+      },
+    })
+
+    assert.equal(
+      result?.message?.[0]?.data?.url,
+      "https://multimedia.nt.qq.com.cn/download?appid=1407&fileid=abc123",
+    )
+  } finally {
+    MessageDB.getMessageById = originalGetMessageById
+  }
 })
