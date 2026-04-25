@@ -27,6 +27,38 @@ function clampText(text, maxLen = 120) {
   return s.slice(0, maxLen - 1) + "…"
 }
 
+function snapshotForwardDebugValue(value, depth = 0, seen = new WeakSet()) {
+  if (value === null || value === undefined) return value
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value
+  if (typeof value === "bigint") return String(value)
+  if (typeof value === "function") return `[Function:${value.name || "anonymous"}]`
+  if (depth >= 6) return "[MaxDepth]"
+  if (typeof value !== "object") return String(value)
+  if (seen.has(value)) return "[Circular]"
+  seen.add(value)
+
+  if (Array.isArray(value)) {
+    return value.map(item => snapshotForwardDebugValue(item, depth + 1, seen))
+  }
+
+  const out = {}
+  for (const [key, item] of Object.entries(value)) {
+    out[key] = snapshotForwardDebugValue(item, depth + 1, seen)
+  }
+  return out
+}
+
+function logForwardFetchDebug(stage, detail = {}) {
+  try {
+    console.info(
+      `[group][forward-fetch-debug] ${stage}`,
+      snapshotForwardDebugValue(detail),
+    )
+  } catch (err) {
+    console.info(`[group][forward-fetch-debug] ${stage}`, String(err?.message || err))
+  }
+}
+
 function renderUniversalBrief(segments) {
   const list = Array.isArray(segments) ? segments : []
   const parts = []
@@ -592,6 +624,11 @@ function normalizeForwardUserId(candidates = [], fallbackUserId) {
 
 export function normalizeForwardApiMessages(messages, { rkeySuffix, fallbackUserId } = {}) {
   const list = Array.isArray(messages) ? messages : []
+  logForwardFetchDebug("normalize:start", {
+    count: list.length,
+    fallbackUserId,
+    messages: list,
+  })
   const out = []
 
   for (const item of list) {
@@ -685,9 +722,14 @@ export function normalizeForwardApiMessages(messages, { rkeySuffix, fallbackUser
     })
   }
 
-  return out.filter(item =>
+  const normalized = out.filter(item =>
     Array.isArray(item.content) ? item.content.length > 0 : Boolean(item.content),
   )
+  logForwardFetchDebug("normalize:result", {
+    count: normalized.length,
+    messages: normalized,
+  })
+  return normalized
 }
 
 export function getForwardSegmentId(seg) {
@@ -713,6 +755,11 @@ export function findStandaloneForwardSegment(message) {
     if (!["forward", "multimsg", "long_msg"].includes(type)) continue
     const forwardId = getForwardSegmentId(seg)
     if (!forwardId) continue
+    logForwardFetchDebug("find:segment", {
+      source: "message-segment",
+      forwardId,
+      segment: seg,
+    })
     return seg
   }
 
@@ -723,6 +770,11 @@ export function findStandaloneForwardSegment(message) {
       : []
   const meta = forwardMetaList.find(item => String(item?.forward_id || "").trim())
   if (meta) {
+    logForwardFetchDebug("find:meta", {
+      source: "forward_meta",
+      forwardId: meta.forward_id,
+      meta,
+    })
     return {
       type: "forward",
       data: {
@@ -749,6 +801,11 @@ export function findStandaloneForwardSegment(message) {
     )
     const forwardId = String(match?.[1] || "").trim()
     if (!forwardId) continue
+    logForwardFetchDebug("find:raw", {
+      source: "raw_message",
+      forwardId,
+      raw: rawText,
+    })
     return {
       type: "forward",
       data: {
@@ -1027,6 +1084,13 @@ async function fetchForwardMessagesBySegment(ctx, seg) {
   if (!forwardId) return []
 
   const proto = String(ctx?.protocol || "").toLowerCase()
+  logForwardFetchDebug("fetch:start", {
+    proto,
+    forwardId,
+    group_id: ctx?.group_id,
+    user_id: ctx?.user_id,
+    seg,
+  })
   if (proto === "onebotv11") {
     const groupForwardGetter =
       (ctx?.group && typeof ctx.group.getForwardMsg === "function"
@@ -1045,6 +1109,10 @@ async function fetchForwardMessagesBySegment(ctx, seg) {
           2500,
           null,
         )
+        logForwardFetchDebug("fetch:group-getForwardMsg:result", {
+          forwardId,
+          detail,
+        })
         if (Array.isArray(detail) && detail.length) return detail
         if (Array.isArray(detail?.messages) && detail.messages.length) return detail.messages
       } catch {}
@@ -1072,6 +1140,10 @@ async function fetchForwardMessagesBySegment(ctx, seg) {
           2500,
           null,
         )
+        logForwardFetchDebug("fetch:private-getForwardMsg:result", {
+          forwardId,
+          detail,
+        })
         if (Array.isArray(detail) && detail.length) return detail
         if (Array.isArray(detail?.messages) && detail.messages.length) return detail.messages
       } catch {}
@@ -1091,6 +1163,10 @@ async function fetchForwardMessagesBySegment(ctx, seg) {
         2500,
         null,
       )
+      logForwardFetchDebug("fetch:milky-runtime:result", {
+        forwardId,
+        detail,
+      })
       if (Array.isArray(detail?.messages) && detail.messages.length) return detail.messages
     } catch {}
   }
@@ -1103,6 +1179,10 @@ async function fetchForwardMessagesBySegment(ctx, seg) {
     2500,
     null,
   ).catch(() => null)
+  logForwardFetchDebug("fetch:onebot-api:result", {
+    forwardId,
+    result: onebotRes,
+  })
   const onebotMessages = onebotRes?.messages ?? onebotRes?.data?.messages ?? onebotRes?.data
   if (Array.isArray(onebotMessages) && onebotMessages.length) return onebotMessages
 
@@ -1111,9 +1191,17 @@ async function fetchForwardMessagesBySegment(ctx, seg) {
     2500,
     null,
   ).catch(() => null)
+  logForwardFetchDebug("fetch:milky-api:result", {
+    forwardId,
+    result: milkyRes,
+  })
   const milkyMessages = milkyRes?.messages ?? milkyRes?.data?.messages
   if (Array.isArray(milkyMessages) && milkyMessages.length) return milkyMessages
 
+  logForwardFetchDebug("fetch:empty", {
+    proto,
+    forwardId,
+  })
   return []
 }
 
@@ -1124,8 +1212,19 @@ async function resolveForwardMessagesFromRecord(ctx, record) {
   const seg = findStandaloneForwardSegment(record)
   const forwardId = getForwardSegmentId(seg)
   if (!forwardId) return record
+  logForwardFetchDebug("resolve:start", {
+    message_id: record?.message_id,
+    forwardId,
+    raw_message: record?.raw_message,
+    record,
+  })
 
   const fetched = await fetchForwardMessagesBySegment(ctx, seg).catch(() => [])
+  logForwardFetchDebug("resolve:fetched", {
+    message_id: record?.message_id,
+    forwardId,
+    fetched,
+  })
   if (!Array.isArray(fetched) || !fetched.length) return record
 
   return {
@@ -1137,17 +1236,31 @@ async function resolveForwardMessagesFromRecord(ctx, record) {
 
 export async function buildNoticeForwardMsgList(ctx, { sender, message, time } = {}) {
   const rkeySuffix = await getNoticeRkeySuffix(ctx)
+  logForwardFetchDebug("build:start", {
+    protocol: ctx?.protocol,
+    sender,
+    time,
+    message,
+  })
 
   if (Array.isArray(message?.forward_messages) && message.forward_messages.length) {
     const direct = normalizeForwardApiMessages(message.forward_messages, {
       rkeySuffix,
       fallbackUserId: ctx?.user_id ?? ctx?.sender_id ?? ctx?.self_id,
     })
+    logForwardFetchDebug("build:direct-forward-messages", {
+      count: direct.length,
+      msgList: direct,
+    })
     if (direct.length) return direct
   }
 
   for (const candidate of collectNoticeMessageSegmentCandidates(message)) {
     const expanded = await expandNoticeForwardSegments(ctx, candidate, { rkeySuffix })
+    logForwardFetchDebug("build:candidate-expanded", {
+      candidate,
+      expanded,
+    })
     if (expanded.length) return expanded
   }
 
@@ -1155,13 +1268,16 @@ export async function buildNoticeForwardMsgList(ctx, { sender, message, time } =
   if (!rawSegments.length) return []
 
   const expanded = await expandNoticeForwardSegments(ctx, rawSegments, { rkeySuffix })
+  logForwardFetchDebug("build:raw-expanded", {
+    rawSegments,
+    expanded,
+  })
   if (expanded.length) return expanded
 
   const content = toForwardSafeSegments(rawSegments, { rkeySuffix })
   const senderId = toInt(sender?.userId) ?? toInt(ctx?.user_id) ?? toInt(ctx?.self_id) ?? 0
   const senderName = String(sender?.name || sender?.nickname || senderId || "用户").trim()
-
-  return [
+  const fallback = [
     {
       user_id: senderId,
       nickname: senderName,
@@ -1171,6 +1287,10 @@ export async function buildNoticeForwardMsgList(ctx, { sender, message, time } =
       ...(time ? { time } : {}),
     },
   ]
+  logForwardFetchDebug("build:fallback", {
+    msgList: fallback,
+  })
+  return fallback
 }
 
 async function buildNoticeForwardPayload(ctx, { title, sender, message, time } = {}) {
