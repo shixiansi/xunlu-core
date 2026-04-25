@@ -46,4 +46,4 @@ masterQQ:
   - 0
 
 # 日志等级:trace,debug,info,warn,fatal,mark,error,off
-log_level: debug
+log_level: mark
