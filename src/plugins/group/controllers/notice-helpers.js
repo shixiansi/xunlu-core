@@ -50,10 +50,8 @@ function snapshotForwardDebugValue(value, depth = 0, seen = new WeakSet()) {
 
 function logForwardFetchDebug(stage, detail = {}) {
   try {
-    console.info(
-      `[group][forward-fetch-debug] ${stage}`,
-      snapshotForwardDebugValue(detail),
-    )
+    const payload = JSON.stringify(snapshotForwardDebugValue(detail), null, 2)
+    console.info(`[group][forward-fetch-debug] ${stage} ${payload}`)
   } catch (err) {
     console.info(`[group][forward-fetch-debug] ${stage}`, String(err?.message || err))
   }
