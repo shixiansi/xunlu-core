@@ -1311,10 +1311,8 @@ export function register(bot) {
       .filter(seg => seg?.type === "text")
       .map(seg => seg?.data?.content || seg?.data?.text || "")
       .join("")
-
-    if (!text.includes("临时通行证ID")) return ctx.reply("未获取到申请信息")
-
-    const passID = text.split("ID:")[1]?.trim()
+    const rawText = `${text}\n${String(replied?.raw_message || replied?.data?.raw_message || "")}`.trim()
+    const passID = rawText.match(/临时通行证ID[:：]\s*(\d{6,})/)?.[1]?.trim()
     if (!passID || !groupPass[passID]) return ctx.reply("未获取到申请信息")
 
     if (String(ctx.msg || "").trim() === "开门") {
@@ -1433,6 +1431,12 @@ export const __test = {
   },
   async fetchRecalledMessageViaApi(ctx, ref) {
     return await fetchRecalledMessageViaApi(ctx, ref)
+  },
+  setGroupPass(id, value) {
+    groupPass[String(id)] = value
+  },
+  clearGroupPass(id) {
+    delete groupPass[String(id)]
   },
 }
 

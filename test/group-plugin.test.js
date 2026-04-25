@@ -140,6 +140,62 @@ test("group join approval command requires admin or master", async () => {
   assert.equal(replies[0], "需要管理员权限")
 })
 
+test("group join approval extracts pass id even when reply message has extra trailing text", async () => {
+  const commands = createRegisteredCommands()
+  const doorHandler = findCommand(
+    commands,
+    item => Array.isArray(item.command) && item.command[0] === "(开门|关门)",
+  )
+
+  const accepted = []
+  const replies = []
+  const passID = "7076169599"
+  groupHandlersTest.setGroupPass(passID, {
+    flag: "flag-1",
+    type: "join_request",
+    group_id: 123,
+  })
+
+  const result = await doorHandler({
+    group_id: 123,
+    user_id: 1765629830,
+    isMaster: true,
+    msg: "开门",
+    getReplyMessage: async () => ({
+      message: [
+        {
+          type: "text",
+          data: {
+            content: `这个吊毛要进来了\n2890250590（2890250590）\n临时通行证ID:${passID}`,
+          },
+        },
+        {
+          type: "text",
+          data: {
+            content: "问题：从哪里知道群的\n答案：测试",
+          },
+        },
+      ],
+      raw_message:
+        `这个吊毛要进来了\n2890250590（2890250590）\n临时通行证ID:${passID}[CQ:image,file=abc.jpg]问题：从哪里知道群的\n答案：测试`,
+    }),
+    acceptGroupRequest: async payload => {
+      accepted.push(payload)
+      return true
+    },
+    reply: async message => {
+      replies.push(message)
+      return true
+    },
+  })
+
+  assert.equal(result, true)
+  assert.equal(accepted.length, 1)
+  assert.equal(accepted[0]?.flag, "flag-1")
+  assert.equal(replies[0], "已开门！")
+  groupHandlersTest.clearGroupPass(passID)
+})
+
 test("onebot recall relay falls back to normal private messages when native forward is unavailable", async () => {
   const sent = []
 
