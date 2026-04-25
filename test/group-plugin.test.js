@@ -347,3 +347,75 @@ test("onebot private forward payload falls back to plain private messages when n
   )
   assert.equal(sent[0]?.message?.[2]?.type, "text")
 })
+
+test("recalled forward placeholder resolves by forward id and get_forward_msg", async () => {
+  const originalGetMessageById = MessageDB.getMessageById.bind(MessageDB)
+  const calls = []
+  MessageDB.getMessageById = async () => ({
+    message: [
+      {
+        type: "text",
+        data: {
+          text: "[聊天记录]",
+        },
+      },
+    ],
+  })
+
+  try {
+    const ctx = {
+      protocol: "onebotv11",
+      group_id: 1061170515,
+      message_id: "9001",
+      callApi: async (action, params) => {
+        calls.push({ action, params })
+        if (action === "get_msg") {
+          return {
+            raw_message: "[CQ:forward,id=forward-9001]",
+            message: [
+              {
+                type: "text",
+                data: {
+                  text: "[聊天记录]",
+                },
+              },
+            ],
+          }
+        }
+        if (action === "get_forward_msg") {
+          return {
+            messages: [
+              {
+                type: "node",
+                data: {
+                  uin: "10001",
+                  name: "Alice",
+                  content: [{ type: "text", data: { text: "forward-body" } }],
+                },
+              },
+            ],
+          }
+        }
+        throw new Error(`unexpected action: ${action}`)
+      },
+    }
+
+    const recalled = await groupHandlersTest.getRecalledMessageSafe(ctx)
+    assert.equal(recalled?.forward_id, "forward-9001")
+    assert.equal(recalled?.forward_messages?.length, 1)
+
+    const msgList = await groupHandlersTest.buildNoticeForwardMsgList(ctx, {
+      sender: { userId: 10001, name: "Alice" },
+      message: recalled,
+      time: 1777090000,
+    })
+
+    assert.equal(msgList.length, 1)
+    assert.equal(msgList[0]?.content?.[0]?.type, "text")
+    assert.equal(msgList[0]?.content?.[0]?.data?.text, "forward-body")
+    assert.ok(calls.some(item => item.action === "get_msg"))
+    assert.ok(calls.some(item => item.action === "get_forward_msg"))
+  } finally {
+    MessageDB.getMessageById = originalGetMessageById
+  }
+})

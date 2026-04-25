@@ -678,6 +678,29 @@ export function findStandaloneForwardSegment(message) {
     }
   }
 
+  const rawTextCandidates = [
+    message?.raw_message,
+    message?.rawMessage,
+    message?.raw,
+    typeof message === "string" ? message : "",
+  ]
+    .map(value => String(value || "").trim())
+    .filter(Boolean)
+
+  for (const rawText of rawTextCandidates) {
+    const match = rawText.match(
+      /\[CQ:(?:forward|long_msg|multimsg)[^\]]*?(?:\b(?:id|forward_id|resid)=)([^,\]]+)/i,
+    )
+    const forwardId = String(match?.[1] || "").trim()
+    if (!forwardId) continue
+    return {
+      type: "forward",
+      data: {
+        forward_id: forwardId,
+      },
+    }
+  }
+
   return null
 }
 
@@ -987,8 +1010,34 @@ async function fetchForwardMessagesBySegment(ctx, seg) {
   return []
 }
 
+async function resolveForwardMessagesFromRecord(ctx, record) {
+  if (!record || typeof record !== "object") return record
+  if (Array.isArray(record?.forward_messages) && record.forward_messages.length) return record
+
+  const seg = findStandaloneForwardSegment(record)
+  const forwardId = getForwardSegmentId(seg)
+  if (!forwardId) return record
+
+  const fetched = await fetchForwardMessagesBySegment(ctx, seg).catch(() => [])
+  if (!Array.isArray(fetched) || !fetched.length) return record
+
+  return {
+    ...record,
+    forward_messages: fetched,
+    forward_id: forwardId,
+  }
+}
+
 export async function buildNoticeForwardMsgList(ctx, { sender, message, time } = {}) {
   const rkeySuffix = await getNoticeRkeySuffix(ctx)
+
+  if (Array.isArray(message?.forward_messages) && message.forward_messages.length) {
+    const direct = normalizeForwardApiMessages(message.forward_messages, {
+      rkeySuffix,
+      fallbackUserId: ctx?.user_id ?? ctx?.sender_id ?? ctx?.self_id,
+    })
+    if (direct.length) return direct
+  }
 
   for (const candidate of collectNoticeMessageSegmentCandidates(message)) {
     const expanded = await expandNoticeForwardSegments(ctx, candidate, { rkeySuffix })
@@ -1181,7 +1230,7 @@ export function isDegradedForwardPlaceholderRecord(record) {
     .toLowerCase()
   if (!text) return false
 
-  return ["[forward]", "[转发]", "[转发消息]"].includes(text)
+  return ["[forward]", "[转发]", "[转发消息]", "[聊天记录]", "[合并转发]"].includes(text)
 }
 
 function hasResolvableMediaSegments(input) {
@@ -1252,13 +1301,13 @@ export async function fetchRecalledMessageViaApi(ctx, ref = {}) {
     const rawSegments = res?.message ?? res?.data?.message
     if (!Array.isArray(rawSegments) || !rawSegments.length) return null
 
-    return {
-      ...(res && typeof res === "object" ? res : {}),
-      protocol: "onebotv11",
-      raw_message: res?.raw_message ?? "",
-      segments: rawSegments,
-      message: rawSegments,
-    }
+      return {
+        ...(res && typeof res === "object" ? res : {}),
+        protocol: "onebotv11",
+        raw_message: res?.raw_message ?? res?.data?.raw_message ?? "",
+        segments: rawSegments,
+        message: rawSegments,
+      }
   }
 
   return null
@@ -1330,7 +1379,7 @@ export async function getRecalledMessageSafe(ctx) {
         const record = await MessageDB.getMessageById(groupId, id)
         if (!record) continue
         if (!isDegradedForwardPlaceholderRecord(record) && (proto !== "onebotv11" || hasResolvableMediaSegments(record))) {
-          return record
+          return await resolveForwardMessagesFromRecord(ctx, record)
         }
         cachedRecord = record
       } catch {}
@@ -1339,7 +1388,7 @@ export async function getRecalledMessageSafe(ctx) {
 
   if ((proto === "milky" || proto === "onebotv11") && (cachedRecord || ref.msgId || ref.seq !== undefined)) {
     const apiRecord = await fetchRecalledMessageViaApi(ctx, ref)
-    if (apiRecord) return apiRecord
+    if (apiRecord) return await resolveForwardMessagesFromRecord(ctx, apiRecord)
   }
 
   const getMessageFn =
@@ -1356,23 +1405,29 @@ export async function getRecalledMessageSafe(ctx) {
         2000,
         null,
       )
-      if (direct && !isDegradedForwardPlaceholderRecord(direct)) return direct
+      if (direct && !isDegradedForwardPlaceholderRecord(direct)) {
+        return await resolveForwardMessagesFromRecord(ctx, direct)
+      }
     } catch {}
     if (ref.msgId) {
       try {
         const byMsgId = await withTimeout(getMessageFn({ msgId: ref.msgId }), 2000, null)
-        if (byMsgId && !isDegradedForwardPlaceholderRecord(byMsgId)) return byMsgId
+        if (byMsgId && !isDegradedForwardPlaceholderRecord(byMsgId)) {
+          return await resolveForwardMessagesFromRecord(ctx, byMsgId)
+        }
       } catch {}
     }
     if (ref.seq !== undefined) {
       try {
         const bySeq = await withTimeout(getMessageFn({ seq: ref.seq }), 2000, null)
-        if (bySeq && !isDegradedForwardPlaceholderRecord(bySeq)) return bySeq
+        if (bySeq && !isDegradedForwardPlaceholderRecord(bySeq)) {
+          return await resolveForwardMessagesFromRecord(ctx, bySeq)
+        }
       } catch {}
     }
   }
 
-  if (cachedRecord) return cachedRecord
+  if (cachedRecord) return await resolveForwardMessagesFromRecord(ctx, cachedRecord)
 
   if (groupId) {
     const approx = await findRecalledMessageFromDbFallback(ctx, {
@@ -1380,7 +1435,7 @@ export async function getRecalledMessageSafe(ctx) {
       senderId,
       ref,
     })
-    if (approx) return approx
+    if (approx) return await resolveForwardMessagesFromRecord(ctx, approx)
   }
 
   return null
