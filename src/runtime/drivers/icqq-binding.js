@@ -36,6 +36,34 @@ function resolveBindingEnvName({ envName, client, event } = {}) {
   return defaultNormalizeEnv(envName)
 }
 
+function getNonUniversalBoundMethod(target, methodName) {
+  if (!target || (typeof target !== "object" && typeof target !== "function")) return null
+
+  const rawKey = `__xunlu_raw_${methodName}`
+  if (typeof target?.[rawKey] === "function") return target[rawKey].bind(target)
+
+  const method = target?.[methodName]
+  if (typeof method === "function" && !method?.__xunlu_universal) {
+    return method.bind(target)
+  }
+
+  return null
+}
+
+function getOnebotApiCaller(target) {
+  if (!target || typeof target !== "object") return null
+
+  const direct =
+    getNonUniversalBoundMethod(target, "sendApi") || getNonUniversalBoundMethod(target, "callApi")
+  if (direct) return direct
+
+  const botQQ = target?.botQQ
+  const subBot = botQQ !== undefined && botQQ !== null ? target?.[botQQ] : null
+  return (
+    getNonUniversalBoundMethod(subBot, "sendApi") || getNonUniversalBoundMethod(subBot, "callApi")
+  )
+}
+
 function getForwardDebugLogger() {
   const l = globalThis.logger
   if (l && typeof l.info === "function") return l
@@ -235,20 +263,8 @@ export function createIcqqBinding() {
 
       if (actualEnvName === "OneBotv11") {
         e.adapterType = "OneBotV11"
-
-        const getOneBotSendApi = () => {
-          try {
-            if (bot?.sendApi) return bot.sendApi.bind(bot)
-          } catch {}
-          try {
-            const qq = bot?.botQQ
-            const sub = qq ? bot?.[qq] : null
-            if (sub?.sendApi) return sub.sendApi.bind(sub)
-          } catch {}
-          return null
-        }
         const bot = globalThis.Bot
-        const onebotSendApi = getOneBotSendApi()
+        const onebotApi = getOnebotApiCaller(bot)
 
         e.recallMessage = async ({ peer_id, message_seq, message_id, isGroup }) => {
           const mid = message_id ?? message_seq
@@ -260,8 +276,8 @@ export function createIcqqBinding() {
           try {
             const rid = reaction ?? emoji_id
             if (rid === undefined || rid === null) return false
-            if (!onebotSendApi) throw new Error("onebot sendApi not available")
-            await onebotSendApi("set_msg_emoji_like", {
+            if (!onebotApi) throw new Error("onebot api not available")
+            await onebotApi("set_msg_emoji_like", {
               message_id: targetE.message_id,
               emoji_id: Number(rid),
             })
@@ -272,12 +288,12 @@ export function createIcqqBinding() {
           }
         }
         e.getMsg = async msg_id => {
-          if (!onebotSendApi) throw new Error("onebot sendApi not available")
-          return await onebotSendApi("get_msg", { message_id: msg_id })
+          if (!onebotApi) throw new Error("onebot api not available")
+          return await onebotApi("get_msg", { message_id: msg_id })
         }
         e.getGroupMemberInfo = async (group_id, user_id) => {
-          if (!onebotSendApi) throw new Error("onebot sendApi not available")
-          return await onebotSendApi("get_group_member_info", { group_id, user_id })
+          if (!onebotApi) throw new Error("onebot api not available")
+          return await onebotApi("get_group_member_info", { group_id, user_id })
         }
         e.getGroupMemberList = async group_id => {
           if (fileManager?.package?.name === "trss-yunzai") {
