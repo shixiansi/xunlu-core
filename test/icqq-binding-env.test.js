@@ -122,6 +122,61 @@ test("icqq binding onebot getMsg prefers raw runtime api over universal sendApi 
   }
 })
 
+test("icqq binding onebot getMsg prefers event bot api when global runtime bot lacks raw api", async () => {
+  const binding = createIcqqBinding()
+  const previousBot = globalThis.Bot
+  const calls = []
+
+  try {
+    globalThis.Bot = {
+      sendApi: Object.assign(async () => {
+        throw new Error("should not call universal wrapper")
+      }, { __xunlu_universal: true }),
+    }
+
+    const event = await binding.decorateBindEvent(
+      {
+        bot: {
+          adapter: {
+            name: "OneBotv11",
+          },
+          async sendApi(action, params) {
+            calls.push({ action, params })
+            return { message: [{ type: "text", data: { text: "from-event-bot" } }] }
+          },
+        },
+        group_id: 123,
+        user_id: 456,
+        message_id: "789",
+        message: [{ type: "text", data: { text: "hello" } }],
+      },
+      {
+        envName: "icqq",
+        client: {
+          uin: 10000,
+          QQNT: true,
+          botQQ: 2548285036,
+        },
+        pluginLoader: {
+          renderImg: async () => "",
+        },
+        fileManager: {
+          package: {
+            name: "Miao-Yunzai",
+          },
+        },
+        sendMessage: async () => ({ ok: true }),
+      },
+    )
+
+    const result = await event.getMsg("54321")
+    assert.equal(result?.message?.[0]?.data?.text, "from-event-bot")
+    assert.deepEqual(calls, [{ action: "get_msg", params: { message_id: "54321" } }])
+  } finally {
+    globalThis.Bot = previousBot
+  }
+})
+
 test("icqq binding tolerates missing direct member APIs by falling back to pickGroup", async () => {
   const binding = createIcqqBinding()
   const previousBot = globalThis.Bot

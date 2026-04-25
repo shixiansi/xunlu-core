@@ -264,7 +264,8 @@ export function createIcqqBinding() {
       if (actualEnvName === "OneBotv11") {
         e.adapterType = "OneBotV11"
         const bot = globalThis.Bot
-        const onebotApi = getOnebotApiCaller(bot)
+        const onebotApi =
+          getOnebotApiCaller(e?.bot) || getOnebotApiCaller(client) || getOnebotApiCaller(bot)
 
         e.recallMessage = async ({ peer_id, message_seq, message_id, isGroup }) => {
           const mid = message_id ?? message_seq
