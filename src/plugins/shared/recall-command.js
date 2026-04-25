@@ -58,6 +58,13 @@ async function canBotRecallOthers(ctx) {
   return Boolean(ctx?.botIsOwner || ctx?.botIsAdmin)
 }
 
+async function canUserRecallOthers(ctx) {
+  if (ctx?.isMaster) return true
+  if (typeof ctx?.isGroupOwner === "function" && (await ctx.isGroupOwner())) return true
+  if (typeof ctx?.isGroupAdmin === "function" && (await ctx.isGroupAdmin())) return true
+  return Boolean(ctx?.isOwner || ctx?.isAdmin)
+}
+
 export async function handleRecallCommand(ctx, options = {}) {
   const missingReplyText =
     options.missingReplyText || "请先回复需要撤回的消息，再发送：撤回 / 引用撤回"
@@ -76,7 +83,7 @@ export async function handleRecallCommand(ctx, options = {}) {
   const isGroup = Boolean(ctx?.group_id ?? replied?.group_id ?? replied?.peer_id)
 
   if (!isBotMessage) {
-    if (!ctx?.isMaster) {
+    if (!(await canUserRecallOthers(ctx))) {
       return await ctx.reply(selfOnlyText)
     }
 
@@ -116,6 +123,7 @@ export async function handleRecallCommand(ctx, options = {}) {
 }
 
 export const __test = {
+  canUserRecallOthers,
   extractReplySenderId,
   extractReplyMessageId,
   extractReplyMessageSeq,

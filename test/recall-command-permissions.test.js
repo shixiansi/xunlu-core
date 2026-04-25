@@ -117,14 +117,42 @@ test("group plain 撤回 lets master recall other user messages when bot is admi
   assert.equal(recalls[0]?.message_id, "1883175181")
 })
 
-test("group plain 撤回 blocks master recalling others when bot lacks admin", async () => {
+test("group plain 撤回 also lets group admins recall other user messages when bot is admin", async () => {
+  const handler = findHandler(collectHandlers(registerGroup), "^(|#)撤回$")
+  const recalls = []
+
+  const result = await handler({
+    isMaster: false,
+    self_id: 3239716086,
+    group_id: 1061170515,
+    isGroupAdmin: async () => true,
+    isBotGroupAdmin: async () => true,
+    getReplyMessage: async () => ({
+      user_id: 1765629830,
+      message_id: "1883175189",
+      message_seq: 12449,
+    }),
+    recallMessage: async payload => {
+      recalls.push(payload)
+      return { ok: true }
+    },
+    reply: async message => message,
+  })
+
+  assert.equal(result, true)
+  assert.equal(recalls.length, 1)
+  assert.equal(recalls[0]?.message_id, "1883175189")
+})
+
+test("group plain 撤回 blocks admins recalling others when bot lacks admin", async () => {
   const handler = findHandler(collectHandlers(registerGroup), "^(|#)撤回$")
   const replies = []
 
   const result = await handler({
-    isMaster: true,
+    isMaster: false,
     self_id: 3239716086,
     group_id: 1061170515,
+    isGroupAdmin: async () => true,
     isBotGroupAdmin: async () => false,
     getReplyMessage: async () => ({
       user_id: 1765629830,
