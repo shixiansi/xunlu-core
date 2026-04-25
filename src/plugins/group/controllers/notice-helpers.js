@@ -522,7 +522,7 @@ function analyzeNoticeMessage(segments) {
 
 async function getNoticeRkeySuffix(ctx) {
   const proto = String(ctx?.protocol || "").toLowerCase()
-  if (proto !== "milky") return ""
+  if (!["milky", "onebotv11"].includes(proto)) return ""
 
   const scene = String(ctx?.message_scene || (ctx?.group_id ? "group" : "friend")).toLowerCase()
   const targetScene = scene === "friend" ? "private" : "group"
