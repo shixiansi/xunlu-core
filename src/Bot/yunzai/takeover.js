@@ -102,12 +102,25 @@ function looksLikeMemberFacade(input) {
   )
 }
 
+function getLockedProxyValue(target, prop) {
+  try {
+    const desc = Reflect.getOwnPropertyDescriptor(target, prop)
+    if (!desc || desc.configurable) return null
+    if ("value" in desc && !desc.writable) return { value: desc.value }
+    if (!("value" in desc) && desc.get === undefined) return { value: undefined }
+  } catch {}
+  return null
+}
+
 function installTakeoverBotCompatProxy(bot) {
   if (!bot || typeof bot !== "object") return bot
   if (bot.__xunlu_takeover_compat_proxy) return bot.__xunlu_takeover_compat_proxy
 
   const proxy = new Proxy(bot, {
     get(target, prop, receiver) {
+      const locked = getLockedProxyValue(target, prop)
+      if (locked) return locked.value
+
       if (prop === "pickGroup" && typeof target.__xunlu_pickGroup_compat === "function") {
         return target.__xunlu_pickGroup_compat
       }

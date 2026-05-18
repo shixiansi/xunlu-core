@@ -182,3 +182,29 @@ test("takeover compat proxy intercepts global Bot.pickGroup before inner proxy i
   assert.deepEqual(member.groupInput, { group_id: 629661253 })
   assert.deepEqual(member.userInput, { user_id: 1765629830 })
 })
+
+test("takeover compat proxy preserves locked Bot.pickGroup value", () => {
+  const rawPickGroup = groupId => ({ kind: "raw-group", groupId })
+  const rawTarget = {
+    __xunlu_pickGroup_compat(groupInput) {
+      return {
+        kind: "compat-group",
+        input: groupInput,
+      }
+    },
+  }
+  Object.defineProperty(rawTarget, "pickGroup", {
+    value: rawPickGroup,
+    configurable: false,
+    writable: false,
+    enumerable: true,
+  })
+
+  const compatBot = takeoverTest.installTakeoverBotCompatProxy(rawTarget)
+
+  assert.equal(compatBot.pickGroup, rawPickGroup)
+  assert.deepEqual(compatBot.pickGroup(629661253), {
+    kind: "raw-group",
+    groupId: 629661253,
+  })
+})

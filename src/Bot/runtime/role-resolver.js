@@ -86,9 +86,15 @@ function getRuntimeGroup(groupId) {
   const gid = normalizeEventId(groupId)
   if (gid === undefined) return null
   const runtimeBot = globalThis.__xunlu_runtime_bot || globalThis.Bot
-  if (!runtimeBot || typeof runtimeBot.pickGroup !== "function") return null
+  let pickGroup = null
   try {
-    return runtimeBot.pickGroup(Number(gid) || gid)
+    pickGroup = runtimeBot?.pickGroup
+  } catch {
+    return null
+  }
+  if (typeof pickGroup !== "function") return null
+  try {
+    return pickGroup.call(runtimeBot, Number(gid) || gid)
   } catch {
     return null
   }

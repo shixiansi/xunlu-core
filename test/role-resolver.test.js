@@ -87,3 +87,49 @@ test("RoleResolver avoids accessor-only member/group getters and shadows writabl
     globalThis.Bot = previousBot
   }
 })
+
+test("RoleResolver ignores Bot proxies that throw while reading pickGroup", async () => {
+  const resolver = new RoleResolver({})
+  const event = {
+    group_id: 123456,
+    user_id: 234567,
+    self_id: 345678,
+    sender: {
+      nickname: "测试成员",
+      card: "测试成员",
+    },
+    async getGroupMemberInfo(groupId, userId) {
+      assert.equal(groupId, 123456)
+      assert.equal(userId, 234567)
+      return {
+        user_id: 234567,
+        nickname: "测试成员",
+        card: "测试成员",
+        role: "admin",
+      }
+    },
+  }
+
+  const previousBot = globalThis.Bot
+  const previousRuntimeBot = globalThis.__xunlu_runtime_bot
+  try {
+    globalThis.__xunlu_runtime_bot = undefined
+    globalThis.Bot = new Proxy(
+      {},
+      {
+        get(target, prop, receiver) {
+          if (prop === "pickGroup") throw new TypeError("invalid proxy pickGroup")
+          return Reflect.get(target, prop, receiver)
+        },
+      },
+    )
+
+    await resolver.enrichGroupRoleFlags(event)
+
+    assert.equal(event.isAdmin, true)
+    assert.equal(event.member.role, "admin")
+  } finally {
+    globalThis.__xunlu_runtime_bot = previousRuntimeBot
+    globalThis.Bot = previousBot
+  }
+})
