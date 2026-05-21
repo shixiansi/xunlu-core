@@ -19,8 +19,8 @@
 - 测试基建（harness / CLI / node:test）：`md/testing-handbook-ai.md`
 - 共享 WebUI 接入协议：`md/webui-handbook-ai.md`
 - OneBotV11 / ICQQ / Milky 原生 API 速查（参数差异）：`md/onebotv11-milky-api-quickref.md`
-- 通用消息段速查：`md/message.md`
-- 目录树快照：`md/dir-tree.md`
+- 通用消息段速查：`md/xunlu-unified-message-format.md`
+- 目录树按需生成：输出到 `temp/dir-tree.md`，不要提交生成结果
 
 ## 2) 目录结构（只列关键入口）
 
@@ -32,10 +32,10 @@
 - `src/lib/server.js`：插件 API Server（Express）
 - `config/`：默认配置与运行配置（首次运行会同步/补齐）
 
-完整目录树见 `md/dir-tree.md`；可用以下命令重建（忽略 `.git/node_modules/logs/temp/data`）：
+完整目录树按需生成到 `temp/dir-tree.md`（运行产物，不提交；忽略 `.git/node_modules/logs/temp/data`）：
 
 ```bash
-node ./bin/xunlu-dev.js tree --path . --max-depth 6 --output md/dir-tree.md
+node ./bin/xunlu-dev.js dev tree --path . --max-depth 6 --output temp/dir-tree.md
 ```
 
 ## 3) 运行形态与启动
@@ -231,5 +231,4 @@ node ./bin/xunlubot.js restart
 
 ## 8) 已知问题/注意事项（截至 2026-04-02）
 
-- `package.json` 的 `npm run init-db` 指向 `scripts/init-dbs.js`，但仓库未发现 `scripts/` 目录
 - 许多模块依赖全局 `logger`（由 `src/component/logger/log.js` 初始化）；独立调用模块时需注意先初始化日志

@@ -4,18 +4,18 @@ npm-debug.log
 .DS_Store
 # Project data and generated files
 data/
+temp/
+logs/
 config/config
 
 reset-qianyu-plugin/
 
-# plugin downloads (generated files)
-src/plugins/*/downloads/
-temp/
-# logs
-logs/
+# legacy plugin runtime output under src
+src/plugins/**/temp/
+src/plugins/**/downloads/
+src/plugins/**/data/
+
+# generated media
 mirage_tank_web.png
 src/plugins/tts/resources/audio/
 src/plugins/bilibili/resources/video/
-src/plugins/bilibili/data/
-qun-daily/data/
-/temp/

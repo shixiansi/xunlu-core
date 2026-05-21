@@ -15,7 +15,7 @@ function ensureFile(filePath, content = "fixture") {
   return filePath
 }
 
-test("RuntimePaths migrates legacy plugin data into unified data directories", async () => {
+test("RuntimePaths migrates legacy plugin runtime files into unified runtime directories", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "xunlu-runtime-layout-"))
 
   try {
@@ -31,6 +31,14 @@ test("RuntimePaths migrates legacy plugin data into unified data directories", a
     const legacyQunDaily = ensureFile(
       path.join(tempRoot, "src", "plugins", "qun-daily", "data", "stats", "10001", "2026-04-01.json"),
       "{\"messages\":12}",
+    )
+    const legacyPixivTemp = ensureFile(
+      path.join(tempRoot, "src", "plugins", "pixiv", "temp", "cached.jpg"),
+      "pixiv-cache",
+    )
+    const legacyPixivMirage = ensureFile(
+      path.join(tempRoot, "src", "plugins", "pixiv", "model", "temp", "generated.png"),
+      "pixiv-mirage-cache",
     )
     const targetBilibili = ensureFile(
       path.join(tempRoot, "data", "bilibili", "group", "keep.json"),
@@ -52,11 +60,21 @@ test("RuntimePaths migrates legacy plugin data into unified data directories", a
       fs.readFileSync(legacyQunDaily, "utf8"),
     )
     assert.equal(
+      fs.readFileSync(path.join(tempRoot, "temp", "pixiv", "cached.jpg"), "utf8"),
+      fs.readFileSync(legacyPixivTemp, "utf8"),
+    )
+    assert.equal(
+      fs.readFileSync(path.join(tempRoot, "temp", "pixiv", "mirage", "generated.png"), "utf8"),
+      fs.readFileSync(legacyPixivMirage, "utf8"),
+    )
+    assert.equal(
       fs.readFileSync(targetBilibili, "utf8"),
       "{\"nickname\":\"新目录已有数据\"}",
     )
     assert.equal(fs.existsSync(legacyBilibili), true)
     assert.equal(fs.existsSync(legacyQunDaily), true)
+    assert.equal(fs.existsSync(legacyPixivTemp), true)
+    assert.equal(fs.existsSync(legacyPixivMirage), true)
 
     const pluginDataDir = runtimePaths.getPluginDataDir("demo-plugin")
     const pluginTempDir = runtimePaths.getPluginTempDir("demo-plugin", "cache")

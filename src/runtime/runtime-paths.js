@@ -1,7 +1,7 @@
 import fs from "node:fs"
 import path from "node:path"
 
-const LEGACY_DATA_MIGRATIONS = [
+const LEGACY_RUNTIME_MIGRATIONS = [
   {
     legacySegments: ["src", "plugins", "bilibili", "data"],
     targetSegments: ["data", "bilibili"],
@@ -9,6 +9,14 @@ const LEGACY_DATA_MIGRATIONS = [
   {
     legacySegments: ["src", "plugins", "qun-daily", "data"],
     targetSegments: ["data", "qun-daily"],
+  },
+  {
+    legacySegments: ["src", "plugins", "pixiv", "temp"],
+    targetSegments: ["temp", "pixiv"],
+  },
+  {
+    legacySegments: ["src", "plugins", "pixiv", "model", "temp"],
+    targetSegments: ["temp", "pixiv", "mirage"],
   },
 ]
 
@@ -88,7 +96,7 @@ export class RuntimePaths {
     ensureDir(path.join(this.rootDir, "data"))
     ensureDir(path.join(this.rootDir, "temp"))
 
-    for (const migration of LEGACY_DATA_MIGRATIONS) {
+    for (const migration of LEGACY_RUNTIME_MIGRATIONS) {
       const sourcePath = path.join(this.rootDir, ...migration.legacySegments)
       const targetPath = path.join(this.rootDir, ...migration.targetSegments)
       if (!fs.existsSync(sourcePath) || !hasAnyEntry(sourcePath)) continue

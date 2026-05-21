@@ -148,10 +148,10 @@ function makeCommandFallback(renderData, targetUser = null) {
 async function getMemberMap(ctx, groupId) {
   if (!ctx || typeof ctx.getGroupMemberList !== "function") return new Map()
   try {
-    return (await ctx.getGroupMemberList(groupId)) || new Map()
+    return (await ctx.getGroupMemberList({ group_id: groupId })) || new Map()
   } catch {
     try {
-      return (await ctx.getGroupMemberList({ group_id: groupId })) || new Map()
+      return (await ctx.getGroupMemberList(groupId)) || new Map()
     } catch {
       return new Map()
     }

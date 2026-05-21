@@ -6,12 +6,13 @@ import fetch from "node-fetch";
 import { v4 as uuidv4 } from "uuid";
 import fs from "fs";
 import fsPromises from "fs/promises";
+import { getRuntimePaths } from "../../../runtime/runtime-context.js";
 
 // 基础配置（适配ES模块）
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 // 临时文件目录
-const TEMP_DIR = path.resolve(__dirname, "./temp/");
+const TEMP_DIR = getRuntimePaths().getPluginTempDir("pixiv", "mirage");
 
 // ===================== 工具函数：目录/文件检查 =====================
 /**
@@ -428,8 +429,8 @@ async function createMirageTankWebVersion(
     tempFiles.push(surfaceSource.filePath, innerSource.filePath);
 
     // 步骤2：压缩图片（仅调整尺寸，不修改颜色）
-    tempSurface = path.join(__dirname, `temp_surface_${uuidv4()}.png`);
-    tempInner = path.join(__dirname, `temp_inner_${uuidv4()}.png`);
+    tempSurface = path.join(TEMP_DIR, `temp_surface_${uuidv4()}.png`);
+    tempInner = path.join(TEMP_DIR, `temp_inner_${uuidv4()}.png`);
     tempFiles.push(tempSurface, tempInner);
 
     await Promise.all([

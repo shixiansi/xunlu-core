@@ -187,7 +187,7 @@ test("qun-daily stats push can be enabled per group via command", async () => {
         },
       })
 
-      assert.equal(pushRes.ok, true)
+      assert.equal(pushRes.ok, true, JSON.stringify({ errors: pushRes.errors, warnings: pushRes.warnings }))
       assert.equal(pushRes.replies.length, 1)
     })
   } finally {

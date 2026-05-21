@@ -25,6 +25,19 @@ function cleanupArtifacts() {
   } catch {}
 }
 
+function isPathInside(parentPath, childPath) {
+  const relative = path.relative(parentPath, childPath)
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))
+}
+
+function assertRuntimeTempImage(segmentLike) {
+  assert.equal(segmentLike?.type, "image")
+  const fileRef = String(segmentLike?.data?.path || segmentLike?.data?.file || "")
+  if (fileRef.startsWith("base64://")) return
+  assert.equal(isPathInside(path.join(repoRoot, "src", "plugins"), fileRef), false)
+  assert.equal(isPathInside(path.join(repoRoot, "temp"), fileRef), true)
+}
+
 function createMockResponse({ ok = true, status = 200, jsonData = {} } = {}) {
   return {
     ok,
@@ -123,6 +136,11 @@ function createLoliconPic(overrides = {}) {
   }
 }
 
+test("pixiv temp dir uses runtime temp outside source plugins", () => {
+  assert.equal(isPathInside(path.join(repoRoot, "src", "plugins"), __test.tempDir), false)
+  assert.equal(isPathInside(path.join(repoRoot, "temp", "pixiv"), __test.tempDir), true)
+})
+
 test("pixiv setu command uses lolicon v2 payload and sends forward with new metadata", async () => {
   const fetchCalls = []
   const pic = createLoliconPic()
@@ -207,6 +225,7 @@ test("pixiv setu command retries empty lolicon responses and returns failure tex
 test("pixiv setu command rebuilds forward with mirage images after first forward send fails", async () => {
   const pic = createLoliconPic()
   const mirageOutputs = []
+  const removedPaths = []
 
   await withPixivDeps(
     {
@@ -226,6 +245,10 @@ test("pixiv setu command rebuilds forward with mirage images after first forward
         fs.writeFileSync(outputPath, onePixelPng)
         mirageOutputs.push(outputPath)
         return outputPath
+      },
+      removeFile(filePath) {
+        removedPaths.push(filePath)
+        fs.unlinkSync(filePath)
       },
     },
     async () => {
@@ -254,12 +277,12 @@ test("pixiv setu command rebuilds forward with mirage images after first forward
       assert.equal(state.forwardCalls.length, 2)
       assert.equal(state.replyCalls[1], __test.MIRAGE_FALLBACK_NOTICE)
       const fallbackList = state.forwardCalls[1].msgList
-      assert.equal(fallbackList[1]?.type, "image")
-      assert.match(String(fallbackList[1]?.data?.file || ""), /^base64:\/\//)
+      assertRuntimeTempImage(fallbackList[1])
       assert.equal(state.replyCalls.length, 3)
       assert.equal(state.recallCalls.length, 1)
       assert.equal(state.recallCalls[0]?.message_id, "mock-message-2")
       for (const filePath of mirageOutputs) {
+        assert.equal(removedPaths.includes(filePath), true)
         assert.equal(fs.existsSync(filePath), false)
       }
     },
@@ -310,8 +333,7 @@ test("pixiv setu command rebuilds forward with mirage images when forward reply 
       assert.equal(state.forwardCalls.length, 2)
       assert.equal(state.replyCalls[1], __test.MIRAGE_FALLBACK_NOTICE)
       const fallbackList = state.forwardCalls[1].msgList
-      assert.equal(fallbackList[1]?.type, "image")
-      assert.match(String(fallbackList[1]?.data?.file || ""), /^base64:\/\//)
+      assertRuntimeTempImage(fallbackList[1])
     },
   )
 })
@@ -362,8 +384,7 @@ test("pixiv setu command still sends mirage fallback when notice message fails",
 
       assert.equal(state.forwardCalls.length, 2)
       const fallbackList = state.forwardCalls[1].msgList
-      assert.equal(fallbackList[1]?.type, "image")
-      assert.match(String(fallbackList[1]?.data?.file || ""), /^base64:\/\//)
+      assertRuntimeTempImage(fallbackList[1])
       assert.equal(state.recallCalls.length, 0)
     },
   )
@@ -431,8 +452,7 @@ test("pixiv random command replaces failed mirage image with text placeholder in
       const fallbackList = state.forwardCalls[1].msgList
       assert.match(String(fallbackList[1]), /第1张图片的幻影坦克生成失败/)
       assert.match(String(fallbackList[1]), /777_p0\.png/)
-      assert.equal(fallbackList[2]?.type, "image")
-      assert.match(String(fallbackList[2]?.data?.file || ""), /^base64:\/\//)
+      assertRuntimeTempImage(fallbackList[2])
     },
   )
 })

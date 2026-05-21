@@ -3,6 +3,7 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { segment } from "../../../Bot/message/index.js"
+import { getRuntimePaths } from "../../../runtime/runtime-context.js"
 import fetch from "node-fetch"
 import lodash from "lodash"
 
@@ -11,7 +12,7 @@ import huanyin from "../model/phantomtank.js"
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const pluginRoot = path.resolve(__dirname, "..")
-const tempDir = path.join(pluginRoot, "temp")
+const tempDir = getRuntimePaths().getPluginTempDir("pixiv", "mirage")
 const mirageSurfacePath = path.join(pluginRoot, "model", "3.jpg")
 
 const LOLICON_SETU_API = "https://api.lolicon.app/setu/v2"
@@ -300,6 +301,14 @@ async function recallNoticeMessage(ctx, replyResult) {
   return false
 }
 
+function createImageSegmentFromLocalFile(filePath) {
+  try {
+    return segment.image(fs.readFileSync(filePath), path.basename(filePath))
+  } catch {
+    return segment.image(filePath)
+  }
+}
+
 async function buildMirageFallbackNodes(imageUrls = []) {
   ensureTempDir()
   const msgList = []
@@ -322,7 +331,7 @@ async function buildMirageFallbackNodes(imageUrls = []) {
       const generatedPath =
         (await runtimeDeps.createMirageTank(mirageSurfacePath, originalUrl, outputPath)) || outputPath
       if (generatedPath !== outputPath) cleanupPaths.push(generatedPath)
-      msgList.push(segment.image(generatedPath))
+      msgList.push(createImageSegmentFromLocalFile(generatedPath))
     } catch (error) {
       getLogger().warn?.(
         `[pixiv] 第${i + 1}张图片生成幻影坦克失败：${error?.message || error}`,
