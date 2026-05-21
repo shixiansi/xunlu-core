@@ -28,6 +28,13 @@ import {
   pickProactiveBatchSize,
 } from "../src/plugins/learning_chat/services/proactive-planner.js"
 import {
+  clearLearningChatRuntimeCaches,
+  getLastLearningMessage,
+  getRepeatState,
+  setLastLearningMessage,
+  setRepeatState,
+} from "../src/plugins/learning_chat/services/runtime-cache.js"
+import {
   markBotSpoke,
   resetHeatStateForTests,
 } from "../src/plugins/learning_chat/services/heat-state.js"
@@ -275,4 +282,29 @@ test("learning_chat proactive planner keeps tick thresholds and backoff pure", (
     }).attemptsNoReply,
     3,
   )
+})
+
+test("learning_chat runtime cache clears group-scoped memory together", () => {
+  const groupId = "123456789"
+  const now = Date.now()
+
+  setLastLearningMessage(groupId, { hash: "hash-a", ts: now })
+  setRepeatState(groupId, {
+    hash: "hash-b",
+    startedAt: now,
+    lastAt: now,
+    users: new Set(["10000"]),
+    count: 2,
+    repeated: false,
+  })
+  markBotSpoke(groupId)
+
+  assert.deepEqual(getLastLearningMessage(groupId), { hash: "hash-a", ts: now })
+  assert.equal(getRepeatState(groupId)?.hash, "hash-b")
+  assert.ok(getHeatSnapshot().some(item => item.group_id === groupId))
+
+  assert.equal(clearLearningChatRuntimeCaches(groupId), true)
+  assert.equal(getLastLearningMessage(groupId), undefined)
+  assert.equal(getRepeatState(groupId), undefined)
+  assert.equal(getHeatSnapshot().some(item => item.group_id === groupId), false)
 })

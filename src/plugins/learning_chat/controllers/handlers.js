@@ -11,7 +11,6 @@ import { getConfig, getEffectiveGroupConfig, setGroupOverrides } from "../model/
 import {
   doesGroupTableExist,
   ensureHeatForGroup,
-  forgetHeatForGroup,
   getBotSelfId,
   getHeatSnapshot as readHeatSnapshot,
   getHeatState,
@@ -43,30 +42,31 @@ import {
   pickProactiveBatchSize,
 } from "../services/proactive-planner.js"
 import {
+  clearBanCache,
+  clearLearningChatRuntimeCaches,
+  getBanSet,
+  getLastLearningMessage,
+  getProactiveCommandStateCached,
+  getProactiveStateCached,
+  getRepeatState,
+  getStateCached,
+  patchProactiveCommandState,
+  patchProactiveState,
+  patchState,
+  setLastLearningMessage,
+  setRepeatState,
+} from "../services/runtime-cache.js"
+import {
   banReply,
-  getGroupState,
-  getProactiveState,
-  getProactiveCommandState,
   getSignature,
   incrementTransition,
   initDb,
-  listBans,
   listGlobalCandidates,
   listLocalCandidates,
   listTrackedLearningGroupIds,
-  setGroupState,
-  setProactiveCommandState,
-  setProactiveState,
   upsertSignature,
   clearGroupScopedLearningData,
 } from "../model/db.js"
-
-const lastByGroup = new Map() // groupId -> { hash, ts }
-const stateCache = new Map() // groupId -> state
-const proactiveStateCache = new Map() // groupId -> proactive state
-const proactiveCommandStateCache = new Map() // groupId:userId -> proactive command state
-const banCache = new Map() // groupId -> { ts, set }
-const repeatStateByGroup = new Map() // groupId -> { hash, startedAt, lastAt, users:Set, count, repeated }
 
 let runtimeProtocolHint = ""
 
@@ -156,74 +156,6 @@ function pickWeighted(items) {
   return list[list.length - 1] || null
 }
 
-async function getStateCached(groupId) {
-  const gid = String(groupId || "")
-  if (!gid) return null
-  if (stateCache.has(gid)) return stateCache.get(gid)
-  const st = await getGroupState(gid)
-  stateCache.set(gid, st)
-  return st
-}
-
-async function patchState(groupId, patch = {}) {
-  const gid = String(groupId || "")
-  if (!gid) return null
-  const next = await setGroupState(gid, patch)
-  stateCache.set(gid, next)
-  return next
-}
-
-async function getProactiveStateCached(groupId) {
-  const gid = String(groupId || "")
-  if (!gid) return null
-  if (proactiveStateCache.has(gid)) return proactiveStateCache.get(gid)
-  const st = await getProactiveState(gid)
-  proactiveStateCache.set(gid, st)
-  return st
-}
-
-async function patchProactiveState(groupId, patch = {}) {
-  const gid = String(groupId || "")
-  if (!gid) return null
-  const next = await setProactiveState(gid, patch)
-  proactiveStateCache.set(gid, next)
-  return next
-}
-
-async function getProactiveCommandStateCached(groupId, userId) {
-  const gid = String(groupId || "")
-  const uid = String(userId || "")
-  const key = `${gid}:${uid}`
-  if (!gid || !uid) return null
-  if (proactiveCommandStateCache.has(key)) return proactiveCommandStateCache.get(key)
-  const st = await getProactiveCommandState(gid, uid)
-  proactiveCommandStateCache.set(key, st)
-  return st
-}
-
-async function patchProactiveCommandState(groupId, userId, patch = {}) {
-  const gid = String(groupId || "")
-  const uid = String(userId || "")
-  const key = `${gid}:${uid}`
-  if (!gid || !uid) return null
-  const next = await setProactiveCommandState(gid, uid, patch)
-  proactiveCommandStateCache.set(key, next)
-  return next
-}
-
-async function getBanSet(groupId) {
-  const gid = String(groupId || "")
-  if (!gid) return new Set()
-  const now = Date.now()
-  const cachedEntry = banCache.get(gid)
-  if (cachedEntry && now - cachedEntry.ts < 30_000) return cachedEntry.set
-
-  const rows = await listBans(gid, { limit: 1000 }).catch(() => [])
-  const set = new Set(rows.map(r => String(r.reply_hash || "")).filter(Boolean))
-  banCache.set(gid, { ts: now, set })
-  return set
-}
-
 async function resolveIsGroupAdmin(ctx) {
   if (ctx?.isMaster) return true
   if (!ctx?.isGroup || !ctx?.group_id || !ctx?.user_id) return false
@@ -298,7 +230,7 @@ async function cmdBanReply(ctx) {
   if (!hash) return await ctx.reply("无法识别要禁用的回复内容")
 
   await banReply(String(ctx.group_id), hash)
-  banCache.delete(String(ctx.group_id))
+  clearBanCache(ctx.group_id)
   return await ctx.reply("已禁用该回复（本群生效）")
 }
 
@@ -398,9 +330,9 @@ async function handleRepeat(ctx, groupCfg, msgInfo) {
   const now = Date.now()
   const uid = String(ctx?.user_id ?? ctx?.sender_id ?? "")
 
-  const st = repeatStateByGroup.get(gid)
+  const st = getRepeatState(gid)
   if (!st || st.hash !== msgInfo.hash || now - st.startedAt > maxWindowMs) {
-    repeatStateByGroup.set(gid, {
+    setRepeatState(gid, {
       hash: msgInfo.hash,
       startedAt: now,
       lastAt: now,
@@ -420,7 +352,7 @@ async function handleRepeat(ctx, groupCfg, msgInfo) {
   if (requireDistinct && st.users.size < 2) return false
 
   st.repeated = true
-  repeatStateByGroup.set(gid, st)
+  setRepeatState(gid, st)
 
   const state = await getStateCached(gid)
   const cooldownOk = !state?.last_repeat_at || now - Number(state.last_repeat_at) > 10_000
@@ -445,7 +377,7 @@ async function handleLearnAndReply(ctx, groupCfg, msgInfo) {
   const now = Date.now()
 
   // learn transition
-  const prev = lastByGroup.get(gid)
+  const prev = getLastLearningMessage(gid)
   const maxGapMs = Math.max(0, Math.floor(toNumber(cfg.learning.learn_max_gap_sec, 600))) * 1000
   const maxCount = Math.max(1, Math.floor(toNumber(cfg.learning.max_learn_count, 6)))
 
@@ -465,7 +397,7 @@ async function handleLearnAndReply(ctx, groupCfg, msgInfo) {
     }).catch(() => {})
   }
 
-  lastByGroup.set(gid, { hash: msgInfo.hash, ts: now })
+  setLastLearningMessage(gid, { hash: msgInfo.hash, ts: now })
 
   // auto reply
   const state = await getStateCached(gid)
@@ -1053,16 +985,7 @@ export async function cleanupLearningChatGroup(groupId, options = {}) {
     })
   }
 
-  lastByGroup.delete(gid)
-  stateCache.delete(gid)
-  proactiveStateCache.delete(gid)
-  banCache.delete(gid)
-  repeatStateByGroup.delete(gid)
-  forgetHeatForGroup(gid)
-
-  for (const key of Array.from(proactiveCommandStateCache.keys())) {
-    if (key.startsWith(`${gid}:`)) proactiveCommandStateCache.delete(key)
-  }
+  clearLearningChatRuntimeCaches(gid)
 
   const dbSummary = shouldClearDb ? await clearGroupScopedLearningData(gid) : null
 
@@ -1270,7 +1193,5 @@ export function getRuntimeProtocolHint() {
 }
 
 export function invalidateBanCache(groupId) {
-  const gid = String(groupId || "")
-  if (!gid) return
-  banCache.delete(gid)
+  clearBanCache(groupId)
 }
