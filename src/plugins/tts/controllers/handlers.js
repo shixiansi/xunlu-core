@@ -1,11 +1,30 @@
-import { Filemage, Downloader } from "#utils"
+import path from "node:path"
+
+import {
+  Downloader,
+  getPluginResourcePath,
+  getPluginTempPath,
+  readJsonFile,
+  sanitizeFilename,
+} from "#utils"
 import Hobbyist from "../services/hobbyist.js"
-import env from "../../../lib/env.js"
 import { segment } from "../../../Bot/message/index.js"
+
 let hobbyist = new Hobbyist()
-const resPath = env.RootPath + "/src/plugins/tts/resources/"
-let downloader = new Downloader(resPath)
-let file = new Filemage(resPath)
+const resourcesDir = getPluginResourcePath("tts")
+const audioTempDir = getPluginTempPath("tts", "audio")
+const downloader = new Downloader(audioTempDir)
+const categoryFile = path.join(resourcesDir, "category.json")
+const hobbyistFile = path.join(resourcesDir, "hobbyist.json")
+
+function readCategoryList() {
+  return readJsonFile(categoryFile, [])
+}
+
+function readCharacterAudioList() {
+  return readJsonFile(hobbyistFile, {})
+}
+
 /**
  * 从字符串数组中找到与输入字符串匹配度最高的项
  * @param {string} inputStr - 输入的目标字符串
@@ -14,11 +33,9 @@ let file = new Filemage(resPath)
  */
 
 const downAudioFiles = async (url, name) => {
-  if (!file.isDirectory("/audio")) {
-    file.CreatDir("/audio")
-  }
-  await downloader.downloadFile(url, `audio/${file.sanitizeFilename(name)}.mp3`)
-  return downloader.rootPath + `audio/${file.sanitizeFilename(name)}.mp3`
+  const fileName = `${sanitizeFilename(name)}.mp3`
+  await downloader.downloadFile(url, fileName)
+  return path.join(downloader.rootPath, fileName)
 }
 
 const dealCharacterName = name => {
@@ -37,7 +54,7 @@ const dealCharacterName = name => {
 }
 
 const dealCategoryName = name => {
-  let catelist = file.getFileDataToJson("category.json")
+  let catelist = readCategoryList()
   catelist.forEach(c => {
     name = name.replace(c, "")
   })
@@ -68,7 +85,7 @@ function findHighestMatch(inputStr, strArray) {
 export function register(bot) {
   if (!bot || !bot.registerCommand) return
   bot.registerCommand(["^(.+)说"], async ctx => {
-    let characterAudioList = file.getFileDataToJson("hobbyist.json")
+    let characterAudioList = readCharacterAudioList()
     // console.log(characterAudioList);
     let strarr = ctx.msg.split("说")
     const characterList = Object.keys(characterAudioList).map(i => {
@@ -105,7 +122,7 @@ export function register(bot) {
   })
 
   bot.registerCommand(["^#语音模型列表$"], async ctx => {
-    let characterAudioList = file.getFileDataToJson("hobbyist.json")
+    let characterAudioList = readCharacterAudioList()
     let catelist = await hobbyist.getCategories()
 
     ctx.reply(
@@ -142,4 +159,17 @@ export function register(bot) {
 
 export function onBotEvent(event) {
   console.log("[example-plugin] received bot event:", event)
+}
+
+export const __test = {
+  resourcesDir,
+  audioTempDir,
+  categoryFile,
+  hobbyistFile,
+  readCategoryList,
+  readCharacterAudioList,
+  downAudioFiles,
+  dealCharacterName,
+  dealCategoryName,
+  findHighestMatch,
 }

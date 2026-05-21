@@ -1,6 +1,8 @@
 import fs from "node:fs"
 import path from "node:path"
 
+import { ensureDir, readJsonFile } from "../utils/file.js"
+
 const LEGACY_RUNTIME_MIGRATIONS = [
   {
     legacySegments: ["src", "plugins", "bilibili", "data"],
@@ -18,20 +20,11 @@ const LEGACY_RUNTIME_MIGRATIONS = [
     legacySegments: ["src", "plugins", "pixiv", "model", "temp"],
     targetSegments: ["temp", "pixiv", "mirage"],
   },
+  {
+    legacySegments: ["src", "plugins", "tts", "resources", "audio"],
+    targetSegments: ["temp", "tts", "audio"],
+  },
 ]
-
-function readJsonFile(filePath, fallback = {}) {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, "utf8"))
-  } catch {
-    return fallback
-  }
-}
-
-function ensureDir(dirPath) {
-  fs.mkdirSync(dirPath, { recursive: true })
-  return dirPath
-}
 
 function hasAnyEntry(dirPath) {
   try {

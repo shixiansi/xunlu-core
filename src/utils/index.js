@@ -10,4 +10,7 @@
 
 import Filemage from "./Filemage.js"
 import Downloader from "./download.js"
+
 export { Filemage, Downloader }
+export * from "./file.js"
+export * from "./resource-path.js"

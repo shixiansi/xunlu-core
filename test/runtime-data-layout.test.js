@@ -5,6 +5,7 @@ import path from "node:path"
 import test from "node:test"
 
 import { RuntimePaths } from "../src/runtime/runtime-paths.js"
+import { Filemage, readJsonFile, sanitizeFilename } from "../src/utils/index.js"
 import { installTestRuntime } from "./helpers/test-runtime.js"
 
 installTestRuntime(test)
@@ -40,6 +41,10 @@ test("RuntimePaths migrates legacy plugin runtime files into unified runtime dir
       path.join(tempRoot, "src", "plugins", "pixiv", "model", "temp", "generated.png"),
       "pixiv-mirage-cache",
     )
+    const legacyTtsAudio = ensureFile(
+      path.join(tempRoot, "src", "plugins", "tts", "resources", "audio", "generated.mp3"),
+      "tts-audio-cache",
+    )
     const targetBilibili = ensureFile(
       path.join(tempRoot, "data", "bilibili", "group", "keep.json"),
       "{\"nickname\":\"新目录已有数据\"}",
@@ -68,6 +73,10 @@ test("RuntimePaths migrates legacy plugin runtime files into unified runtime dir
       fs.readFileSync(legacyPixivMirage, "utf8"),
     )
     assert.equal(
+      fs.readFileSync(path.join(tempRoot, "temp", "tts", "audio", "generated.mp3"), "utf8"),
+      fs.readFileSync(legacyTtsAudio, "utf8"),
+    )
+    assert.equal(
       fs.readFileSync(targetBilibili, "utf8"),
       "{\"nickname\":\"新目录已有数据\"}",
     )
@@ -75,6 +84,7 @@ test("RuntimePaths migrates legacy plugin runtime files into unified runtime dir
     assert.equal(fs.existsSync(legacyQunDaily), true)
     assert.equal(fs.existsSync(legacyPixivTemp), true)
     assert.equal(fs.existsSync(legacyPixivMirage), true)
+    assert.equal(fs.existsSync(legacyTtsAudio), true)
 
     assert.equal(
       runtimePaths.getResourcePath("webui", "index.html"),
@@ -87,6 +97,32 @@ test("RuntimePaths migrates legacy plugin runtime files into unified runtime dir
     assert.equal(path.basename(pluginTempDir), "cache")
     assert.equal(fs.existsSync(pluginDataDir), true)
     assert.equal(fs.existsSync(pluginTempDir), true)
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true })
+  }
+})
+
+test("shared utils expose focused file and path helpers", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "xunlu-utils-"))
+
+  try {
+    const jsonFile = ensureFile(path.join(tempRoot, "sample.json"), "{\"ok\":true}")
+
+    assert.deepEqual(readJsonFile(jsonFile), { ok: true })
+    assert.deepEqual(readJsonFile(path.join(tempRoot, "missing.json"), { ok: false }), {
+      ok: false,
+    })
+    assert.equal(sanitizeFilename("  a:b/c*  "), "a_b_c_")
+    assert.equal(new Filemage(tempRoot).sanitizeFilename("  a:b/c*  "), "a_b_c_")
+
+    const ttsHandlers = await import("../src/plugins/tts/controllers/handlers.js")
+    assert.equal(
+      ttsHandlers.__test.resourcesDir,
+      path.join(process.cwd(), "src", "plugins", "tts", "resources"),
+    )
+    assert.equal(ttsHandlers.__test.audioTempDir, path.join(process.cwd(), "temp", "tts", "audio"))
+    assert.equal(Array.isArray(ttsHandlers.__test.readCategoryList()), true)
+    assert.equal(typeof ttsHandlers.__test.readCharacterAudioList(), "object")
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true })
   }

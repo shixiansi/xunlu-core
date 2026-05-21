@@ -2,6 +2,7 @@ import fs from "fs"
 import PATH from "path"
 import YamlReader from "./YamlReader.js"
 import env from "../lib/env.js"
+import { sanitizeFilename } from "./file.js"
 export default class Filemage {
   constructor(RootPath) {
     this.RootPath = RootPath || env.RootPath
@@ -20,36 +21,7 @@ export default class Filemage {
   }
 
   sanitizeFilename(filename, options = {}) {
-    // 默认配置
-    const { isUnix = false, replacement = "_" } = options
-
-    // 空文件名处理
-    if (!filename || filename.trim() === "") {
-      return "unnamed_file"
-    }
-
-    // 定义非法字符正则
-    let illegalCharsRegex
-    if (isUnix) {
-      // Unix/Linux/macOS 仅禁止 /
-      illegalCharsRegex = /[\/]/g
-    } else {
-      // Windows 禁止的字符：< > : " / \ | ? *
-      illegalCharsRegex = /[<>:"\/\\|?*]/g
-    }
-
-    // 1. 替换非法字符
-    let sanitized = filename.replace(illegalCharsRegex, replacement)
-
-    // 2. 移除首尾的空格和点（避免Windows下的特殊限制）
-    sanitized = sanitized.trim().replace(/^\.+|\.+$/g, "")
-
-    // 3. 处理替换后为空的情况
-    if (sanitized === "") {
-      sanitized = "unnamed_file"
-    }
-
-    return sanitized
+    return sanitizeFilename(filename, options)
   }
 
   getYamlData(path) {
