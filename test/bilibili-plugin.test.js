@@ -15,6 +15,15 @@ import { __resetParseDedupeForTests } from "../src/plugins/shared/parse-dedupe.j
 import { installTestRuntime } from "./helpers/test-runtime.js"
 import { createBilibiliCachePaths } from "../src/plugins/bilibili/services/cache-paths.js"
 import {
+  buildBilibiliCardFallback,
+  buildDynamicFallbackMessage,
+  formatCompactCount,
+  pickRandomBilibiliBackground,
+  renderBilibiliCard,
+  renderDynamicMessage,
+  stripDynamicHtml,
+} from "../src/plugins/bilibili/services/dynamic-renderer.js"
+import {
   buildDynamicForwardNodes,
   isNativeForwardPayload,
   makeDynamicImageForward,
@@ -303,6 +312,96 @@ test("bilibili live helper picks streams and sends clips", async () => {
     paths: ["temp/bilibili/video/live_778899.mp4"],
     label: "直播切片",
   })
+})
+
+test("bilibili dynamic renderer formats cards and fallbacks", async () => {
+  assert.equal(formatCompactCount(9999), 9999)
+  assert.equal(formatCompactCount(123456), "12.3w")
+  assert.equal(stripDynamicHtml("标题<br><span>正文</span>\n\n\n结尾"), "标题\n正文\n\n结尾")
+  assert.equal(pickRandomBilibiliBackground(() => ["bg-a.png", "bg-b.png"], () => 0.75), "bg-b.png")
+  assert.equal(pickRandomBilibiliBackground(() => {
+    throw new Error("failed")
+  }), "")
+
+  const dynamicFallback = buildDynamicFallbackMessage({
+    type: "图文",
+    text: "<div>测试动态内容</div>",
+    video: {
+      title: "<b>动态标题</b>",
+      url: "https://www.bilibili.com/opus/2",
+    },
+    author: {
+      nickname: "测试UP",
+      img: "https://example.com/avatar.png",
+    },
+    date: "2026年04月02日 12:00:00",
+  })
+  assert.equal(dynamicFallback[0]?.type, "image")
+  assert.match(dynamicFallback[1], /测试UP发布了新的图文动态/)
+  assert.match(dynamicFallback[1], /标题：动态标题/)
+  assert.match(dynamicFallback[1], /测试动态内容/)
+
+  const cardFallback = buildBilibiliCardFallback({
+    cardType: "live",
+    nickname: "测试主播",
+    title: "今晚直播测试",
+    desc: "直播间简介",
+    cover: "https://example.com/live-cover.jpg",
+    statText: "状态 直播中",
+    publishedAt: "2026-04-09 12:00:00",
+    link: "https://live.bilibili.com/778899",
+  })
+  assert.equal(cardFallback[0]?.type, "image")
+  assert.match(cardFallback[1], /B站直播解析/)
+  assert.match(cardFallback[1], /数据：状态 直播中/)
+
+  let cardPayload = null
+  let cardOptions = null
+  const renderedCard = await renderBilibiliCard(
+    {
+      async renderImg(name, payload, options) {
+        assert.equal(name, "bilibili")
+        cardPayload = payload
+        cardOptions = options
+        return ["rendered-card"]
+      },
+    },
+    {
+      nickname: "",
+      cover: "https://example.com/card-cover.jpg",
+      cardType: "video",
+      saveId: "BV1xx411c7mD",
+    },
+    {
+      now: () => new Date("2026-04-01T12:34:56.000Z"),
+    },
+  )
+  assert.deepEqual(renderedCard, ["rendered-card"])
+  assert.equal(cardPayload.nickname, "B站用户")
+  assert.equal(cardPayload.nowText, "2026-04-01 12:34:56")
+  assert.equal(cardPayload.saveId, "bilibili_BV1xx411c7mD")
+  assert.deepEqual(cardOptions, { tpl: "card" })
+
+  let dynamicPayload = null
+  const renderedDynamic = await renderDynamicMessage(
+    {
+      async renderImg(name, payload) {
+        assert.equal(name, "bilibili")
+        dynamicPayload = payload
+        return ["rendered-dynamic"]
+      },
+    },
+    {
+      id: "dynamic-1",
+      type: "图文",
+    },
+    {
+      getRandomBackground: () => "bg-a.png",
+    },
+  )
+  assert.deepEqual(renderedDynamic, ["rendered-dynamic"])
+  assert.equal(dynamicPayload.radom, "bg-a.png")
+  assert.equal(dynamicPayload.id, "dynamic-1")
 })
 
 async function withHarness(options, fn) {

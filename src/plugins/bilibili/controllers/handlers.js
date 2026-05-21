@@ -3,7 +3,6 @@ import fs from "node:fs"
 import { segment } from "../../../Bot/message/index.js"
 import Blogin from "../model/Blogin.js"
 import Bili from "../model/Bilili.js"
-import lodash from "lodash"
 import Filemage from "../../../utils/Filemage.js"
 import moment from "moment"
 import Download from "../../../utils/download.js"
@@ -11,6 +10,12 @@ import ffmpeg from "../../../component/ffmpeg/ffmpeg.js"
 import { isDuplicateParseRequest } from "../../shared/parse-dedupe.js"
 import { scheduleTempFileCleanup } from "../../shared/temp-file-cleanup.js"
 import { createBilibiliCachePaths } from "../services/cache-paths.js"
+import {
+  formatCompactCount as computew,
+  pickRandomBilibiliBackground,
+  renderBilibiliCard,
+  renderDynamicMessage,
+} from "../services/dynamic-renderer.js"
 import { makeDynamicImageForward } from "../services/dynamic-forward.js"
 import {
   formatLiveStatus,
@@ -39,7 +44,6 @@ const download = new Download()
 const bilibiliCachePaths = createBilibiliCachePaths(filemage.RootPath)
 const GROUP_DATA_DIR = bilibiliCachePaths.groupDataDir
 const BILIBILI_VIDEO_DIR = bilibiliCachePaths.videoDir
-const BILIBILI_BG_DIR = bilibiliCachePaths.backgroundDir
 
 const dynamicType = {
   live: "直播",
@@ -51,11 +55,6 @@ const dynamicType = {
   raffle: "抽奖",
 }
 const dynamicTypeKeys = Object.keys(dynamicType)
-
-function computew(num) {
-  const value = Number(num || 0)
-  return value >= 10000 ? `${(value / 10000).toFixed(1)}w` : value
-}
 
 async function composeVideoFile(videoPath, audioPath, resultPath) {
   return await new Promise((resolve, reject) => {
@@ -133,108 +132,8 @@ function getDynamicTypeKey(label = "") {
   return Object.entries(dynamicType).find(([, value]) => value === label)?.[0] || ""
 }
 
-function pickRandomBilibiliBackground() {
-  try {
-    const bglist = filemage.GetfileList(BILIBILI_BG_DIR)
-    if (!Array.isArray(bglist) || bglist.length === 0) return ""
-    return bglist[lodash.random(0, bglist.length - 1)]
-  } catch {
-    return ""
-  }
-}
-
-function stripDynamicHtml(text = "") {
-  return String(text || "")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim()
-}
-
-function buildDynamicFallbackMessage(result = {}) {
-  const authorName = result?.author?.nickname || result?.nickname || "UP主"
-  const title =
-    stripDynamicHtml(result?.video?.title || result?.liveInfo?.title || result?.article?.title) ||
-    ""
-  const content = stripDynamicHtml(result?.text || "")
-  const link = result?.video?.url || result?.liveInfo?.liveurl || result?.erm || ""
-  const lines = [`${authorName}发布了新的${result?.type || ""}动态`]
-  const message = []
-
-  if (result?.author?.img || result?.img) {
-    message.push(segment.image(result.author?.img || result.img))
-  }
-  if (title) lines.push(`标题：${title}`)
-  if (content && content !== title) lines.push(content.slice(0, 500))
-  if (result?.date) lines.push(`时间：${result.date}`)
-  if (link) lines.push(`链接：${link}`)
-
-  message.push(lines.join("\n"))
-  return message
-}
-
-function buildBilibiliCardFallback(card = {}) {
-  const lines = []
-  const cardTypeLabel = card?.cardType === "live" ? "直播解析" : "视频解析"
-  lines.push(`B站${cardTypeLabel}`)
-  lines.push(`作者：${card?.nickname || "B站用户"}`)
-  if (card?.title) lines.push(`标题：${card.title}`)
-  if (card?.desc) lines.push(`简介：${card.desc}`)
-  if (card?.statText) lines.push(`数据：${card.statText}`)
-  if (card?.publishedAt) lines.push(`时间：${card.publishedAt}`)
-  if (card?.link) lines.push(`链接：${card.link}`)
-
-  const message = []
-  if (card?.cover) message.push(segment.image(card.cover))
-  message.push(lines.join("\n"))
-  return message
-}
-
-async function renderBilibiliCard(renderer, card = {}) {
-  if (renderer && typeof renderer.renderImg === "function") {
-    try {
-      const rendered = await renderer.renderImg(
-        "bilibili",
-        {
-          nickname: String(card?.nickname || "B站用户").trim() || "B站用户",
-          avatar: card?.avatar || card?.cover || "",
-          publishedAt: card?.publishedAt || "",
-          nowText: new Date().toISOString().replace("T", " ").slice(0, 19),
-          title: card?.title || "",
-          desc: card?.desc || "",
-          cover: card?.cover || card?.avatar || "",
-          cardType: card?.cardType === "live" ? "live" : "video",
-          statText: card?.statText || "",
-          link: card?.link || "",
-          saveId: `bilibili_${card?.saveId || Date.now()}`,
-        },
-        {
-          tpl: "card",
-        },
-      )
-      if (rendered) return rendered
-    } catch (err) {
-      logger.warn?.(`[Bilibili] 卡片渲染失败，改用文本降级：${err?.message || err}`)
-    }
-  }
-
-  return buildBilibiliCardFallback(card)
-}
-
-async function renderDynamicMessage(renderer, result = {}) {
-  if (renderer && typeof renderer.renderImg === "function") {
-    try {
-      const rendered = await renderer.renderImg("bilibili", {
-        radom: pickRandomBilibiliBackground(),
-        ...result,
-      })
-      if (rendered) return rendered
-    } catch (err) {
-      logger.warn?.(`[Bilibili] 动态渲染失败，改用文本降级：${err?.message || err}`)
-    }
-  }
-
-  return buildDynamicFallbackMessage(result)
+function getRandomBilibiliBackground() {
+  return pickRandomBilibiliBackground(() => filemage.GetfileList(bilibiliCachePaths.backgroundDir))
 }
 
 function getBilibiliGroupList() {
@@ -301,7 +200,7 @@ async function handleBilibiliLiveUrl(ctx, inputUrl) {
     statText: statParts.join(" | "),
     link: `https://live.bilibili.com/${roomId}`,
     saveId: `live_${roomId}`,
-  })
+  }, { logger })
   await ctx.reply(rendered)
 
   if (Number(roomInfo?.live_status) !== 1) return true
@@ -617,7 +516,7 @@ export function register(bot) {
       statText: statParts.join(" | "),
       link: videoInfo?.bvid ? `https://www.bilibili.com/video/${videoInfo.bvid}` : url,
       saveId: videoInfo?.bvid || bv,
-    })
+    }, { logger })
     await ctx.reply(rendered)
 
     if (videoInfo.duration >= 1800) {
@@ -844,7 +743,12 @@ export function register(bot) {
     let result = await Bili.getFirstDynamic(mid)
 
     if (result && !result?.code) {
-      return await ctx.reply(await renderDynamicMessage(ctx, result))
+      return await ctx.reply(
+        await renderDynamicMessage(ctx, result, {
+          getRandomBackground: getRandomBilibiliBackground,
+          logger,
+        }),
+      )
     } else {
       return await ctx.reply(`查询失败！${result.message}`)
     }
@@ -890,7 +794,7 @@ export function register(bot) {
               ].join(" | "),
               link: `https://live.bilibili.com/${room_id}`,
               saveId: `push_live_${room_id}`,
-            })
+            }, { logger })
 
             let res = await bot.sendMessage({ group_id: g }, rendered)
             if (res === false) throw new Error("直播推送消息失败")
@@ -940,7 +844,10 @@ export function register(bot) {
           if (item.unpush && item.unpush.includes(typeKey)) continue
           if (result.id === item.upuid) continue
 
-          const dynamicMessage = await renderDynamicMessage(bot, result)
+          const dynamicMessage = await renderDynamicMessage(bot, result, {
+            getRandomBackground: getRandomBilibiliBackground,
+            logger,
+          })
           const sendResult = await bot.sendMessage({ group_id: g }, dynamicMessage)
           if (sendResult === false) {
             throw new Error("动态主消息发送失败")
