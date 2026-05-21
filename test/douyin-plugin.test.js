@@ -1,38 +1,95 @@
 import assert from "node:assert/strict"
 import fs from "node:fs"
+import os from "node:os"
 import path from "node:path"
 import test from "node:test"
 import { fileURLToPath } from "node:url"
 
-import { main as runXunluDev } from "../bin/xunlu-dev.js"
-import { createPluginTestHarness } from "../src/dev/plugin-test-harness.js"
-import douyinPlugin from "../src/plugins/douyin/index.js"
-import {
-  __resetDouyinSessionsForTests,
-  extractFirstDouyinUrlFromContext,
-  sendHotCommentsForward,
-  sendNoteMedia,
-  sendVideoMedia,
-} from "../src/plugins/douyin/controllers/handlers.js"
-import DouyinService, {
-  buildLaunchOptions,
-  extractFirstDouyinUrlFromText,
-  normalizeDouyinAweme,
-} from "../src/plugins/douyin/services/douyin-service.js"
-import {
-  clearDouyinAuth,
-  getDouyinAuthFilePath,
-  writeDouyinAuth,
-} from "../src/plugins/douyin/model/auth-store.js"
 import { installTestRuntime } from "./helpers/test-runtime.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const repoRoot = path.resolve(__dirname, "..")
 const masterId = 1765629830
-const tempDouyinDir = path.resolve(repoRoot, "temp", "douyin")
+let isolatedRoot = ""
+let tempDouyinDir = ""
+let runXunluDev
+let createPluginTestHarness
+let douyinPlugin
+let __resetDouyinSessionsForTests
+let extractFirstDouyinUrlFromContext
+let sendHotCommentsForward
+let sendNoteMedia
+let sendVideoMedia
+let DouyinService
+let buildLaunchOptions
+let extractFirstDouyinUrlFromText
+let normalizeDouyinAweme
+let clearDouyinAuth
+let getDouyinAuthFilePath
+let writeDouyinAuth
 
 installTestRuntime(test)
+
+function createIsolatedProjectRoot() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "xunlu-douyin-plugin-"))
+  fs.writeFileSync(path.join(root, "package.json"), `${JSON.stringify({ name: "xunlu-core" })}\n`)
+  return root
+}
+
+async function importDouyinTestModules() {
+  const previousCwd = process.cwd()
+  isolatedRoot = createIsolatedProjectRoot()
+  tempDouyinDir = path.join(isolatedRoot, "temp", "douyin")
+
+  process.chdir(isolatedRoot)
+  try {
+    const [
+      xunluDevModule,
+      harnessModule,
+      douyinPluginModule,
+      handlersModule,
+      serviceModule,
+      authStoreModule,
+    ] = await Promise.all([
+      import("../bin/xunlu-dev.js"),
+      import("../src/dev/plugin-test-harness.js"),
+      import("../src/plugins/douyin/index.js"),
+      import("../src/plugins/douyin/controllers/handlers.js"),
+      import("../src/plugins/douyin/services/douyin-service.js"),
+      import("../src/plugins/douyin/model/auth-store.js"),
+    ])
+
+    runXunluDev = xunluDevModule.main
+    createPluginTestHarness = harnessModule.createPluginTestHarness
+    douyinPlugin = douyinPluginModule.default
+    ;({
+      __resetDouyinSessionsForTests,
+      extractFirstDouyinUrlFromContext,
+      sendHotCommentsForward,
+      sendNoteMedia,
+      sendVideoMedia,
+    } = handlersModule)
+    DouyinService = serviceModule.default
+    ;({ buildLaunchOptions, extractFirstDouyinUrlFromText, normalizeDouyinAweme } = serviceModule)
+    ;({ clearDouyinAuth, getDouyinAuthFilePath, writeDouyinAuth } = authStoreModule)
+  } finally {
+    process.chdir(previousCwd)
+  }
+}
+
+test.before(async () => {
+  await importDouyinTestModules()
+})
+
+test.after(() => {
+  cleanupDouyinArtifacts()
+  if (isolatedRoot) {
+    try {
+      fs.rmSync(isolatedRoot, { recursive: true, force: true })
+    } catch {}
+  }
+})
 
 function ensureFile(filePath, content = "fixture") {
   fs.mkdirSync(path.dirname(filePath), { recursive: true })
@@ -41,11 +98,11 @@ function ensureFile(filePath, content = "fixture") {
 }
 
 function cleanupDouyinArtifacts() {
-  clearDouyinAuth()
+  clearDouyinAuth?.()
   try {
-    fs.rmSync(tempDouyinDir, { recursive: true, force: true })
+    if (tempDouyinDir) fs.rmSync(tempDouyinDir, { recursive: true, force: true })
   } catch {}
-  __resetDouyinSessionsForTests()
+  __resetDouyinSessionsForTests?.()
 }
 
 async function withHarness(options, fn) {
@@ -98,7 +155,7 @@ async function runCli(args = []) {
     },
   }
 
-  process.chdir(repoRoot)
+  process.chdir(isolatedRoot || repoRoot)
   process.exitCode = 0
   try {
     await runXunluDev(args, io)
@@ -197,6 +254,9 @@ test("douyin scan command replies with cookie setup guide", async () => {
       scene: "private",
       text: "#抖音扫码",
       user_id: masterId,
+      extra: {
+        isMaster: true,
+      },
     })
 
     assert.equal(res.ok, true)
@@ -212,6 +272,9 @@ test("douyin scan command falls back to cookie guide when qr start fails", async
       scene: "private",
       text: "#抖音扫码",
       user_id: masterId,
+      extra: {
+        isMaster: true,
+      },
     })
 
     assert.equal(res.ok, true)
@@ -246,6 +309,9 @@ test("douyin cookie login imports cookie and replies with summary", async () => 
           scene: "private",
           text: "#抖音登录 sessionid=abc; passport_csrf_token=def",
           user_id: masterId,
+          extra: {
+            isMaster: true,
+          },
         })
 
         assert.equal(res.ok, true)
@@ -258,17 +324,27 @@ test("douyin cookie login imports cookie and replies with summary", async () => 
 })
 
 test("douyin parse prompts for login when auth is missing", async () => {
-  await withHarness({}, async harness => {
-    const res = await harness.emitMessage({
-      scene: "group",
-      text: "看看这个 https://v.douyin.com/iABC1234/",
-      group_id: 123,
-      user_id: 10001,
-    })
+  await withPatchedMethods(
+    DouyinService,
+    {
+      async ensureAuthorizedSession() {
+        return { ok: false, reason: "missing" }
+      },
+    },
+    async () => {
+      await withHarness({}, async harness => {
+        const res = await harness.emitMessage({
+          scene: "group",
+          text: "看看这个 https://v.douyin.com/iABC1234/",
+          group_id: 123,
+          user_id: 10001,
+        })
 
-    assert.equal(res.ok, true)
-    assert.ok(res.replies.some(item => /抖音登录/.test(item?.text || "")))
-  })
+        assert.equal(res.ok, true)
+        assert.ok(res.replies.some(item => /抖音登录/.test(item?.text || "")))
+      })
+    },
+  )
 })
 
 test("douyin helper extracts links from text and card context", () => {

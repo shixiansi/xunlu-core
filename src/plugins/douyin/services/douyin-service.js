@@ -712,10 +712,12 @@ function normalizeVideoDurationSeconds(value, { estimatedSec = 0 } = {}) {
   return candidates[0]?.seconds || 0
 }
 
-function shouldPreferMusicDuration(videoDuration = 0, musicDuration = 0) {
+function shouldPreferMusicDuration(videoDuration = 0, musicDuration = 0, { rawDuration = 0 } = {}) {
   const videoSec = Math.floor(normalizePositiveNumber(videoDuration))
   const musicSec = Math.floor(normalizePositiveNumber(musicDuration))
   if (!videoSec || !musicSec) return false
+  const rawVideoDuration = normalizePositiveNumber(rawDuration)
+  if (rawVideoDuration && rawVideoDuration / musicSec >= 900) return true
   const larger = Math.max(videoSec, musicSec)
   const smaller = Math.min(videoSec, musicSec)
   return smaller > 0 && larger / smaller >= 900
@@ -756,6 +758,7 @@ function pickVideoDurationSeconds(source = {}, video = {}, streams = [], musicDu
   ]
 
   let duration = 0
+  let fallbackRawDuration = 0
   const estimatedSec = estimateDurationSecondsByStreams(streams)
 
   // Prefer asset-side duration when available. Some detail payloads expose a
@@ -767,12 +770,13 @@ function pickVideoDurationSeconds(source = {}, video = {}, streams = [], musicDu
 
   if (!duration) {
     for (const value of [video?.duration, source?.duration]) {
+      fallbackRawDuration = normalizePositiveNumber(value)
       duration = normalizeVideoDurationSeconds(value, { estimatedSec })
       if (duration > 0) break
     }
   }
 
-  if (shouldPreferMusicDuration(duration, musicDuration)) {
+  if (shouldPreferMusicDuration(duration, musicDuration, { rawDuration: fallbackRawDuration })) {
     return Math.floor(normalizePositiveNumber(musicDuration))
   }
 
