@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { getVideoSkipReason } from "../src/plugins/douyin/controllers/handlers.js"
+import { getVideoSkipReason } from "../src/plugins/douyin/services/video-planner.js"
 import { normalizeDouyinAweme } from "../src/plugins/douyin/services/douyin-service.js"
 import { installTestRuntime } from "./helpers/test-runtime.js"
 

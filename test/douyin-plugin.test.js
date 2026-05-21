@@ -24,7 +24,12 @@ let sendVideoMedia
 let DouyinService
 let buildLaunchOptions
 let extractFirstDouyinUrlFromText
+let getOrderedVideoStreams
+let getVideoStreamHeight
+let getVideoStreamDataSize
+let isOversizedVideoError
 let normalizeDouyinAweme
+let pickPreferredVideoPlan
 let clearDouyinAuth
 let getDouyinAuthFilePath
 let writeDouyinAuth
@@ -50,6 +55,7 @@ async function importDouyinTestModules() {
       douyinPluginModule,
       handlersModule,
       serviceModule,
+      videoPlannerModule,
       authStoreModule,
     ] = await Promise.all([
       import("../bin/xunlu-dev.js"),
@@ -57,6 +63,7 @@ async function importDouyinTestModules() {
       import("../src/plugins/douyin/index.js"),
       import("../src/plugins/douyin/controllers/handlers.js"),
       import("../src/plugins/douyin/services/douyin-service.js"),
+      import("../src/plugins/douyin/services/video-planner.js"),
       import("../src/plugins/douyin/model/auth-store.js"),
     ])
 
@@ -72,6 +79,13 @@ async function importDouyinTestModules() {
     } = handlersModule)
     DouyinService = serviceModule.default
     ;({ buildLaunchOptions, extractFirstDouyinUrlFromText, normalizeDouyinAweme } = serviceModule)
+    ;({
+      getOrderedVideoStreams,
+      getVideoStreamHeight,
+      getVideoStreamDataSize,
+      isOversizedVideoError,
+      pickPreferredVideoPlan,
+    } = videoPlannerModule)
     ;({ clearDouyinAuth, getDouyinAuthFilePath, writeDouyinAuth } = authStoreModule)
   } finally {
     process.chdir(previousCwd)
@@ -497,6 +511,49 @@ test("douyin aweme normalization keeps ordered streams for video downgrade", () 
   assert.equal(video.video.url, "https://example.com/video-1080.mp4")
   assert.equal(video.video.streams.length, 3)
   assert.equal(video.video.streams[1].qualityLabel, "720p")
+})
+
+test("douyin video planner keeps downgrade and fallback rules pure", () => {
+  assert.equal(getVideoStreamHeight({ qualityLabel: "720p" }), 720)
+  assert.equal(getVideoStreamHeight({ max_height: 480 }), 480)
+  assert.equal(getVideoStreamDataSize({ data_size: 123.8 }), 123)
+  assert.equal(isOversizedVideoError(new Error("video too large: 100 > 10")), true)
+
+  const fallbackStreams = getOrderedVideoStreams({
+    video: {
+      url: "https://example.com/fallback.mp4",
+      streams: [],
+    },
+  })
+  assert.deepEqual(fallbackStreams, [{ url: "https://example.com/fallback.mp4", qualityLabel: "默认" }])
+
+  const plan = pickPreferredVideoPlan(
+    createMockStreamedVideoAweme({
+      duration: 600,
+      streams: [
+        {
+          url: "https://example.com/video-1080.mp4",
+          qualityLabel: "1080p",
+          height: 1080,
+        },
+        {
+          url: "https://example.com/video-720.mp4",
+          qualityLabel: "720p",
+          height: 720,
+        },
+        {
+          url: "https://example.com/video-480.mp4",
+          qualityLabel: "480p",
+          height: 480,
+        },
+      ],
+    }),
+  )
+
+  assert.equal(plan.durationSec, 600)
+  assert.equal(plan.startIndex, 2)
+  assert.equal(plan.selectedStream.url, "https://example.com/video-480.mp4")
+  assert.match(plan.notice, /视频时长超过8分钟/)
 })
 
 test("douyin aweme normalization prefers asset duration over noisy top-level duration", () => {
