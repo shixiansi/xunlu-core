@@ -7,6 +7,7 @@ const __dirname = path.dirname(__filename)
 
 let app = null
 let server = null
+let serverReady = null
 
 function getLogger() {
   const lg = globalThis.logger
@@ -25,7 +26,10 @@ function getLogger() {
  * 若仍以旧方式直接调用，则保留“自行发现插件”的兼容路径。
  */
 export async function startServer(portOrOptions = process.env.PORT || 3000) {
-  if (server) return { app, server }
+  if (server) {
+    if (serverReady) await serverReady
+    return { app, server }
+  }
 
   const options =
     portOrOptions && typeof portOrOptions === "object" && !Array.isArray(portOrOptions)
@@ -86,9 +90,31 @@ export async function startServer(portOrOptions = process.env.PORT || 3000) {
 
   const listenPort = options.port ?? process.env.PORT ?? 3000
   const listenHost = String(options.host ?? process.env.HOST ?? "0.0.0.0")
-  server = app.listen(listenPort, listenHost, () =>
-    logger.info(`plugin-api listening on http://${listenHost}:${listenPort}`),
-  )
+  const currentServer = app.listen(listenPort, listenHost)
+  server = currentServer
+  serverReady = new Promise((resolve, reject) => {
+    const cleanup = () => {
+      currentServer.off("listening", onListening)
+      currentServer.off("error", onError)
+    }
+    const onListening = () => {
+      cleanup()
+      logger.info(`plugin-api listening on http://${listenHost}:${listenPort}`)
+      resolve(currentServer)
+    }
+    const onError = err => {
+      cleanup()
+      if (server === currentServer) {
+        server = null
+        app = null
+        serverReady = null
+      }
+      reject(err)
+    }
+    currentServer.once("listening", onListening)
+    currentServer.once("error", onError)
+  })
+  await serverReady
   return { app, server }
 }
 
@@ -100,10 +126,15 @@ export async function stopServer() {
   if (!server) return false
 
   const target = server
+  const ready = serverReady
   server = null
   app = null
+  serverReady = null
+  if (ready) await ready.catch(() => false)
+  if (!target.listening) return false
   await new Promise((resolve, reject) => {
     target.close(err => {
+      if (err?.code === "ERR_SERVER_NOT_RUNNING") return resolve(false)
       if (err) return reject(err)
       resolve(true)
     })
