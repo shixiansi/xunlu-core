@@ -20,6 +20,14 @@ import {
   isBilibiliLiveUrl,
   isBilibiliVideoUrl,
 } from "../src/plugins/bilibili/services/url-parser.js"
+import {
+  createVideoTooLargeError,
+  estimateMuxedVideoBytes,
+  formatBytes,
+  formatVideoQuality,
+  normalizeVideoSizeError,
+  pickEstimatedSendableStream,
+} from "../src/plugins/bilibili/services/video-planner.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -82,6 +90,47 @@ test("bilibili url parser recognizes cards, videos, and live rooms", () => {
     }),
     "https://b23.tv/abc123",
   )
+})
+
+test("bilibili video planner estimates size and picks sendable streams", () => {
+  assert.equal(formatBytes(1536), "1.5 KB")
+  assert.equal(formatVideoQuality(80), "1080P")
+  assert.equal(formatVideoQuality(999), "QN 999")
+  assert.equal(
+    estimateMuxedVideoBytes({
+      duration: 10,
+      videoBandwidth: 800_000,
+      audioBandwidth: 200_000,
+    }),
+    1_287_500,
+  )
+
+  const playInfo = {
+    duration: 60,
+    audioBandwidth: 128_000,
+    videoStreams: [
+      { qn: 120, url: "https://example.com/4k.m4s", bandwidth: 20_000_000 },
+      { qn: 80, url: "https://example.com/1080p.m4s", bandwidth: 1_000_000 },
+      { qn: 64, url: "https://example.com/720p.m4s", bandwidth: 500_000 },
+    ],
+  }
+
+  const selected = pickEstimatedSendableStream(playInfo, 120, 10 * 1024 * 1024)
+  assert.equal(selected.qn, 80)
+  assert.equal(selected.exceedsLimit, undefined)
+
+  const tooLarge = pickEstimatedSendableStream(playInfo, 120, 1)
+  assert.equal(tooLarge.qn, 64)
+  assert.equal(tooLarge.exceedsLimit, true)
+
+  const original = createVideoTooLargeError("result", 123, 45)
+  assert.equal(normalizeVideoSizeError(original), original)
+
+  const normalized = normalizeVideoSizeError(new Error("download size exceeds limit before resume: 123 > 45"))
+  assert.equal(normalized.code, "BILIBILI_VIDEO_TOO_LARGE")
+  assert.equal(normalized.stage, "download")
+  assert.equal(normalized.actualBytes, 123)
+  assert.equal(normalized.limitBytes, 45)
 })
 
 async function withHarness(options, fn) {
