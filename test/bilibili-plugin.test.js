@@ -11,6 +11,7 @@ import Bili from "../src/plugins/bilibili/model/Bilili.js"
 import ffmpeg from "../src/component/ffmpeg/ffmpeg.js"
 import { getRuntimePaths } from "../src/runtime/runtime-context.js"
 import Download from "../src/utils/download.js"
+import { __resetParseDedupeForTests } from "../src/plugins/shared/parse-dedupe.js"
 import { installTestRuntime } from "./helpers/test-runtime.js"
 
 const __filename = fileURLToPath(import.meta.url)
@@ -18,6 +19,14 @@ const __dirname = path.dirname(__filename)
 const repoRoot = path.resolve(__dirname, "..")
 
 installTestRuntime(test)
+
+test.beforeEach(() => {
+  __resetParseDedupeForTests()
+})
+
+test.afterEach(() => {
+  __resetParseDedupeForTests()
+})
 
 function getGroupDataFile(groupId) {
   return path.resolve(getRuntimePaths().getPluginDataDir("bilibili", "group"), `${groupId}.json`)
@@ -335,6 +344,48 @@ test("bilibili video links reply with rendered image card", async () => {
           )
         },
       )
+    },
+  )
+})
+
+test("bilibili parser deduplicates repeated video link events", async () => {
+  let videoInfoCalls = 0
+
+  await withPatchedMethods(
+    Bili,
+    {
+      async getVideoInfo() {
+        videoInfoCalls += 1
+        return {
+          bvid: "BV1xx411c7mD",
+          ctime: 1710000000,
+          pic: "https://example.com/video-cover.jpg",
+          title: "测试视频标题",
+          desc: "测试视频简介",
+          duration: 1800,
+          owner: {
+            name: "测试UP主",
+          },
+          stat: {},
+        }
+      },
+    },
+    async () => {
+      await withHarness({}, async harness => {
+        const input = {
+          scene: "group",
+          text: "https://www.bilibili.com/video/BV1xx411c7mD",
+          group_id: 991009,
+          user_id: 10001,
+        }
+
+        const first = await harness.emitMessage(input)
+        const second = await harness.emitMessage(input)
+
+        assert.equal(first.ok, true)
+        assert.equal(second.ok, true)
+        assert.equal(videoInfoCalls, 1)
+      })
     },
   )
 })

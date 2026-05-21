@@ -753,6 +753,48 @@ test("douyin note parse sends summary and image list", async () => {
   )
 })
 
+test("douyin parse deduplicates repeated link events", async () => {
+  let detailCalls = 0
+
+  await withPatchedMethods(
+    DouyinService,
+    {
+      async ensureAuthorizedSession() {
+        return {
+          ok: true,
+          auth: {
+            cookieHeader: "sessionid=abc",
+          },
+        }
+      },
+      async getAwemeDetail() {
+        detailCalls += 1
+        return createMockNoteAweme()
+      },
+      async fetchHotComments() {
+        return []
+      },
+    },
+    async () => {
+      await withHarness({}, async harness => {
+        const input = {
+          scene: "group",
+          text: "看看这个 https://www.douyin.com/note/7599999999999999999",
+          group_id: 790,
+          user_id: 10001,
+        }
+
+        const first = await harness.emitMessage(input)
+        const second = await harness.emitMessage(input)
+
+        assert.equal(first.ok, true)
+        assert.equal(second.ok, true)
+        assert.equal(detailCalls, 1)
+      })
+    },
+  )
+})
+
 test("douyin note helper falls back to first image when image sending fails", async () => {
   const calls = []
   const ctx = {

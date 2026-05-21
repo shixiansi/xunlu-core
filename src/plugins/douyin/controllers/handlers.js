@@ -6,6 +6,8 @@ import DouyinService, {
   formatShortText,
 } from "../services/douyin-service.js"
 import { VIDEO_MAX_BYTES } from "../services/douyin-runtime.js"
+import { isDuplicateParseRequest, __resetParseDedupeForTests } from "../../shared/parse-dedupe.js"
+import { scheduleTempFileCleanup } from "../../shared/temp-file-cleanup.js"
 
 const ACTIVE_SESSION_KEY = "global"
 const QR_POLL_INTERVAL_MS = 5000
@@ -331,7 +333,7 @@ async function sendVideoMedia(ctx, aweme) {
     await ctx.reply(fallback)
     return false
   } finally {
-    DouyinService.cleanupFiles(cleanupPaths)
+    scheduleTempFileCleanup(cleanupPaths, { label: "douyin video" })
   }
 }
 
@@ -508,6 +510,7 @@ async function handleCookieLoginCommand(ctx) {
 async function handleDouyinParse(ctx) {
   const url = extractFirstDouyinUrlFromContext(ctx)
   if (!url) return false
+  if (isDuplicateParseRequest(ctx, url, { parser: "douyin" })) return true
 
   const authState = await DouyinService.ensureAuthorizedSession()
   if (!authState?.ok) {
@@ -566,6 +569,7 @@ export function __resetDouyinSessionsForTests() {
   for (const key of activeQrSessions.keys()) {
     clearQrSession(key)
   }
+  __resetParseDedupeForTests()
   DouyinService.__resetForTests()
 }
 

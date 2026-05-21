@@ -1,9 +1,11 @@
 import assert from "node:assert/strict"
+import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import test from "node:test"
 
 import Downloader, { normalizeRootPath } from "../src/utils/download.js"
+import { scheduleTempFileCleanup } from "../src/plugins/shared/temp-file-cleanup.js"
 import { installTestRuntime } from "./helpers/test-runtime.js"
 
 installTestRuntime(test)
@@ -22,4 +24,20 @@ test("Downloader keeps Filemage root path slash-safe for relative save paths", (
 
   assert.equal(downloader.rootPath.endsWith(path.sep), true)
   assert.equal(downloader.fileMage.RootPath.endsWith(path.sep), true)
+})
+
+test("scheduleTempFileCleanup removes files after deferred attempt", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xunlu-cleanup-"))
+  const filePath = path.join(dir, "video.mp4")
+  fs.writeFileSync(filePath, "fixture")
+
+  try {
+    const count = scheduleTempFileCleanup(filePath, { delaysMs: [0] })
+    await new Promise(resolve => setTimeout(resolve, 20))
+
+    assert.equal(count, 1)
+    assert.equal(fs.existsSync(filePath), false)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
 })

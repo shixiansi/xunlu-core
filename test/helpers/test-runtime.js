@@ -1,7 +1,6 @@
 import CommandUsageDB from "../../src/db/CommandUsageDB.js"
 import MessageDB from "../../src/db/MessageDB.js"
 import cfg from "../../src/lib/config.js"
-import { resetActiveIcqqPluginLoader } from "../../src/Bot/adapter/index.js"
 import { resetRuntimeContextForTests } from "../../src/runtime/runtime-context.js"
 
 const originalConsole = {
@@ -20,7 +19,8 @@ export async function cleanupTestRuntime() {
     resetRuntimeContextForTests?.()
   } catch {}
   try {
-    resetActiveIcqqPluginLoader?.()
+    const adapter = await import("../../src/Bot/adapter/index.js")
+    adapter.resetActiveIcqqPluginLoader?.()
   } catch {}
   try {
     await CommandUsageDB?.close?.()

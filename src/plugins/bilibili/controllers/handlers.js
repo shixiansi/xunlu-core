@@ -10,6 +10,8 @@ import moment from "moment"
 import Download from "../../../utils/download.js"
 import ffmpeg from "../../../component/ffmpeg/ffmpeg.js"
 import { getRuntimePaths } from "../../../runtime/runtime-context.js"
+import { isDuplicateParseRequest } from "../../shared/parse-dedupe.js"
+import { scheduleTempFileCleanup } from "../../shared/temp-file-cleanup.js"
 
 const filemage = new Filemage()
 const download = new Download()
@@ -186,49 +188,8 @@ async function composeVideoFile(videoPath, audioPath, resultPath) {
   })
 }
 
-function cleanupVideoCache(paths = []) {
-  for (const filePath of paths) {
-    if (!filePath) continue
-    try {
-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
-    } catch (err) {
-      /*
-        logger.warn?.(`[Bilibili] 瑙嗛杩囧ぇ锛屾敼涓哄彂閫侀摼鎺ワ細${err?.message || err}`)
-            ? `\n澶у皬锛?{formatBytes(err.actualBytes)}锛岄檺鍒讹細${formatBytes(err.limitBytes)}`
-          `瑙嗛鏂囦欢杩囧ぇ锛屽凡鏀逛负鍙戦€佽棰戦摼鎺ャ€俓n鏍囬锛?{videoInfo.title}${sizeText}\n閾炬帴锛?{videoLink}`,
-      }
-      /*
-        logger.warn?.(`[Bilibili] 瑙嗛杩囧ぇ锛屾敼涓哄彂閫侀摼鎺ワ細${err?.message || err}`)
-            ? `\n澶у皬锛?{formatBytes(err.actualBytes)}锛岄檺鍒讹細${formatBytes(err.limitBytes)}`
-          `瑙嗛鏂囦欢杩囧ぇ锛屽凡鏀逛负鍙戦€佽棰戦摼鎺ャ€俓n鏍囬锛?{videoInfo.title}${sizeText}\n閾炬帴锛?{videoLink}`,
-        )
-      }
-      logger.warn?.(`[Bilibili] 清理视频缓存失败：${filePath}，${err?.message || err}`)
-    }
-  }
-}
-
-      /*
-      logger.warn?.(`[Bilibili] 娓呯悊瑙嗛缂撳瓨澶辫触锛?{filePath}锛?{err?.message || err}`)
-    }
-  }
-}
-
-      */
-      logger.warn?.(`[Bilibili] 娓呯悊瑙嗛缂撳瓨澶辫触锛?{filePath}锛?{err?.message || err}`)
-    }
-  }
-}
-
-function cleanupTempFiles(paths = [], label = "缓存") {
-  for (const filePath of paths) {
-    if (!filePath) continue
-    try {
-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
-    } catch (err) {
-      logger.warn?.(`[Bilibili] 清理${label}失败，${filePath}，${err?.message || err}`)
-    }
-  }
+function cleanupTempFiles(paths = [], label = "cache") {
+  scheduleTempFileCleanup(paths, { label: "bilibili " + label })
 }
 
 function isMilkyRuntime(baseBot, ctx) {
@@ -926,9 +887,11 @@ export function register(bot) {
 
     if (!url) return false
     if (isBilibiliLiveUrl(url)) {
+      if (isDuplicateParseRequest(ctx, url, { parser: "bilibili" })) return true
       return await handleBilibiliLiveUrl(ctx, url)
     }
     if (!isBilibiliVideoUrl(url)) return false
+    if (isDuplicateParseRequest(ctx, url, { parser: "bilibili" })) return true
 
     let bv = extractBvId(url)
     if (!bv) {
@@ -1071,7 +1034,7 @@ export function register(bot) {
         }
         return sendRes
       } finally {
-        cleanupVideoCache(cleanupPaths)
+        cleanupTempFiles(cleanupPaths, "视频缓存")
       }
     }
 

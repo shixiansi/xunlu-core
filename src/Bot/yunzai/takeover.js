@@ -1,5 +1,6 @@
 import cfg from "../../lib/config.js"
-import { MilkyAdapter, OneBotV11Adapter } from "../adapter/index.js"
+import MilkyAdapter from "../adapter/milky/milky-adapter.js"
+import OneBotV11Adapter from "../adapter/onebotV11/onebot.js"
 import { UniversalMessage, UniversalMessageSegment } from "../message/universal-message.js"
 import { coerceToUniversalMessage } from "../message/context.js"
 import { rememberRuntimeLastGroupMessage } from "../state/index.js"
