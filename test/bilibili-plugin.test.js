@@ -555,6 +555,7 @@ test("dynamic image push falls through to native forward builder with normalized
               const sent = []
               let fallbackBuilderInput = null
               const originalSendMessage = globalThis.Bot.sendMessage
+              const originalSendMsg = globalThis.Bot.sendMsg
               const originalForwardBuilder = globalThis.Bot.makeGroupForwardMsg
               const originalBaseForward = harness.bot.makeForwardMsg
 
@@ -563,10 +564,12 @@ test("dynamic image push falls through to native forward builder with normalized
                 fallbackBuilderInput = messages
                 return createNativeForwardPayload(messages)
               }
-              globalThis.Bot.sendMessage = async (target, message) => {
+              const captureSend = async (target, message) => {
                 sent.push({ target, message })
                 return { message_id: String(sent.length), seq: sent.length }
               }
+              globalThis.Bot.sendMessage = captureSend
+              globalThis.Bot.sendMsg = captureSend
 
               try {
                 const res = await harness.runTask({
@@ -593,6 +596,7 @@ test("dynamic image push falls through to native forward builder with normalized
                 harness.bot.makeForwardMsg = originalBaseForward
                 globalThis.Bot.makeGroupForwardMsg = originalForwardBuilder
                 globalThis.Bot.sendMessage = originalSendMessage
+                globalThis.Bot.sendMsg = originalSendMsg
               }
             })
           },
@@ -658,15 +662,18 @@ test("dynamic image push falls back to direct images when all forward builders f
             await withHarness({}, async harness => {
               const sent = []
               const originalSendMessage = globalThis.Bot.sendMessage
+              const originalSendMsg = globalThis.Bot.sendMsg
               const originalForwardBuilder = globalThis.Bot.makeGroupForwardMsg
               const originalBaseForward = harness.bot.makeForwardMsg
 
               harness.bot.makeForwardMsg = async () => [segment.image("https://example.com/not-forward-1.jpg")]
               globalThis.Bot.makeGroupForwardMsg = async () => [segment.image("https://example.com/not-forward-3.jpg")]
-              globalThis.Bot.sendMessage = async (target, message) => {
+              const captureSend = async (target, message) => {
                 sent.push({ target, message })
                 return { message_id: String(sent.length), seq: sent.length }
               }
+              globalThis.Bot.sendMessage = captureSend
+              globalThis.Bot.sendMsg = captureSend
 
               try {
                 const res = await harness.runTask({
@@ -689,6 +696,7 @@ test("dynamic image push falls back to direct images when all forward builders f
                 harness.bot.makeForwardMsg = originalBaseForward
                 globalThis.Bot.makeGroupForwardMsg = originalForwardBuilder
                 globalThis.Bot.sendMessage = originalSendMessage
+                globalThis.Bot.sendMsg = originalSendMsg
               }
             })
           },

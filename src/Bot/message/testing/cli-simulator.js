@@ -261,7 +261,12 @@ async function simulateIncomingEvent({
       return { seq: Number(Date.now() % 100000000), message_id: String(Date.now()) }
     },
 
-    recallMessage: async () => true,
+    recallMessage: async input => {
+      if (bindObj && typeof bindObj.recallMessage === "function") {
+        return await bindObj.recallMessage(input)
+      }
+      return true
+    },
     sendGroupMessageReaction: async () => true,
     getMsg: async () => null,
     getReplyMsg: async () => null,

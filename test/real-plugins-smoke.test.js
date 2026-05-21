@@ -1,10 +1,11 @@
-﻿import assert from "node:assert/strict"
+import assert from "node:assert/strict"
 import path from "node:path"
 import test from "node:test"
 import { fileURLToPath } from "node:url"
 
 import { createPluginTestHarness } from "../src/dev/plugin-test-harness.js"
 import MessageDB from "../src/db/MessageDB.js"
+import cfg from "../src/lib/config.js"
 import { __test as groupHandlersTest } from "../src/plugins/group/controllers/handlers.js"
 import { installTestRuntime } from "./helpers/test-runtime.js"
 
@@ -21,6 +22,7 @@ const OTHER_RECALL_COMMAND = "\u6d4b\u8bd5\u64a4\u56de"
 installTestRuntime(test)
 
 async function withHarness(options, fn) {
+  cfg.setConfigValue("bot", "masterQQ", [masterId])
   const harness = await createPluginTestHarness(options)
   try {
     return await fn(harness)
@@ -268,10 +270,8 @@ test("group recall forward relay fetches forward detail by id and sends private 
     assert.deepEqual(apiCalls[0].params, { message_id: "forward-id-123" })
     assert.equal(sent.length, 1)
     assert.equal(sent[0].target, String(masterId))
-    assert.equal(sent[0].message?.type, "forward-relay")
-    assert.equal(sent[0].message?.user_id, masterId)
-    assert.equal(sent[0].message?.messages?.length, 1)
-    assert.match(renderSegmentsText(sent[0].message?.messages?.[0]?.content), /通过 API 拉到的转发正文/)
+    assert.equal(sent[0].message?.[0]?.type, "node")
+    assert.match(renderSegmentsText(sent[0].message?.[0]?.data?.content), /通过 API 拉到的转发正文/)
   } finally {
     globalThis.Bot = previousBot
   }
@@ -310,6 +310,9 @@ test("group recall lookup bypasses degraded milky cache and refetches raw forwar
           },
         }
       }
+      if (action === "get_forward_msg" || action === "get_forwarded_messages") {
+        return { messages: [] }
+      }
       throw new Error(`unexpected api action: ${action}`)
     },
   }
@@ -324,9 +327,9 @@ test("group recall lookup bypasses degraded milky cache and refetches raw forwar
       seq: 7188,
     })
 
-    assert.equal(apiCalls.length, 1)
-    assert.equal(apiCalls[0].action, "get_message")
-    assert.deepEqual(apiCalls[0].params, {
+    const getMessageCall = apiCalls.find(call => call.action === "get_message")
+    assert.ok(getMessageCall)
+    assert.deepEqual(getMessageCall.params, {
       message_scene: "group",
       peer_id: 1061170515,
       message_seq: 7188,

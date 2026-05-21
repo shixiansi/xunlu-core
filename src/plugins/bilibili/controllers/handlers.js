@@ -682,8 +682,9 @@ async function buildDynamicForwardNodes(ctx, msgList = []) {
     typeof ctx?.getGroupMemberInfo === "function"
   ) {
     try {
-      const info = await ctx.getGroupMemberInfo(ctx.group_id, defaultId)
-      nickname = String(info?.card || info?.nickname || nickname).trim() || nickname
+      const info = await ctx.getGroupMemberInfo({ group_id: ctx.group_id, user_id: defaultId })
+      const member = info?.member ?? info?.data?.member ?? info?.data ?? info
+      nickname = String(member?.card || member?.nickname || nickname).trim() || nickname
     } catch (err) {
       logger.warn?.(`[Bilibili] 获取转发昵称失败：${err?.message || err}`)
     }
