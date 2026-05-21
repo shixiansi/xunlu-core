@@ -1,4 +1,4 @@
-﻿import assert from "node:assert/strict"
+import assert from "node:assert/strict"
 import path from "node:path"
 import test from "node:test"
 import { fileURLToPath } from "node:url"
@@ -9,7 +9,7 @@ import { resolveProtocol } from "../src/Bot/api/universal-bot-api-utils.js"
 import {
   patchImageSegmentsWithRkeyValue,
   sendLearningSegments,
-} from "../src/plugins/learning_chat/controllers/handlers.js"
+} from "../src/plugins/learning_chat/services/outbound-media.js"
 import { applyDerivedFieldsFromUniversalSegments, UniversalMessage } from "../src/Bot/message/index.js"
 import BaseBot from "../src/Bot/index.js"
 import { IcqqMessageEvent } from "../src/Bot/adapter/index.js"
