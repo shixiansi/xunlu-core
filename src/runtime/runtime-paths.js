@@ -111,6 +111,10 @@ export class RuntimePaths {
     return path.join(this.rootDir, ...segments.filter(Boolean))
   }
 
+  getResourcePath(...segments) {
+    return this.resolveUnderRoot("resources", ...segments)
+  }
+
   getDataDir(...segments) {
     this.ensureRuntimeLayout()
     return ensureDir(this.resolveUnderRoot("data", ...segments))

@@ -47,6 +47,28 @@ function close(server) {
   })
 }
 
+function request(server, pathname) {
+  const address = server.address()
+  const port = typeof address === "object" && address ? Number(address.port || 0) : 0
+
+  return new Promise((resolve, reject) => {
+    const req = http.get({ host: "127.0.0.1", port, path: pathname }, res => {
+      let body = ""
+      res.setEncoding("utf8")
+      res.on("data", chunk => {
+        body += chunk
+      })
+      res.on("end", () => {
+        resolve({
+          statusCode: res.statusCode,
+          body,
+        })
+      })
+    })
+    req.on("error", reject)
+  })
+}
+
 test("webui server falls back to a random port when requested port is already in use", async () => {
   await stopWebuiServer().catch(() => false)
 
@@ -72,5 +94,28 @@ test("webui server falls back to a random port when requested port is already in
   } finally {
     await stopWebuiServer().catch(() => false)
     await close(blocker)
+  }
+})
+
+test("webui server serves shell assets from root resources directory", async () => {
+  await stopWebuiServer().catch(() => false)
+
+  try {
+    const result = await startWebuiServer({
+      host: "127.0.0.1",
+      port: 0,
+      plugins: [{ name: "fixture-webui-server" }],
+      registry: createRegistryStub(),
+    })
+
+    const page = await request(result.server, "/webui")
+    assert.equal(page.statusCode, 200)
+    assert.match(page.body, /xunlu-core WebUI/)
+
+    const script = await request(result.server, "/webui/static/app.js")
+    assert.equal(script.statusCode, 200)
+    assert.match(script.body, /const PAGE/)
+  } finally {
+    await stopWebuiServer().catch(() => false)
   }
 })

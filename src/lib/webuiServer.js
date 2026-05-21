@@ -7,6 +7,7 @@ import express from "express"
 import cfg from "./config.js"
 import env from "./env.js"
 import { loadPlugins } from "./pluginLoader.js"
+import { getRuntimePaths } from "../runtime/runtime-context.js"
 import {
   clearWebuiCookie,
   createWebuiAuthToken,
@@ -19,8 +20,6 @@ import {
   verifyWebuiPassword,
 } from "./webui/auth.js"
 import { createWebUiRegistry } from "./webui/registry.js"
-
-const WEBUI_STATIC_DIR = path.join(env.RootPath, "src", "resources", "webui")
 
 let app = null
 let server = null
@@ -48,6 +47,10 @@ function exists(filePath) {
 function toPort(value, fallback) {
   const n = Number(value)
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback
+}
+
+function getWebuiStaticDir() {
+  return getRuntimePaths().getResourcePath("webui")
 }
 
 function createListeningServer(appInstance, { host, port } = {}) {
@@ -92,7 +95,7 @@ async function bindWebuiServer(appInstance, { host, port, allowPortFallback = tr
 }
 
 function sendPage(res, fileName) {
-  const target = path.join(WEBUI_STATIC_DIR, fileName)
+  const target = path.join(getWebuiStaticDir(), fileName)
   if (!exists(target)) {
     res.status(500).send(`missing file: ${fileName}`)
     return
@@ -143,7 +146,7 @@ export async function startWebuiServer(options = {}) {
     nextApp.get("/health", (req, res) => res.json({ ok: true, name: "xunlu-webui", pid: process.pid }))
     nextApp.get("/", (req, res) => res.redirect("/webui"))
 
-    nextApp.use("/webui/static", express.static(WEBUI_STATIC_DIR, { index: false, fallthrough: true }))
+    nextApp.use("/webui/static", express.static(getWebuiStaticDir(), { index: false, fallthrough: true }))
     registry.mount(nextApp, { requireAuth: requireWebuiAuth })
 
     nextApp.get("/webui", (req, res) => sendPage(res, "index.html"))

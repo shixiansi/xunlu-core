@@ -76,6 +76,11 @@ test("RuntimePaths migrates legacy plugin runtime files into unified runtime dir
     assert.equal(fs.existsSync(legacyPixivTemp), true)
     assert.equal(fs.existsSync(legacyPixivMirage), true)
 
+    assert.equal(
+      runtimePaths.getResourcePath("webui", "index.html"),
+      path.join(tempRoot, "resources", "webui", "index.html"),
+    )
+
     const pluginDataDir = runtimePaths.getPluginDataDir("demo-plugin")
     const pluginTempDir = runtimePaths.getPluginTempDir("demo-plugin", "cache")
     assert.equal(path.basename(pluginDataDir), "demo-plugin")
