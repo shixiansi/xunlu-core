@@ -11,6 +11,7 @@ import ffmpeg from "../../../component/ffmpeg/ffmpeg.js"
 import { isDuplicateParseRequest } from "../../shared/parse-dedupe.js"
 import { scheduleTempFileCleanup } from "../../shared/temp-file-cleanup.js"
 import { createBilibiliCachePaths } from "../services/cache-paths.js"
+import { makeDynamicImageForward } from "../services/dynamic-forward.js"
 import {
   extractBilibiliUrl,
   extractBvId,
@@ -467,78 +468,6 @@ function writeLiveData(groupId, uid, data) {
     ...current,
     live: data && typeof data === "object" ? data : {},
   })
-}
-
-function isNativeForwardPayload(payload) {
-  const list = Array.isArray(payload) ? payload : payload ? [payload] : []
-  return list.some(item => {
-    if (!item || typeof item !== "object") return false
-    if (item.type === "node") return true
-    return item.type === "forward" && Array.isArray(item?.data?.messages)
-  })
-}
-
-async function buildDynamicForwardNodes(ctx, msgList = []) {
-  const list = Array.isArray(msgList) ? msgList : [msgList]
-  const runtimeBot = globalThis.Bot || {}
-  const defaultId = Number(ctx?.user_id ?? runtimeBot?.uin ?? runtimeBot?.user_id ?? 0)
-  let nickname = String(runtimeBot?.nickname || "Bilibili动态").trim() || "Bilibili动态"
-
-  if (
-    ctx?.isGroup &&
-    ctx?.group_id &&
-    defaultId > 0 &&
-    typeof ctx?.getGroupMemberInfo === "function"
-  ) {
-    try {
-      const info = await ctx.getGroupMemberInfo({ group_id: ctx.group_id, user_id: defaultId })
-      const member = info?.member ?? info?.data?.member ?? info?.data ?? info
-      nickname = String(member?.card || member?.nickname || nickname).trim() || nickname
-    } catch (err) {
-      logger.warn?.(`[Bilibili] 获取转发昵称失败：${err?.message || err}`)
-    }
-  }
-
-  return list.filter(Boolean).map(message => ({
-    user_id: defaultId > 0 ? defaultId : 0,
-    uin: defaultId > 0 ? defaultId : 0,
-    nickname,
-    sender_name: nickname,
-    name: nickname,
-    message,
-  }))
-}
-
-async function makeDynamicImageForward(baseBot, ctx, groupId, msgList = [], desc = "") {
-  const targetGroupId = Number(groupId)
-  const forwardCtx = {
-    ...(ctx || {}),
-    isGroup: true,
-    group_id: Number.isFinite(targetGroupId) ? targetGroupId : groupId,
-  }
-  const normalizedList = await buildDynamicForwardNodes(forwardCtx, msgList)
-
-  if (baseBot && typeof baseBot.makeGroupForwardMsg === "function") {
-    const forwardMsg = await baseBot.makeGroupForwardMsg(forwardCtx, normalizedList, desc)
-    if (isNativeForwardPayload(forwardMsg)) return forwardMsg
-  }
-
-  if (baseBot && typeof baseBot.makeForwardMsg === "function") {
-    const forwardMsg = await baseBot.makeForwardMsg(forwardCtx, normalizedList, desc)
-    if (isNativeForwardPayload(forwardMsg)) return forwardMsg
-  }
-
-  if (ctx && typeof ctx.makeGroupForwardMsg === "function") {
-    const forwardMsg = await ctx.makeGroupForwardMsg(forwardCtx, normalizedList, desc)
-    if (isNativeForwardPayload(forwardMsg)) return forwardMsg
-  }
-
-  if (typeof globalThis.Bot?.makeGroupForwardMsg === "function") {
-    const forwardMsg = await globalThis.Bot.makeGroupForwardMsg(normalizedList, forwardCtx.group_id)
-    if (isNativeForwardPayload(forwardMsg)) return forwardMsg
-  }
-
-  throw new Error("[Bilibili] forward message API returned non-forward payload")
 }
 
 export function register(bot) {
@@ -1092,6 +1021,7 @@ export function register(bot) {
                 g,
                 forwardImgList,
                 "动态图片",
+                { logger },
               )
               await bot.sendMessage({ group_id: g }, forwardMsg)
             } catch (err) {

@@ -15,6 +15,11 @@ import { __resetParseDedupeForTests } from "../src/plugins/shared/parse-dedupe.j
 import { installTestRuntime } from "./helpers/test-runtime.js"
 import { createBilibiliCachePaths } from "../src/plugins/bilibili/services/cache-paths.js"
 import {
+  buildDynamicForwardNodes,
+  isNativeForwardPayload,
+  makeDynamicImageForward,
+} from "../src/plugins/bilibili/services/dynamic-forward.js"
+import {
   extractBilibiliUrl,
   extractBvId,
   extractLiveRoomId,
@@ -160,6 +165,57 @@ test("bilibili cache paths stay rooted in runtime directories", () => {
     paths.toAbsolutePath("temp/bilibili/dynamic-forward/a.jpg"),
     path.join(repoRoot, "temp", "bilibili", "dynamic-forward", "a.jpg"),
   )
+})
+
+test("bilibili dynamic forward builder normalizes nodes and skips invalid builders", async () => {
+  let memberInfoParams = null
+  const ctx = {
+    isGroup: true,
+    group_id: 7788,
+    user_id: 10000,
+    async getGroupMemberInfo(params) {
+      memberInfoParams = params
+      return { member: { card: "群名片" } }
+    },
+  }
+
+  const nodes = await buildDynamicForwardNodes(ctx, ["hello"], {
+    runtimeBot: { uin: 10000, nickname: "默认昵称" },
+  })
+  assert.deepEqual(memberInfoParams, { group_id: 7788, user_id: 10000 })
+  assert.equal(nodes.length, 1)
+  assert.equal(nodes[0].user_id, 10000)
+  assert.equal(nodes[0].nickname, "群名片")
+  assert.equal(nodes[0].sender_name, "群名片")
+  assert.equal(nodes[0].message, "hello")
+
+  assert.equal(isNativeForwardPayload(createNativeForwardPayload(nodes)), true)
+  assert.equal(isNativeForwardPayload([{ type: "node", data: {} }]), true)
+  assert.equal(isNativeForwardPayload([segment.image("https://example.com/not-forward.jpg")]), false)
+
+  const calls = []
+  const payload = await makeDynamicImageForward(
+    {
+      async makeGroupForwardMsg() {
+        return [segment.image("https://example.com/not-forward-1.jpg")]
+      },
+      async makeForwardMsg(forwardCtx, normalizedNodes, desc) {
+        calls.push({ forwardCtx, normalizedNodes, desc })
+        return createNativeForwardPayload(normalizedNodes)
+      },
+    },
+    { user_id: 10000 },
+    "7788",
+    ["forward text"],
+    "动态转发",
+    { runtimeBot: { uin: 10000, nickname: "机器人" } },
+  )
+
+  assert.equal(isNativeForwardPayload(payload), true)
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].forwardCtx.group_id, 7788)
+  assert.equal(calls[0].normalizedNodes[0].nickname, "机器人")
+  assert.equal(calls[0].desc, "动态转发")
 })
 
 async function withHarness(options, fn) {
