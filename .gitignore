@@ -18,4 +18,5 @@ src/plugins/**/data/
 # generated media
 mirage_tank_web.png
 src/plugins/tts/resources/audio/
+src/plugins/bilibili/resources/dynamic-forward/
 src/plugins/bilibili/resources/video/

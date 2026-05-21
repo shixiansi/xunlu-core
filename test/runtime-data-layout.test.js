@@ -29,6 +29,22 @@ test("RuntimePaths migrates legacy plugin runtime files into unified runtime dir
       path.join(tempRoot, "src", "plugins", "bilibili", "data", "group", "10001.json"),
       "{\"nickname\":\"旧订阅\"}",
     )
+    const legacyBilibiliVideo = ensureFile(
+      path.join(tempRoot, "src", "plugins", "bilibili", "resources", "video", "source_BVTEST.mp4"),
+      "bilibili-video-cache",
+    )
+    const legacyBilibiliForwardImage = ensureFile(
+      path.join(
+        tempRoot,
+        "src",
+        "plugins",
+        "bilibili",
+        "resources",
+        "dynamic-forward",
+        "dynamic_1.jpg",
+      ),
+      "bilibili-forward-cache",
+    )
     const legacyQunDaily = ensureFile(
       path.join(tempRoot, "src", "plugins", "qun-daily", "data", "stats", "10001", "2026-04-01.json"),
       "{\"messages\":12}",
@@ -58,6 +74,17 @@ test("RuntimePaths migrates legacy plugin runtime files into unified runtime dir
       fs.readFileSync(legacyBilibili, "utf8"),
     )
     assert.equal(
+      fs.readFileSync(path.join(tempRoot, "temp", "bilibili", "video", "source_BVTEST.mp4"), "utf8"),
+      fs.readFileSync(legacyBilibiliVideo, "utf8"),
+    )
+    assert.equal(
+      fs.readFileSync(
+        path.join(tempRoot, "temp", "bilibili", "dynamic-forward", "dynamic_1.jpg"),
+        "utf8",
+      ),
+      fs.readFileSync(legacyBilibiliForwardImage, "utf8"),
+    )
+    assert.equal(
       fs.readFileSync(
         path.join(tempRoot, "data", "qun-daily", "stats", "10001", "2026-04-01.json"),
         "utf8",
@@ -81,6 +108,8 @@ test("RuntimePaths migrates legacy plugin runtime files into unified runtime dir
       "{\"nickname\":\"新目录已有数据\"}",
     )
     assert.equal(fs.existsSync(legacyBilibili), true)
+    assert.equal(fs.existsSync(legacyBilibiliVideo), true)
+    assert.equal(fs.existsSync(legacyBilibiliForwardImage), true)
     assert.equal(fs.existsSync(legacyQunDaily), true)
     assert.equal(fs.existsSync(legacyPixivTemp), true)
     assert.equal(fs.existsSync(legacyPixivMirage), true)

@@ -9,33 +9,27 @@ import Filemage from "../../../utils/Filemage.js"
 import moment from "moment"
 import Download from "../../../utils/download.js"
 import ffmpeg from "../../../component/ffmpeg/ffmpeg.js"
-import { getRuntimePaths } from "../../../runtime/runtime-context.js"
+import {
+  getPluginDataPath,
+  getPluginResourcePath,
+  getPluginTempPath,
+} from "#utils"
 import { isDuplicateParseRequest } from "../../shared/parse-dedupe.js"
 import { scheduleTempFileCleanup } from "../../shared/temp-file-cleanup.js"
 
 const filemage = new Filemage()
 const download = new Download()
-const runtimePaths = getRuntimePaths()
 
 function toRootRelative(absPath = "") {
   return path.relative(filemage.RootPath, absPath).replace(/\\/g, "/")
 }
 
-const BILIBILI_DATA_DIR = toRootRelative(runtimePaths.getPluginDataDir("bilibili"))
-const BILIBILI_MEDALLIST_DIR = toRootRelative(
-  runtimePaths.getPluginDataDir("bilibili", "medallist"),
-)
-const GROUP_DATA_DIR = toRootRelative(runtimePaths.getPluginDataDir("bilibili", "group"))
-const BILIBILI_VIDEO_DIR = toRootRelative(runtimePaths.getPluginTempDir("bilibili", "video"))
+const BILIBILI_VIDEO_PATH = getPluginTempPath("bilibili", "video")
+const GROUP_DATA_DIR = toRootRelative(getPluginDataPath("bilibili", "group"))
+const BILIBILI_VIDEO_DIR = toRootRelative(BILIBILI_VIDEO_PATH)
 const BILIBILI_DYNAMIC_FORWARD_DIR = toRootRelative(
-  runtimePaths.getPluginTempDir("bilibili", "dynamic-forward"),
+  getPluginTempPath("bilibili", "dynamic-forward"),
 )
-
-filemage.CreatDir(BILIBILI_DATA_DIR)
-filemage.CreatDir(BILIBILI_MEDALLIST_DIR)
-filemage.CreatDir(GROUP_DATA_DIR)
-filemage.CreatDir(BILIBILI_VIDEO_DIR)
-filemage.CreatDir(BILIBILI_DYNAMIC_FORWARD_DIR)
 
 const dynamicType = {
   live: "直播",
@@ -46,7 +40,9 @@ const dynamicType = {
   article: "专栏",
   raffle: "抽奖",
 }
-const BILIBILI_BG_DIR = "src/plugins/bilibili/resources/html/bilibili/bg"
+const BILIBILI_BG_DIR = toRootRelative(
+  getPluginResourcePath("bilibili", "html", "bilibili", "bg"),
+)
 const BILIBILI_VIDEO_HOSTS = ["b23.tv", "m.bilibili.com", "www.bilibili.com", "bilibili.com"]
 const BILIBILI_LIVE_HOSTS = ["live.bilibili.com"]
 const BV_ID_REG = /\bBV[0-9A-Za-z]{10}\b/
@@ -167,7 +163,7 @@ function pickEstimatedSendableStream(playInfo = {}, preferredQn, limitBytes = BI
 }
 
 function getVideoCachePaths(bv) {
-  const basePath = path.join(filemage.RootPath, BILIBILI_VIDEO_DIR)
+  const basePath = BILIBILI_VIDEO_PATH
   return {
     basePath,
     videoPath: path.join(basePath, `source_${bv}.mp4`),
@@ -326,8 +322,7 @@ function formatLiveStatus(status) {
 }
 
 function getLiveClipPath(roomId) {
-  const basePath = path.join(filemage.RootPath, BILIBILI_VIDEO_DIR)
-  return path.join(basePath, `live_${roomId}_${Date.now()}.mp4`)
+  return path.join(BILIBILI_VIDEO_PATH, `live_${roomId}_${Date.now()}.mp4`)
 }
 
 function pickLiveStream(playInfo = {}) {
