@@ -31,6 +31,12 @@ export function removeFileQuietly(filePath) {
   } catch {}
 }
 
+export function removeDirQuietly(dirPath) {
+  try {
+    if (dirPath) fs.rmSync(dirPath, { recursive: true, force: true })
+  } catch {}
+}
+
 export function sanitizeFilename(filename, options = {}) {
   const { isUnix = false, replacement = "_" } = options
   const source = String(filename || "").trim()

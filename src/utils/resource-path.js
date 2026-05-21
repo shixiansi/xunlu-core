@@ -11,6 +11,16 @@ export function getPluginResourcePath(pluginName, ...segments) {
   return path.join(getRuntimePaths().rootDir, "src", "plugins", normalizedName, "resources", ...segments)
 }
 
+export function resolvePluginDataPath(pluginName, ...segments) {
+  const normalizedName = String(pluginName || "").trim()
+  return getRuntimePaths().resolveUnderRoot("data", normalizedName, ...segments)
+}
+
+export function resolvePluginTempPath(pluginName, ...segments) {
+  const normalizedName = String(pluginName || "").trim()
+  return getRuntimePaths().resolveUnderRoot("temp", normalizedName, ...segments)
+}
+
 export function getPluginDataPath(pluginName, ...segments) {
   return getRuntimePaths().getPluginDataDir(pluginName, ...segments)
 }

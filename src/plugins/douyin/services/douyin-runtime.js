@@ -1,13 +1,18 @@
 import fs from "node:fs"
-import path from "node:path"
 
 import { getRuntimePaths } from "../../../runtime/runtime-context.js"
+import {
+  ensureDir as ensureDirectory,
+  removeDirQuietly,
+  removeFileQuietly,
+  resolvePluginTempPath,
+} from "#utils"
 
 export const ROOT_PATH = getRuntimePaths().rootDir
-export const TEMP_DIR = path.join(ROOT_PATH, "temp", "douyin")
-export const TEMP_VIDEO_DIR = path.join(TEMP_DIR, "video")
-export const BROWSER_PROFILE_ROOT = path.join(TEMP_DIR, "browser-profile")
-export const QR_IMAGE_PATH = path.join(TEMP_DIR, "login-qrcode.png")
+export const TEMP_DIR = resolvePluginTempPath("douyin")
+export const TEMP_VIDEO_DIR = resolvePluginTempPath("douyin", "video")
+export const BROWSER_PROFILE_ROOT = resolvePluginTempPath("douyin", "browser-profile")
+export const QR_IMAGE_PATH = resolvePluginTempPath("douyin", "login-qrcode.png")
 export const VIDEO_MAX_BYTES = 70 * 1024 * 1024
 export const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -17,20 +22,15 @@ export const WEB_REFERER = "https://www.douyin.com/"
 export const LOGIN_WINDOW_ENV = "1536|747|1536|834|0|30|0|0|1536|834|1536|864|1525|747|24|24|Win32"
 
 export function ensureDir(dirPath) {
-  fs.mkdirSync(dirPath, { recursive: true })
-  return dirPath
+  return ensureDirectory(dirPath)
 }
 
 export function cleanupDir(dirPath) {
-  try {
-    if (dirPath && fs.existsSync(dirPath)) fs.rmSync(dirPath, { recursive: true, force: true })
-  } catch {}
+  removeDirQuietly(dirPath)
 }
 
 export function cleanupFile(filePath) {
-  try {
-    if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath)
-  } catch {}
+  removeFileQuietly(filePath)
 }
 
 export function delay(ms = 0) {

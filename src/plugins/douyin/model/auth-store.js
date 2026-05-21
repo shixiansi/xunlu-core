@@ -1,15 +1,13 @@
-import fs from "node:fs"
-import path from "node:path"
+import {
+  fileExists,
+  readJsonFile,
+  removeFileQuietly,
+  resolvePluginDataPath,
+  writeJsonFile,
+} from "#utils"
 
-import env from "../../../lib/env.js"
-
-const DATA_DIR = path.resolve(env.RootPath, "data", "douyin")
-const AUTH_FILE = path.join(DATA_DIR, "auth.json")
-
-function ensureDir(dirPath) {
-  fs.mkdirSync(dirPath, { recursive: true })
-  return dirPath
-}
+const DATA_DIR = resolvePluginDataPath("douyin")
+const AUTH_FILE = resolvePluginDataPath("douyin", "auth.json")
 
 function normalizeCookieMap(raw = {}) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {}
@@ -39,8 +37,8 @@ export function getDouyinAuthFilePath() {
 
 export function readDouyinAuth() {
   try {
-    if (!fs.existsSync(AUTH_FILE)) return null
-    const data = JSON.parse(fs.readFileSync(AUTH_FILE, "utf8"))
+    if (!fileExists(AUTH_FILE)) return null
+    const data = readJsonFile(AUTH_FILE)
     const cookies = normalizeCookieMap(data?.cookies)
     const cookieHeader = String(data?.cookieHeader || buildCookieHeader(cookies)).trim()
     if (!cookieHeader) return null
@@ -77,14 +75,13 @@ export function writeDouyinAuth(raw = {}) {
       String(raw?.updatedAt || new Date().toISOString()).trim() || new Date().toISOString(),
   }
 
-  ensureDir(DATA_DIR)
-  fs.writeFileSync(AUTH_FILE, JSON.stringify(next, null, 2), "utf8")
+  writeJsonFile(AUTH_FILE, next)
   return next
 }
 
 export function clearDouyinAuth() {
   try {
-    if (fs.existsSync(AUTH_FILE)) fs.unlinkSync(AUTH_FILE)
+    removeFileQuietly(AUTH_FILE)
   } catch (err) {
     logger.warn?.(`[Douyin] 清理登录信息失败：${err?.message || err}`)
   }

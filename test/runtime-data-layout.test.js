@@ -4,8 +4,23 @@ import os from "node:os"
 import path from "node:path"
 import test from "node:test"
 
+import { getDouyinAuthFilePath, getDouyinDataDir } from "../src/plugins/douyin/model/auth-store.js"
+import {
+  BROWSER_PROFILE_ROOT,
+  QR_IMAGE_PATH,
+  TEMP_DIR as DOUYIN_TEMP_DIR,
+  TEMP_VIDEO_DIR,
+} from "../src/plugins/douyin/services/douyin-runtime.js"
 import { RuntimePaths } from "../src/runtime/runtime-paths.js"
-import { Filemage, readJsonFile, sanitizeFilename } from "../src/utils/index.js"
+import {
+  Filemage,
+  readJsonFile,
+  removeDirQuietly,
+  removeFileQuietly,
+  resolvePluginDataPath,
+  resolvePluginTempPath,
+  sanitizeFilename,
+} from "../src/utils/index.js"
 import { installTestRuntime } from "./helpers/test-runtime.js"
 
 installTestRuntime(test)
@@ -141,8 +156,25 @@ test("shared utils expose focused file and path helpers", async () => {
     assert.deepEqual(readJsonFile(path.join(tempRoot, "missing.json"), { ok: false }), {
       ok: false,
     })
+    assert.equal(
+      resolvePluginDataPath("douyin", "auth.json"),
+      path.join(process.cwd(), "data", "douyin", "auth.json"),
+    )
+    assert.equal(
+      resolvePluginTempPath("douyin", "login-qrcode.png"),
+      path.join(process.cwd(), "temp", "douyin", "login-qrcode.png"),
+    )
     assert.equal(sanitizeFilename("  a:b/c*  "), "a_b_c_")
     assert.equal(new Filemage(tempRoot).sanitizeFilename("  a:b/c*  "), "a_b_c_")
+
+    const removableFile = ensureFile(path.join(tempRoot, "remove-me.txt"), "tmp")
+    removeFileQuietly(removableFile)
+    assert.equal(fs.existsSync(removableFile), false)
+
+    const removableDir = path.join(tempRoot, "remove-dir")
+    ensureFile(path.join(removableDir, "nested", "tmp.txt"), "tmp")
+    removeDirQuietly(removableDir)
+    assert.equal(fs.existsSync(removableDir), false)
 
     const ttsHandlers = await import("../src/plugins/tts/controllers/handlers.js")
     assert.equal(
@@ -152,6 +184,13 @@ test("shared utils expose focused file and path helpers", async () => {
     assert.equal(ttsHandlers.__test.audioTempDir, path.join(process.cwd(), "temp", "tts", "audio"))
     assert.equal(Array.isArray(ttsHandlers.__test.readCategoryList()), true)
     assert.equal(typeof ttsHandlers.__test.readCharacterAudioList(), "object")
+
+    assert.equal(getDouyinDataDir(), path.join(process.cwd(), "data", "douyin"))
+    assert.equal(getDouyinAuthFilePath(), path.join(process.cwd(), "data", "douyin", "auth.json"))
+    assert.equal(DOUYIN_TEMP_DIR, path.join(process.cwd(), "temp", "douyin"))
+    assert.equal(TEMP_VIDEO_DIR, path.join(process.cwd(), "temp", "douyin", "video"))
+    assert.equal(BROWSER_PROFILE_ROOT, path.join(process.cwd(), "temp", "douyin", "browser-profile"))
+    assert.equal(QR_IMAGE_PATH, path.join(process.cwd(), "temp", "douyin", "login-qrcode.png"))
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true })
   }
