@@ -16,6 +16,14 @@ import {
 } from "#utils"
 import { isDuplicateParseRequest } from "../../shared/parse-dedupe.js"
 import { scheduleTempFileCleanup } from "../../shared/temp-file-cleanup.js"
+import {
+  extractBilibiliUrl,
+  extractBvId,
+  extractFirstUrlFromText,
+  extractLiveRoomId,
+  isBilibiliLiveUrl,
+  isBilibiliVideoUrl,
+} from "../services/url-parser.js"
 
 const filemage = new Filemage()
 const download = new Download()
@@ -43,10 +51,6 @@ const dynamicType = {
 const BILIBILI_BG_DIR = toRootRelative(
   getPluginResourcePath("bilibili", "html", "bilibili", "bg"),
 )
-const BILIBILI_VIDEO_HOSTS = ["b23.tv", "m.bilibili.com", "www.bilibili.com", "bilibili.com"]
-const BILIBILI_LIVE_HOSTS = ["live.bilibili.com"]
-const BV_ID_REG = /\bBV[0-9A-Za-z]{10}\b/
-const URL_REGEXP = /https?:\/\/[^\s]+/gi
 const dynamicTypeKeys = Object.keys(dynamicType)
 const BILIBILI_VIDEO_QUALITY_LABELS = {
   120: "4K",
@@ -262,59 +266,6 @@ function getGroupDataFile(groupId) {
 
 function getDynamicTypeKey(label = "") {
   return Object.entries(dynamicType).find(([, value]) => value === label)?.[0] || ""
-}
-
-function getNormalizedHost(url = "") {
-  try {
-    const target = /^https?:\/\//i.test(url) ? url : `https://${url}`
-    return new URL(target).hostname.toLowerCase()
-  } catch {
-    return ""
-  }
-}
-
-function isBilibiliVideoUrl(url = "") {
-  const hostname = getNormalizedHost(url)
-  return BILIBILI_VIDEO_HOSTS.some(host => hostname === host || hostname.endsWith(`.${host}`))
-}
-
-function isBilibiliLiveUrl(url = "") {
-  const hostname = getNormalizedHost(url)
-  return BILIBILI_LIVE_HOSTS.some(host => hostname === host || hostname.endsWith(`.${host}`))
-}
-
-function extractFirstUrlFromText(text = "") {
-  return String(text || "").match(URL_REGEXP)?.[0] || ""
-}
-
-function extractBilibiliUrl(ctx) {
-  const directUrl = String(ctx?.url || "").trim()
-  if (directUrl) return directUrl
-
-  const json = ctx?.json
-  if (!json || typeof json !== "object") return ""
-  const jsonUrl = String(
-    json?.meta?.detail_1?.qqdocurl ?? json?.meta?.news?.jumpUrl ?? json?.meta?.news?.url ?? "",
-  ).trim()
-  if (jsonUrl) return jsonUrl
-
-  return extractFirstUrlFromText(ctx?.msg || "")
-}
-
-function extractBvId(url = "") {
-  return String(url || "").match(BV_ID_REG)?.[0] || ""
-}
-
-function extractLiveRoomId(url = "") {
-  try {
-    const target = /^https?:\/\//i.test(url) ? url : `https://${url}`
-    const parsed = new URL(target)
-    if (!isBilibiliLiveUrl(parsed.href)) return ""
-    const matched = parsed.pathname.match(/\/(?:blanc\/)?(\d+)(?:\/|$)/)
-    return matched?.[1] || ""
-  } catch {
-    return ""
-  }
 }
 
 function formatLiveStatus(status) {

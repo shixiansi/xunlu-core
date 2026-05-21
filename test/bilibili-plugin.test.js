@@ -13,6 +13,13 @@ import { getRuntimePaths } from "../src/runtime/runtime-context.js"
 import Download from "../src/utils/download.js"
 import { __resetParseDedupeForTests } from "../src/plugins/shared/parse-dedupe.js"
 import { installTestRuntime } from "./helpers/test-runtime.js"
+import {
+  extractBilibiliUrl,
+  extractBvId,
+  extractLiveRoomId,
+  isBilibiliLiveUrl,
+  isBilibiliVideoUrl,
+} from "../src/plugins/bilibili/services/url-parser.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -61,6 +68,21 @@ function createNativeForwardPayload(messages = []) {
     },
   ]
 }
+
+test("bilibili url parser recognizes cards, videos, and live rooms", () => {
+  assert.equal(isBilibiliVideoUrl("https://www.bilibili.com/video/BV1xx411c7mD"), true)
+  assert.equal(isBilibiliVideoUrl("https://example.com/video/BV1xx411c7mD"), false)
+  assert.equal(isBilibiliLiveUrl("live.bilibili.com/blanc/12345"), true)
+  assert.equal(extractBvId("https://www.bilibili.com/video/BV1xx411c7mD?p=1"), "BV1xx411c7mD")
+  assert.equal(extractLiveRoomId("https://live.bilibili.com/blanc/12345?from=card"), "12345")
+  assert.equal(
+    extractBilibiliUrl({
+      msg: "ignored https://www.bilibili.com/video/BV1xx411c7mD",
+      json: { meta: { news: { jumpUrl: "https://b23.tv/abc123" } } },
+    }),
+    "https://b23.tv/abc123",
+  )
+})
 
 async function withHarness(options, fn) {
   const harness = await createPluginTestHarness({
