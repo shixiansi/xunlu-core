@@ -33,7 +33,7 @@ export function removeFileQuietly(filePath) {
 
 export function removeDirQuietly(dirPath) {
   try {
-    if (dirPath) fs.rmSync(dirPath, { recursive: true, force: true })
+    if (dirPath) fs.rmSync(dirPath, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 })
   } catch {}
 }
 

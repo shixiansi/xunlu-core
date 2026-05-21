@@ -2434,13 +2434,13 @@ class DouyinService {
       checkedAt: 0,
     }
     this.cleanupQrImage()
-    try {
-      if (fs.existsSync(TEMP_VIDEO_DIR)) {
-        for (const entry of fs.readdirSync(TEMP_VIDEO_DIR)) {
-          cleanupFile(path.join(TEMP_VIDEO_DIR, entry))
-        }
-      }
-    } catch {}
+    const hadVideoDir = fs.existsSync(TEMP_VIDEO_DIR)
+    cleanupDir(TEMP_VIDEO_DIR)
+    if (hadVideoDir) {
+      try {
+        ensureDir(TEMP_VIDEO_DIR)
+      } catch {}
+    }
   }
 }
 
