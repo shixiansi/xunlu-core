@@ -28,6 +28,14 @@ import {
   sendLearningSegments,
 } from "../services/outbound-media.js"
 import {
+  buildEnabledProactiveGroupItems,
+  collectProactiveGroupIds,
+  collectTrackedGroupIds,
+  findMissingGroupIds,
+  normalizeGroupId,
+  normalizeGroupIdSet,
+} from "../services/group-scope.js"
+import {
   banReply,
   getGroupState,
   getProactiveState,
@@ -54,44 +62,6 @@ const banCache = new Map() // groupId -> { ts, set }
 const repeatStateByGroup = new Map() // groupId -> { hash, startedAt, lastAt, users:Set, count, repeated }
 
 let runtimeProtocolHint = ""
-
-function normalizeGroupId(value) {
-  return String(value || "").trim()
-}
-
-function normalizeGroupIdSet(value) {
-  const out = new Set()
-
-  if (value instanceof Map) {
-    for (const [groupId] of value.entries()) {
-      const gid = normalizeGroupId(groupId)
-      if (gid) out.add(gid)
-    }
-    return out
-  }
-
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      if (item && typeof item === "object") {
-        const gid = normalizeGroupId(item.group_id ?? item.groupId ?? item.id ?? item.uin)
-        if (gid) out.add(gid)
-        continue
-      }
-      const gid = normalizeGroupId(item)
-      if (gid) out.add(gid)
-    }
-    return out
-  }
-
-  if (value && typeof value === "object") {
-    for (const [groupId] of Object.entries(value)) {
-      const gid = normalizeGroupId(groupId)
-      if (gid) out.add(gid)
-    }
-  }
-
-  return out
-}
 
 function localDayKey(ts = Date.now()) {
   const d = new Date(ts)
@@ -619,40 +589,25 @@ async function fetchLatestUserMessageRecord(groupId, userId) {
 
 export async function listEnabledProactiveGroups({ discoveredIds = null, extraGroupIds = [] } = {}) {
   const cfg = getConfig()
-  const ids = new Set([
-    ...Object.keys(cfg?.groups || {}),
-    ...listTrackedHeatGroupIds(),
-    ...((Array.isArray(extraGroupIds) ? extraGroupIds : []).map(id => String(id || "")).filter(Boolean)),
-  ])
+  let messageDbGroupIds = []
 
   if (Array.isArray(discoveredIds)) {
-    for (const gid of discoveredIds.map(id => String(id || "")).filter(Boolean)) ids.add(gid)
+    messageDbGroupIds = discoveredIds.map(id => String(id || "")).filter(Boolean)
   } else {
-    const more = await listGroupIdsFromMessageDbTables().catch(() => [])
-    for (const gid of more.map(id => String(id || "")).filter(Boolean)) ids.add(gid)
+    messageDbGroupIds = await listGroupIdsFromMessageDbTables().catch(() => [])
   }
 
-  const items = []
-  for (const gid of Array.from(ids)) {
-    const effective = getEffectiveGroupConfig(gid)
-    if (!effective?.proactive_enabled) continue
+  const ids = collectProactiveGroupIds({
+    configGroups: cfg?.groups,
+    heatGroupIds: listTrackedHeatGroupIds(),
+    extraGroupIds,
+    discoveredIds: messageDbGroupIds,
+  })
 
-    const override =
-      cfg?.groups && typeof cfg.groups === "object" && cfg.groups[gid] && typeof cfg.groups[gid] === "object"
-        ? cfg.groups[gid]
-        : {}
-
-    items.push({
-      group_id: gid,
-      effective,
-      override,
-      global_proactive_enabled: Boolean(cfg?.proactive?.enable),
-      global_proactive_command_enabled: Boolean(cfg?.proactive?.command_enable),
-    })
-  }
-
-  items.sort((a, b) => String(a.group_id).localeCompare(String(b.group_id)))
-  return items
+  return buildEnabledProactiveGroupItems(ids, {
+    config: cfg,
+    getEffectiveGroupConfig,
+  })
 }
 
 async function cmdListProactiveGroups(ctx) {
@@ -1196,16 +1151,13 @@ export async function reconcileLearningChatGroups(runtimeLike, options = {}) {
   }
 
   const cfg = getConfig()
-  const trackedIds = new Set([
-    ...Object.keys(cfg?.groups || {}),
-    ...listTrackedHeatGroupIds(),
-    ...(await listTrackedLearningGroupIds().catch(() => [])),
-  ])
+  const trackedIds = collectTrackedGroupIds({
+    configGroups: cfg?.groups,
+    heatGroupIds: listTrackedHeatGroupIds(),
+    learningGroupIds: await listTrackedLearningGroupIds().catch(() => []),
+  })
 
-  const missingGroupIds = Array.from(trackedIds)
-    .map(id => normalizeGroupId(id))
-    .filter(id => id && !activeGroupIds.has(id))
-    .sort((a, b) => a.localeCompare(b))
+  const missingGroupIds = findMissingGroupIds(trackedIds, activeGroupIds)
 
   const cleaned = []
   for (const gid of missingGroupIds) {

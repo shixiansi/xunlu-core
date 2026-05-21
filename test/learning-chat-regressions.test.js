@@ -12,6 +12,14 @@ import {
   sendLearningSegments,
 } from "../src/plugins/learning_chat/services/outbound-media.js"
 import {
+  buildEnabledProactiveGroupItems,
+  collectProactiveGroupIds,
+  collectTrackedGroupIds,
+  findMissingGroupIds,
+  normalizeGroupId,
+  normalizeGroupIdSet,
+} from "../src/plugins/learning_chat/services/group-scope.js"
+import {
   markBotSpoke,
   resetHeatStateForTests,
 } from "../src/plugins/learning_chat/services/heat-state.js"
@@ -96,4 +104,64 @@ test("learning_chat proactive groups and heat snapshot remain readable after ser
   })
   assert.ok(groups.some(item => item.group_id === "987654321"))
   assert.equal(groups.find(item => item.group_id === "987654321")?.effective?.proactive_enabled, true)
+})
+
+test("learning_chat group scope helpers normalize proactive and cleanup group ids", () => {
+  assert.equal(normalizeGroupId(" 12345 "), "12345")
+  assert.deepEqual(
+    Array.from(
+      normalizeGroupIdSet([
+        "100",
+        { group_id: "200" },
+        { groupId: "300" },
+        { id: "400" },
+        { uin: "500" },
+        "",
+      ]),
+    ),
+    ["100", "200", "300", "400", "500"],
+  )
+
+  const proactiveIds = collectProactiveGroupIds({
+    configGroups: {
+      "300": {},
+      "100": {},
+    },
+    heatGroupIds: ["200"],
+    extraGroupIds: ["100", "400"],
+    discoveredIds: [{ group_id: "500" }],
+  })
+  assert.deepEqual(Array.from(proactiveIds), ["100", "300", "200", "400", "500"])
+
+  const items = buildEnabledProactiveGroupItems(proactiveIds, {
+    config: {
+      groups: {
+        "100": { proactive_enabled: true },
+        "300": { proactive_enabled: false },
+      },
+      proactive: {
+        enable: true,
+        command_enable: false,
+      },
+    },
+    getEffectiveGroupConfig(groupId) {
+      return {
+        proactive_enabled: groupId !== "200",
+        proactive_command_enabled: groupId === "500",
+      }
+    },
+  })
+  assert.deepEqual(items.map(item => item.group_id), ["100", "300", "400", "500"])
+  assert.deepEqual(items.find(item => item.group_id === "100")?.override, { proactive_enabled: true })
+  assert.equal(items.find(item => item.group_id === "500")?.effective.proactive_command_enabled, true)
+  assert.equal(items[0].global_proactive_enabled, true)
+  assert.equal(items[0].global_proactive_command_enabled, false)
+
+  const trackedIds = collectTrackedGroupIds({
+    configGroups: { "100": {}, "200": {} },
+    heatGroupIds: ["300"],
+    learningGroupIds: ["400", ""],
+  })
+  assert.deepEqual(Array.from(trackedIds), ["100", "200", "300", "400"])
+  assert.deepEqual(findMissingGroupIds(trackedIds, new Set(["100", "300"])), ["200", "400"])
 })
