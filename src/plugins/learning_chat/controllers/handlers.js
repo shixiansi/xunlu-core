@@ -36,6 +36,13 @@ import {
   normalizeGroupIdSet,
 } from "../services/group-scope.js"
 import {
+  buildProactiveBatchPlan,
+  buildProactiveCandidate,
+  buildProactiveSendStateUpdate,
+  buildProactiveTimingPlan,
+  pickProactiveBatchSize,
+} from "../services/proactive-planner.js"
+import {
   banReply,
   getGroupState,
   getProactiveState,
@@ -782,24 +789,8 @@ export async function proactiveTick(ctxLike, botApi = null) {
   if (proactiveCommandOk) return
 
   const now = Date.now()
-  const minMessagesToday = Math.max(0, Math.floor(toNumber(cfg.proactive.min_messages_today, 30)))
-  const silenceFactor = Math.max(1, Math.floor(toNumber(cfg.proactive.silence_factor, 5)))
-  const minSilenceSec = Math.max(0, Math.floor(toNumber(cfg.proactive.min_silence_sec, 300)))
-
-  // 无响应退避：min_interval_sec 作为“硬间隔”；backoff_base_sec 作为“无响应退避基准”
-  const minIntervalMs =
-    Math.max(0, Math.floor(toNumber(cfg.proactive.min_interval_sec, 600))) * 1000
-  const backoffBaseMsRaw =
-    Math.max(
-      0,
-      Math.floor(toNumber(cfg.proactive.backoff_base_sec, cfg.proactive.min_interval_sec ?? 600)),
-    ) * 1000
-  const fallbackBackoffBaseMs = Math.max(60_000, minIntervalMs || 0)
-  const backoffBaseMs = backoffBaseMsRaw > 0 ? backoffBaseMsRaw : fallbackBackoffBaseMs
-
-  const maxBackoffExp = Math.max(0, Math.floor(toNumber(cfg.proactive.backoff_max_exp, 6)))
-  const maxAttempts = maxBackoffExp + 1
-
+  const timingPlan = buildProactiveTimingPlan(cfg.proactive)
+  const batchPlan = buildProactiveBatchPlan(cfg.proactive)
   const protocolHints = [runtimeProtocolHint, ctxLike?.protocol]
 
   const loadRecentPool = async (gid, { limit = 80 } = {}) => {
@@ -919,9 +910,7 @@ export async function proactiveTick(ctxLike, botApi = null) {
     const context = await pickContextFromRecentUserMessage(gid, groupCfg, bans)
     if (!context?.hash) return false
 
-    const batchMin = Math.max(1, Math.floor(toNumber(cfg.proactive.batch_min, 1)))
-    const batchMax = Math.max(batchMin, Math.floor(toNumber(cfg.proactive.batch_max, 3)))
-    const batch = Math.floor(Math.random() * (batchMax - batchMin + 1)) + batchMin
+    const batch = pickProactiveBatchSize(batchPlan)
 
     let fromHash = String(context.hash)
     let sent = 0
@@ -974,19 +963,14 @@ export async function proactiveTick(ctxLike, botApi = null) {
     const groupState = await getStateCached(gid)
     const pstate = await getProactiveStateCached(gid)
 
-    const lastSentAt = Math.max(
-      Number(groupState?.last_proactive_at) || 0,
-      Number(pstate?.last_sent_at) || 0,
-    )
-    const lastUserMsgAt = Number(heat?.lastUserMsgAt) || 0
-    const userRepliedSinceLast = Boolean(lastSentAt && lastUserMsgAt && lastUserMsgAt > lastSentAt)
-
-    let attempts = Math.max(0, Math.floor(Number(pstate?.attempts_no_reply) || 0))
-    if (userRepliedSinceLast) attempts = 0
-
-    const nextAttempts = Math.min(maxAttempts, Math.max(1, attempts + 1))
+    const sendStateUpdate = buildProactiveSendStateUpdate({
+      groupState,
+      proactiveState: pstate,
+      heat,
+      plan: timingPlan,
+    })
     await patchProactiveState(gid, {
-      attempts_no_reply: nextAttempts,
+      attempts_no_reply: sendStateUpdate.attemptsNoReply,
       last_sent_at: Date.now(),
       updated_at: Date.now(),
     })
@@ -1013,47 +997,22 @@ export async function proactiveTick(ctxLike, botApi = null) {
     const heat = await ensureHeatForGroup(gid).catch(() => null)
     if (!heat) continue
 
-    const messagesToday = Math.max(0, Math.floor(toNumber(heat.messagesToday, 0)))
-    if (messagesToday < minMessagesToday) continue
-
     const state = await getStateCached(gid)
     const pstate = await getProactiveStateCached(gid)
 
-    const lastProactiveAt = Math.max(
-      Number(state?.last_proactive_at) || 0,
-      Number(pstate?.last_sent_at) || 0,
-    )
-    const lastUserMsgAt = Number(heat.lastUserMsgAt) || 0
-
-    const userRepliedSinceLast = Boolean(
-      lastProactiveAt && lastUserMsgAt && lastUserMsgAt > lastProactiveAt,
-    )
-    let attempts = Math.max(0, Math.floor(Number(pstate?.attempts_no_reply) || 0))
-    if (userRepliedSinceLast && attempts) {
-      attempts = 0
-      // 异步清零即可，避免候选计算被 DB 阻塞
+    const planned = buildProactiveCandidate({
+      gid,
+      groupCfg,
+      heat,
+      state,
+      proactiveState: pstate,
+      plan: timingPlan,
+      now,
+    })
+    if (planned.resetAttemptsNoReply) {
       void patchProactiveState(gid, { attempts_no_reply: 0 }).catch(() => {})
     }
-
-    let backoffDelayMs = 0
-    if (attempts > 0) {
-      const exp = Math.min(maxBackoffExp, Math.max(0, attempts - 1))
-      backoffDelayMs = backoffBaseMs * Math.pow(2, exp)
-    }
-    const effectiveIntervalMs = Math.max(minIntervalMs, backoffDelayMs)
-    if (lastProactiveAt && now - lastProactiveAt < effectiveIntervalMs) continue
-
-    const avgIntervalSec = Math.max(1, toNumber(heat.avgIntervalSec, 120))
-    const requiredSilenceSec = Math.max(minSilenceSec, avgIntervalSec * silenceFactor)
-
-    const lastMsgAt = Number(heat.lastMsgAt) || 0
-    if (!lastMsgAt) continue
-    const silentMs = now - lastMsgAt
-    if (silentMs < requiredSilenceSec * 1000) continue
-
-    // 退避后权重降低（减少在“没人理”时持续刷同一个群）
-    const weight = messagesToday / Math.pow(2, Math.max(0, attempts - 1))
-    candidates.push({ gid, weight })
+    if (planned.candidate) candidates.push(planned.candidate)
   }
 
   let remaining = candidates
