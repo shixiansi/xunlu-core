@@ -20,6 +20,12 @@ import {
   makeDynamicImageForward,
 } from "../src/plugins/bilibili/services/dynamic-forward.js"
 import {
+  BILIBILI_LIVE_CLIP_DURATION_SEC,
+  formatLiveStatus,
+  pickLiveStream,
+  sendBilibiliLiveClip,
+} from "../src/plugins/bilibili/services/live-helper.js"
+import {
   extractBilibiliUrl,
   extractBvId,
   extractLiveRoomId,
@@ -216,6 +222,87 @@ test("bilibili dynamic forward builder normalizes nodes and skips invalid builde
   assert.equal(calls[0].forwardCtx.group_id, 7788)
   assert.equal(calls[0].normalizedNodes[0].nickname, "机器人")
   assert.equal(calls[0].desc, "动态转发")
+})
+
+test("bilibili live helper picks streams and sends clips", async () => {
+  assert.equal(formatLiveStatus(1), "直播中")
+  assert.equal(formatLiveStatus(0), "未开播")
+
+  const selected = pickLiveStream({
+    streams: [
+      { url: "http://example.com/live.flv", protocolName: "http_stream", formatName: "flv", qn: 10000 },
+      { url: "http://example.com/live.m4s", protocolName: "http_hls", formatName: "fmp4", qn: 20000 },
+      { url: "https://example.com/live.ts", protocolName: "http_hls", formatName: "ts", qn: 1000 },
+    ],
+  })
+  assert.equal(selected.url, "https://example.com/live.ts")
+
+  let requestedRoomId = null
+  let savedClip = null
+  let cleaned = null
+  let replyMessage = null
+  const result = await sendBilibiliLiveClip(
+    {
+      async reply(message) {
+        replyMessage = message
+        return { message_id: "live-clip" }
+      },
+    },
+    { live_status: 1, room_id: "778899" },
+    {
+      bili: {
+        async getLivePlayInfo(roomId) {
+          requestedRoomId = roomId
+          return {
+            streams: [
+              {
+                url: "https://example.com/live.m3u8",
+                protocolName: "http_hls",
+                formatName: "ts",
+                qn: 10000,
+              },
+            ],
+          }
+        },
+      },
+      ffmpeg: {
+        async saveVideoClip(input, output, options) {
+          savedClip = { input, output, options }
+        },
+      },
+      cachePaths: {
+        getLiveClipPath(roomId) {
+          return `temp/bilibili/video/live_${roomId}.mp4`
+        },
+      },
+      cleanupTempFiles(paths, label) {
+        cleaned = { paths, label }
+      },
+      fsModule: {
+        statSync() {
+          return { size: 1024 }
+        },
+      },
+      segmentApi: {
+        video(file) {
+          return { type: "video", file }
+        },
+      },
+    },
+  )
+
+  assert.equal(requestedRoomId, "778899")
+  assert.deepEqual(savedClip, {
+    input: "https://example.com/live.m3u8",
+    output: "temp/bilibili/video/live_778899.mp4",
+    options: { durationSec: BILIBILI_LIVE_CLIP_DURATION_SEC },
+  })
+  assert.deepEqual(replyMessage, { type: "video", file: "temp/bilibili/video/live_778899.mp4" })
+  assert.deepEqual(result, { message_id: "live-clip" })
+  assert.deepEqual(cleaned, {
+    paths: ["temp/bilibili/video/live_778899.mp4"],
+    label: "直播切片",
+  })
 })
 
 async function withHarness(options, fn) {
