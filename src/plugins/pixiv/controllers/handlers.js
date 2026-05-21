@@ -3,7 +3,7 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { segment } from "../../../Bot/message/index.js"
-import { getRuntimePaths } from "../../../runtime/runtime-context.js"
+import { ensureDir, getPluginTempPath, removeFileQuietly } from "#utils"
 import fetch from "node-fetch"
 import lodash from "lodash"
 
@@ -12,7 +12,7 @@ import huanyin from "../model/phantomtank.js"
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const pluginRoot = path.resolve(__dirname, "..")
-const tempDir = getRuntimePaths().getPluginTempDir("pixiv", "mirage")
+const tempDir = getPluginTempPath("pixiv", "mirage")
 const mirageSurfacePath = path.join(pluginRoot, "model", "3.jpg")
 
 const LOLICON_SETU_API = "https://api.lolicon.app/setu/v2"
@@ -26,11 +26,7 @@ const defaultDeps = {
   createMirageTank: huanyin,
   now: () => Date.now(),
   random: (...args) => lodash.random(...args),
-  removeFile(filePath) {
-    try {
-      fs.rmSync(filePath, { force: true })
-    } catch {}
-  },
+  removeFile: removeFileQuietly,
 }
 
 const runtimeDeps = { ...defaultDeps }
@@ -38,7 +34,7 @@ const runtimeDeps = { ...defaultDeps }
 ensureTempDir()
 
 function ensureTempDir() {
-  fs.mkdirSync(tempDir, { recursive: true })
+  ensureDir(tempDir)
 }
 
 function getLogger() {
