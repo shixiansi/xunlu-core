@@ -37,6 +37,10 @@ const require = createRequire(import.meta.url)
 const { generate_a_bogus } = require("../utils/a-bogus.cjs")
 const { sign: generate_x_bogus } = require("../utils/x-bogus.cjs")
 
+function toRootRelativePath(filePath = "") {
+  return path.relative(ROOT_PATH, filePath).replace(/\\/g, "/")
+}
+
 const LOGIN_QUERY_TEMPLATE = {
   passport_jssdk_version: "3.1.3",
   passport_jssdk_type: "normal",
@@ -2390,8 +2394,8 @@ class DouyinService {
     this.ensureTempDirs()
     const safeId =
       normalizeString(awemeId || Date.now()).replace(/[^\w-]/g, "_") || `douyin_${Date.now()}`
-    const relativePath = path.posix.join("temp", "douyin", "video", `${safeId}.mp4`)
-    const absolutePath = path.join(ROOT_PATH, relativePath)
+    const absolutePath = path.join(TEMP_VIDEO_DIR, `${safeId}.mp4`)
+    const relativePath = toRootRelativePath(absolutePath)
 
     try {
       await this.downloader.downloadFile(targetUrl, relativePath, {
