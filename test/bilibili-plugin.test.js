@@ -24,6 +24,11 @@ import {
   stripDynamicHtml,
 } from "../src/plugins/bilibili/services/dynamic-renderer.js"
 import {
+  buildDynamicImageSegments,
+  buildNextDynamicSubscriptionData,
+  shouldPushDynamicUpdate,
+} from "../src/plugins/bilibili/services/dynamic-polling.js"
+import {
   buildDynamicForwardNodes,
   isNativeForwardPayload,
   makeDynamicImageForward,
@@ -487,6 +492,104 @@ test("bilibili subscription store normalizes types and live state", () => {
   assert.equal(store.getBiliData("991010", "123"), null)
   assert.deepEqual(store.getBiliData("991010"), {})
   assert.equal(store.writeLiveData("991010", "missing", { live_status: 1 }), false)
+})
+
+test("bilibili dynamic polling helper plans update pushes", () => {
+  assert.equal(
+    shouldPushDynamicUpdate(
+      {
+        dynamicType: ["av"],
+        upuid: "old-dynamic",
+      },
+      {
+        id: "new-dynamic",
+        type: "视频",
+      },
+    ),
+    true,
+  )
+  assert.equal(
+    shouldPushDynamicUpdate(
+      {
+        dynamicType: ["live"],
+      },
+      {
+        id: "new-dynamic",
+        type: "视频",
+      },
+    ),
+    false,
+  )
+  assert.equal(
+    shouldPushDynamicUpdate(
+      {
+        unpush: ["av"],
+      },
+      {
+        id: "new-dynamic",
+        type: "视频",
+      },
+    ),
+    false,
+  )
+  assert.equal(
+    shouldPushDynamicUpdate(
+      {
+        upuid: "same-dynamic",
+      },
+      {
+        id: "same-dynamic",
+        type: "图文",
+      },
+    ),
+    false,
+  )
+
+  const imageSegments = buildDynamicImageSegments(
+    {
+      imglist: ["https://example.com/a.jpg"],
+      orig: {
+        imglist: ["https://example.com/b.jpg"],
+      },
+    },
+    {
+      image(url) {
+        return { type: "image", url }
+      },
+    },
+  )
+  assert.deepEqual(imageSegments, [
+    { type: "image", url: "https://example.com/a.jpg" },
+    { type: "image", url: "https://example.com/b.jpg" },
+  ])
+
+  assert.deepEqual(
+    buildNextDynamicSubscriptionData(
+      {
+        nickname: "旧昵称",
+        uid: "123",
+        img: "https://example.com/old-avatar.png",
+        pendantImg: "https://example.com/old-pendant.png",
+        dynamicType: ["draw"],
+      },
+      {
+        id: "new-dynamic",
+        author: {
+          nickname: "新昵称",
+          img: "https://example.com/new-avatar.png",
+        },
+      },
+      "fallback-uid",
+    ),
+    {
+      nickname: "新昵称",
+      uid: "123",
+      img: "https://example.com/new-avatar.png",
+      pendantImg: "https://example.com/old-pendant.png",
+      dynamicType: ["draw"],
+      upuid: "new-dynamic",
+    },
+  )
 })
 
 async function withHarness(options, fn) {

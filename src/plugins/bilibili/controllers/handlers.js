@@ -16,6 +16,11 @@ import {
   renderBilibiliCard,
   renderDynamicMessage,
 } from "../services/dynamic-renderer.js"
+import {
+  buildDynamicImageSegments,
+  buildNextDynamicSubscriptionData,
+  shouldPushDynamicUpdate,
+} from "../services/dynamic-polling.js"
 import { makeDynamicImageForward } from "../services/dynamic-forward.js"
 import {
   formatLiveStatus,
@@ -757,10 +762,7 @@ export function register(bot) {
           let result = await Bili.getUpdateDynamic(u)
           if (!result || result.code) continue
 
-          const typeKey = getDynamicTypeKey(result.type)
-          if (item.dynamicType && !item.dynamicType.includes(typeKey)) continue
-          if (item.unpush && item.unpush.includes(typeKey)) continue
-          if (result.id === item.upuid) continue
+          if (!shouldPushDynamicUpdate(item, result)) continue
 
           const dynamicMessage = await renderDynamicMessage(bot, result, {
             getRandomBackground: getRandomBilibiliBackground,
@@ -771,17 +773,7 @@ export function register(bot) {
             throw new Error("动态主消息发送失败")
           }
 
-          let imglist = []
-          if (result.imglist) {
-            imglist = result.imglist.map(item => {
-              return segment.image(item)
-            })
-          }
-          if (result.orig?.imglist) {
-            result.orig?.imglist.forEach(item => {
-              imglist.push(segment.image(item))
-            })
-          }
+          const imglist = buildDynamicImageSegments(result)
           if (imglist.length > 0 && result.type != "专栏") {
             let forwardImgList = imglist
             let cleanupPaths = []
@@ -809,14 +801,7 @@ export function register(bot) {
             }
           }
 
-          const nextData = {
-            ...item,
-            nickname: result.author?.nickname || item.nickname,
-            upuid: result.id,
-            uid: item.uid || u,
-            img: result.author?.img || item.img,
-            pendantImg: result.author?.pendantImg || item.pendantImg,
-          }
+          const nextData = buildNextDynamicSubscriptionData(item, result, u)
           writeBiliData(g, item.uid || u, nextData)
         } catch (err) {
           logger.error?.(
