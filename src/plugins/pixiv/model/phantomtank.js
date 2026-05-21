@@ -4,15 +4,14 @@ import { fileURLToPath } from "url";
 import sharp from "sharp";
 import fetch from "node-fetch";
 import { v4 as uuidv4 } from "uuid";
-import fs from "fs";
 import fsPromises from "fs/promises";
-import { getRuntimePaths } from "../../../runtime/runtime-context.js";
+import { ensureDir, fileExists, getPluginTempPath, removeFileQuietly } from "#utils";
 
 // 基础配置（适配ES模块）
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 // 临时文件目录
-const TEMP_DIR = getRuntimePaths().getPluginTempDir("pixiv", "mirage");
+const TEMP_DIR = getPluginTempPath("pixiv", "mirage");
 
 // ===================== 工具函数：目录/文件检查 =====================
 /**
@@ -20,23 +19,7 @@ const TEMP_DIR = getRuntimePaths().getPluginTempDir("pixiv", "mirage");
  * @param {string} dirPath 目录路径
  */
 function ensureDirExists(dirPath) {
-  if (!fs.existsSync(dirPath)) {
-    fs.mkdirSync(dirPath, { recursive: true });
-    console.log(`📁 创建临时目录：${dirPath}`);
-  }
-}
-
-/**
- * 检查文件是否存在
- * @param {string} filePath 文件路径
- * @returns {boolean} 是否存在
- */
-function fileExists(filePath) {
-  try {
-    return fs.existsSync(filePath);
-  } catch {
-    return false;
-  }
+  ensureDir(dirPath);
 }
 
 /**
@@ -76,14 +59,14 @@ async function resizeAndCropImage(inputPath, targetW, targetH) {
  */
 async function cleanTempDir() {
   try {
-    if (!fs.existsSync(TEMP_DIR)) return;
+    if (!fileExists(TEMP_DIR)) return;
 
     const files = await fsPromises.readdir(TEMP_DIR);
     for (const file of files) {
       const filePath = path.join(TEMP_DIR, file);
       // 只删除png临时文件（避免误删其他文件）
       if (path.extname(file).toLowerCase() === ".png") {
-        await fsPromises.unlink(filePath);
+        removeFileQuietly(filePath);
         console.log(`✅ 清理缓存文件：${filePath}`);
       }
     }
@@ -361,7 +344,7 @@ async function mirageTankLikeWeb(img1, img2) {
   for (const file of tempFilesToClean) {
     if (fileExists(file)) {
       try {
-        fs.unlinkSync(file);
+        removeFileQuietly(file);
         console.log(`✅ 清理裁剪临时文件：${file}`);
       } catch (error) {
         console.warn(`⚠️  清理裁剪临时文件失败：${file} → ${error.message}`);
@@ -484,7 +467,7 @@ async function createMirageTankWebVersion(
     for (const file of tempFiles) {
       if (file && fileExists(file)) {
         try {
-          fs.unlinkSync(file);
+          removeFileQuietly(file);
           console.log(`✅ 清理临时文件：${file}`);
         } catch (error) {
           console.warn(`⚠️  清理临时文件失败：${file} → ${error.message}`);
