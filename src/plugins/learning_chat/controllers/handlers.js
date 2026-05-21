@@ -42,6 +42,14 @@ import {
   pickProactiveBatchSize,
 } from "../services/proactive-planner.js"
 import {
+  buildProactiveCommandPlan,
+  buildProactiveCommandStatePatch,
+  evaluateProactiveCommandState,
+  isRecentUserMessageRecord,
+  normalizeFavoriteCommand,
+  pickUserFavoriteCommand,
+} from "../services/proactive-command-planner.js"
+import {
   clearBanCache,
   clearLearningChatRuntimeCaches,
   getBanSet,
@@ -69,14 +77,6 @@ import {
 } from "../model/db.js"
 
 let runtimeProtocolHint = ""
-
-function localDayKey(ts = Date.now()) {
-  const d = new Date(ts)
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, "0")
-  const day = String(d.getDate()).padStart(2, "0")
-  return `${y}-${m}-${day}`
-}
 
 function toInt(value) {
   const n = Number(value)
@@ -501,13 +501,6 @@ function shouldIgnoreForLearning(ctx, groupCfg, msgInfo) {
   return false
 }
 
-function getCommandWhitelist() {
-  const cfg = getConfig()
-  return Array.isArray(cfg?.proactive?.command_whitelist)
-    ? cfg.proactive.command_whitelist.map(item => String(item || "")).filter(Boolean)
-    : []
-}
-
 async function fetchLatestUserMessageRecord(groupId, userId) {
   const gid = String(groupId || "")
   const uid = Number(userId)
@@ -569,33 +562,6 @@ async function cmdListProactiveGroups(ctx) {
   return await ctx.reply(lines.join("\n"))
 }
 
-function pickUserFavoriteCommand(rows = []) {
-  const bestByUser = new Map()
-  for (const row of Array.isArray(rows) ? rows : []) {
-    const uid = String(row?.user_id || "")
-    if (!uid) continue
-    const current = bestByUser.get(uid)
-    if (!current) {
-      bestByUser.set(uid, row)
-      continue
-    }
-    const count = Number(row?.count || 0)
-    const currentCount = Number(current?.count || 0)
-    if (count > currentCount) {
-      bestByUser.set(uid, row)
-      continue
-    }
-    if (count === currentCount && Number(row?.last_triggered_at || 0) > Number(current?.last_triggered_at || 0)) {
-      bestByUser.set(uid, row)
-    }
-  }
-
-  return Array.from(bestByUser.values()).sort((a, b) => {
-    if (Number(b?.count || 0) !== Number(a?.count || 0)) return Number(b?.count || 0) - Number(a?.count || 0)
-    return Number(b?.last_triggered_at || 0) - Number(a?.last_triggered_at || 0)
-  })
-}
-
 export async function runProactiveCommandTick(ctxLike, botApi) {
   const cfg = getConfig()
   if (!cfg?.proactive?.enable || !cfg?.proactive?.command_enable) return false
@@ -603,65 +569,65 @@ export async function runProactiveCommandTick(ctxLike, botApi) {
     return false
   }
 
-  const whitelist = getCommandWhitelist()
-  if (!whitelist.length) return false
+  const commandPlan = buildProactiveCommandPlan(cfg.proactive)
+  if (!commandPlan.whitelist.length) return false
 
-  const hourBucket = new Date().getHours()
-  const ids = new Set([...Object.keys(cfg?.groups || {}), ...listTrackedHeatGroupIds()])
+  let messageDbGroupIds = []
   if (cfg?.proactive?.allow_default) {
-    const more = await listGroupIdsFromMessageDbTables().catch(() => [])
-    for (const gid of more) ids.add(String(gid))
+    messageDbGroupIds = await listGroupIdsFromMessageDbTables().catch(() => [])
   }
+  const ids = collectProactiveGroupIds({
+    configGroups: cfg?.groups,
+    heatGroupIds: listTrackedHeatGroupIds(),
+    discoveredIds: messageDbGroupIds,
+  })
 
   for (const gid of Array.from(ids)) {
     const groupCfg = getEffectiveGroupConfig(gid)
     if (!groupCfg?.proactive_enabled || !groupCfg?.proactive_command_enabled) continue
 
     const heat = await ensureHeatForGroup(gid).catch(() => null)
-    if (!heat || Number(heat?.messagesToday || 0) < Number(cfg?.proactive?.min_messages_today || 0)) continue
+    if (!heat || Number(heat?.messagesToday || 0) < commandPlan.minMessagesToday) continue
 
     const favorites = await CommandUsageDB.getHourlyFavoriteCommands({
       groupId: gid,
-      hourBucket,
-      whitelistRegs: whitelist,
-      historyDays: cfg?.proactive?.command_history_days,
-      minCount: cfg?.proactive?.command_min_count,
+      hourBucket: commandPlan.hourBucket,
+      whitelistRegs: commandPlan.whitelist,
+      historyDays: commandPlan.historyDays,
+      minCount: commandPlan.minCount,
     }).catch(() => [])
     if (!favorites.length) continue
 
     for (const favorite of pickUserFavoriteCommand(favorites)) {
-      const uid = String(favorite?.user_id || "")
-      const reg = String(favorite?.reg || "")
-      const pluginName = String(favorite?.plugin || "").trim()
-      const rawCommand = String(favorite?.raw_command || "").trim()
+      const {
+        uid,
+        reg,
+        pluginName,
+        rawCommand,
+        protocol,
+      } = normalizeFavoriteCommand(favorite)
       if (!uid || !reg || !rawCommand) continue
 
       const state = await getProactiveCommandStateCached(gid, uid)
-      const today = localDayKey()
-      const cooldownMs = Math.max(0, Math.floor(Number(cfg?.proactive?.command_cooldown_sec || 0))) * 1000
-      const recentManualMs = Math.max(0, Math.floor(Number(cfg?.proactive?.command_recent_manual_sec || 0))) * 1000
-      const maxDaily = Math.max(1, Math.floor(Number(cfg?.proactive?.command_max_daily_per_user || 1)))
+      const commandState = evaluateProactiveCommandState({
+        state,
+        plan: commandPlan,
+        now: Date.now(),
+      })
+      if (!commandState.allowed) continue
 
-      const dailyCount =
-        String(state?.last_triggered_date_key || "") === today ? Number(state?.daily_trigger_count || 0) : 0
-      if (dailyCount >= maxDaily) continue
-      if (Number(state?.last_triggered_at || 0) && Date.now() - Number(state.last_triggered_at) < cooldownMs) continue
-
-      const hasRecentManual = recentManualMs
+      const hasRecentManual = commandPlan.recentManualMs
         ? await CommandUsageDB.hasRecentManualUsage({
             groupId: gid,
             userId: uid,
             reg,
-            sinceMs: Date.now() - recentManualMs,
+            sinceMs: Date.now() - commandPlan.recentManualMs,
           }).catch(() => false)
         : false
       if (hasRecentManual) continue
 
       const baseMessageRecord = await fetchLatestUserMessageRecord(gid, uid)
-      if (!baseMessageRecord) continue
-      const maxAgeMs =
-        Math.max(1, Math.floor(Number(cfg?.proactive?.command_recent_user_hours || 72))) * 3600 * 1000
-      if (Number(baseMessageRecord?.time || 0) * 1000 < Date.now() - maxAgeMs) continue
+      if (!isRecentUserMessageRecord(baseMessageRecord, commandPlan, Date.now())) continue
 
       const mentionMsg = [
         UniversalMessageSegment.mention(uid),
@@ -674,12 +640,12 @@ export async function runProactiveCommandTick(ctxLike, botApi) {
       await send({ group_id: Number(gid) || gid }, mentionMsg).catch(() => null)
 
       const synthetic = await botApi.buildSyntheticCommandEvent({
-        baseMessageRecord: { ...baseMessageRecord, protocol: favorite?.protocol || runtimeProtocolHint },
+        baseMessageRecord: { ...baseMessageRecord, protocol: protocol || runtimeProtocolHint },
         rawCommand,
         reg,
         userId: uid,
         groupId: gid,
-        protocol: favorite?.protocol || runtimeProtocolHint,
+        protocol: protocol || runtimeProtocolHint,
         flags: {
           __proactiveCommand: true,
           __synthetic: true,
@@ -698,13 +664,16 @@ export async function runProactiveCommandTick(ctxLike, botApi) {
 
       if (result === false || result === undefined || result === null) continue
 
-      await patchProactiveCommandState(gid, uid, {
-        last_triggered_at: Date.now(),
-        last_triggered_reg: reg,
-        last_triggered_date_key: today,
-        daily_trigger_count: dailyCount + 1,
-        updated_at: Date.now(),
-      })
+      await patchProactiveCommandState(
+        gid,
+        uid,
+        buildProactiveCommandStatePatch({
+          reg,
+          dailyCount: commandState.dailyCount,
+          plan: commandPlan,
+          now: Date.now(),
+        }),
+      )
       markBotSpoke(gid)
       return true
     }

@@ -28,6 +28,16 @@ import {
   pickProactiveBatchSize,
 } from "../src/plugins/learning_chat/services/proactive-planner.js"
 import {
+  buildProactiveCommandPlan,
+  buildProactiveCommandStatePatch,
+  evaluateProactiveCommandState,
+  isRecentUserMessageRecord,
+  localDayKey,
+  normalizeCommandWhitelist,
+  normalizeFavoriteCommand,
+  pickUserFavoriteCommand,
+} from "../src/plugins/learning_chat/services/proactive-command-planner.js"
+import {
   clearLearningChatRuntimeCaches,
   getLastLearningMessage,
   getRepeatState,
@@ -281,6 +291,91 @@ test("learning_chat proactive planner keeps tick thresholds and backoff pure", (
       plan: timingPlan,
     }).attemptsNoReply,
     3,
+  )
+})
+
+test("learning_chat proactive command planner ranks favorites and enforces state limits", () => {
+  const now = new Date(2026, 4, 22, 9, 30, 0).getTime()
+  const plan = buildProactiveCommandPlan(
+    {
+      min_messages_today: "6",
+      command_history_days: 8,
+      command_min_count: 3,
+      command_cooldown_sec: 120,
+      command_recent_manual_sec: 60,
+      command_recent_user_hours: 2,
+      command_max_daily_per_user: 2,
+      command_whitelist: ["#a", "", 0, "#b"],
+    },
+    now,
+  )
+
+  assert.equal(localDayKey(now), "2026-05-22")
+  assert.deepEqual(normalizeCommandWhitelist(plan.whitelist), ["#a", "#b"])
+  assert.equal(plan.hourBucket, 9)
+  assert.equal(plan.minMessagesToday, 6)
+  assert.equal(plan.historyDays, 8)
+  assert.equal(plan.minCount, 3)
+  assert.equal(plan.cooldownMs, 120_000)
+  assert.equal(plan.recentManualMs, 60_000)
+  assert.equal(plan.maxDaily, 2)
+  assert.equal(plan.maxUserMessageAgeMs, 2 * 3600 * 1000)
+
+  const ranked = pickUserFavoriteCommand([
+    { user_id: "100", reg: "#a", raw_command: "#a old", count: 2, last_triggered_at: 20 },
+    { user_id: "100", reg: "#a", raw_command: "#a new", count: 2, last_triggered_at: 30 },
+    { user_id: "200", reg: "#b", raw_command: "#b", count: 4, last_triggered_at: 10 },
+    { user_id: "", reg: "#ignored", raw_command: "#ignored", count: 99 },
+  ])
+  assert.deepEqual(ranked.map(item => item.raw_command), ["#b", "#a new"])
+
+  assert.deepEqual(
+    normalizeFavoriteCommand({ user_id: 100, reg: "#a", plugin: " p ", raw_command: " #a ", protocol: "milky" }),
+    {
+      uid: "100",
+      reg: "#a",
+      pluginName: "p",
+      rawCommand: "#a",
+      protocol: "milky",
+    },
+  )
+
+  assert.deepEqual(
+    evaluateProactiveCommandState({
+      state: { last_triggered_date_key: plan.today, daily_trigger_count: 2 },
+      plan,
+      now,
+    }),
+    { allowed: false, dailyCount: 2, reason: "daily-limit" },
+  )
+  assert.deepEqual(
+    evaluateProactiveCommandState({
+      state: { last_triggered_date_key: plan.today, daily_trigger_count: 1, last_triggered_at: now - 1_000 },
+      plan,
+      now,
+    }),
+    { allowed: false, dailyCount: 1, reason: "cooldown" },
+  )
+  assert.deepEqual(
+    evaluateProactiveCommandState({
+      state: { last_triggered_date_key: "2026-05-21", daily_trigger_count: 9 },
+      plan,
+      now,
+    }),
+    { allowed: true, dailyCount: 0, reason: "" },
+  )
+
+  assert.equal(isRecentUserMessageRecord({ time: Math.floor((now - 30_000) / 1000) }, plan, now), true)
+  assert.equal(isRecentUserMessageRecord({ time: Math.floor((now - 3 * 3600 * 1000) / 1000) }, plan, now), false)
+  assert.deepEqual(
+    buildProactiveCommandStatePatch({ reg: "#a", dailyCount: 1, plan, now }),
+    {
+      last_triggered_at: now,
+      last_triggered_reg: "#a",
+      last_triggered_date_key: "2026-05-22",
+      daily_trigger_count: 2,
+      updated_at: now,
+    },
   )
 })
 
