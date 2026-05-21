@@ -1,5 +1,4 @@
 import fs from "node:fs"
-import path from "node:path"
 
 import { segment } from "../../../Bot/message/index.js"
 import Blogin from "../model/Blogin.js"
@@ -9,13 +8,9 @@ import Filemage from "../../../utils/Filemage.js"
 import moment from "moment"
 import Download from "../../../utils/download.js"
 import ffmpeg from "../../../component/ffmpeg/ffmpeg.js"
-import {
-  getPluginDataPath,
-  getPluginResourcePath,
-  getPluginTempPath,
-} from "#utils"
 import { isDuplicateParseRequest } from "../../shared/parse-dedupe.js"
 import { scheduleTempFileCleanup } from "../../shared/temp-file-cleanup.js"
+import { createBilibiliCachePaths } from "../services/cache-paths.js"
 import {
   extractBilibiliUrl,
   extractBvId,
@@ -36,17 +31,10 @@ import {
 
 const filemage = new Filemage()
 const download = new Download()
-
-function toRootRelative(absPath = "") {
-  return path.relative(filemage.RootPath, absPath).replace(/\\/g, "/")
-}
-
-const BILIBILI_VIDEO_PATH = getPluginTempPath("bilibili", "video")
-const GROUP_DATA_DIR = toRootRelative(getPluginDataPath("bilibili", "group"))
-const BILIBILI_VIDEO_DIR = toRootRelative(BILIBILI_VIDEO_PATH)
-const BILIBILI_DYNAMIC_FORWARD_DIR = toRootRelative(
-  getPluginTempPath("bilibili", "dynamic-forward"),
-)
+const bilibiliCachePaths = createBilibiliCachePaths(filemage.RootPath)
+const GROUP_DATA_DIR = bilibiliCachePaths.groupDataDir
+const BILIBILI_VIDEO_DIR = bilibiliCachePaths.videoDir
+const BILIBILI_BG_DIR = bilibiliCachePaths.backgroundDir
 
 const dynamicType = {
   live: "直播",
@@ -57,9 +45,6 @@ const dynamicType = {
   article: "专栏",
   raffle: "抽奖",
 }
-const BILIBILI_BG_DIR = toRootRelative(
-  getPluginResourcePath("bilibili", "html", "bilibili", "bg"),
-)
 const dynamicTypeKeys = Object.keys(dynamicType)
 const BILIBILI_LIVE_CLIP_DURATION_SEC = 10
 const BILIBILI_LIVE_CLIP_MAX_RESULT_BYTES = 45 * 1024 * 1024
@@ -67,16 +52,6 @@ const BILIBILI_LIVE_CLIP_MAX_RESULT_BYTES = 45 * 1024 * 1024
 function computew(num) {
   const value = Number(num || 0)
   return value >= 10000 ? `${(value / 10000).toFixed(1)}w` : value
-}
-
-function getVideoCachePaths(bv) {
-  const basePath = BILIBILI_VIDEO_PATH
-  return {
-    basePath,
-    videoPath: path.join(basePath, `source_${bv}.mp4`),
-    audioPath: path.join(basePath, `source_${bv}.mp3`),
-    resultPath: path.join(basePath, `${bv}.mp4`),
-  }
 }
 
 async function composeVideoFile(videoPath, audioPath, resultPath) {
@@ -123,18 +98,6 @@ function getSegmentImageSource(segmentLike) {
   ).trim()
 }
 
-function getDynamicForwardCachePath(dynamicId, index, source = "") {
-  const cacheDir = BILIBILI_DYNAMIC_FORWARD_DIR
-  let ext = ".jpg"
-  try {
-    const pathname = new URL(source).pathname
-    const nextExt = path.extname(pathname)
-    if (nextExt && nextExt.length <= 10) ext = nextExt
-  } catch {}
-
-  return `${cacheDir}/${dynamicId}_${Date.now()}_${index}${ext}`
-}
-
 function normalizeTypeList(types = []) {
   const list = Array.isArray(types) ? types : [types]
   return [...new Set(list.map(type => String(type || "").trim()).filter(type => dynamicType[type]))]
@@ -163,20 +126,12 @@ function normalizeSubscriptionData(data) {
   return normalized
 }
 
-function getGroupDataFile(groupId) {
-  return `${GROUP_DATA_DIR}/${groupId}.json`
-}
-
 function getDynamicTypeKey(label = "") {
   return Object.entries(dynamicType).find(([, value]) => value === label)?.[0] || ""
 }
 
 function formatLiveStatus(status) {
   return Number(status) === 1 ? "直播中" : "未开播"
-}
-
-function getLiveClipPath(roomId) {
-  return path.join(BILIBILI_VIDEO_PATH, `live_${roomId}_${Date.now()}.mp4`)
 }
 
 function pickLiveStream(playInfo = {}) {
@@ -303,7 +258,7 @@ async function sendBilibiliLiveClip(ctx, roomInfo = {}) {
     throw new Error("未找到可用的直播流")
   }
 
-  const clipPath = getLiveClipPath(roomInfo.room_id)
+  const clipPath = bilibiliCachePaths.getLiveClipPath(roomInfo.room_id)
   try {
     await ffmpeg.saveVideoClip(selectedStream.url, clipPath, {
       durationSec: BILIBILI_LIVE_CLIP_DURATION_SEC,
@@ -439,14 +394,14 @@ async function prepareDynamicForwardImages(baseBot, ctx, dynamicId, msgList = []
         continue
       }
 
-      const savePath = getDynamicForwardCachePath(dynamicId, i, source)
+      const savePath = bilibiliCachePaths.getDynamicForwardCachePath(dynamicId, i, source)
       await download.downloadFile(source, savePath, {
         headers: {
           referer: "https://www.bilibili.com",
         },
       })
 
-      const fullPath = path.join(filemage.RootPath, savePath)
+      const fullPath = bilibiliCachePaths.toAbsolutePath(savePath)
       cleanupPaths.push(fullPath)
       prepared.push(segment.image(fullPath))
     }
@@ -469,7 +424,7 @@ function writeBiliData(groupId, uid, data) {
     delete gdata[uid]
   }
 
-  filemage.writeFileJsonData(getGroupDataFile(groupId), gdata)
+  filemage.writeFileJsonData(bilibiliCachePaths.getGroupDataFile(groupId), gdata)
 
   const liveStatus = normalizedData?.live?.live_status
   if (liveStatus !== undefined) {
@@ -490,9 +445,9 @@ function getBiliData(groupId, uid) {
 
   let gdata = {}
   try {
-    gdata = filemage.getFileDataToJson(getGroupDataFile(groupId)) || {}
+    gdata = filemage.getFileDataToJson(bilibiliCachePaths.getGroupDataFile(groupId)) || {}
   } catch (e) {
-    filemage.writeFileJsonData(getGroupDataFile(groupId), gdata)
+    filemage.writeFileJsonData(bilibiliCachePaths.getGroupDataFile(groupId), gdata)
     return uid ? null : gdata
   }
 
@@ -837,7 +792,7 @@ export function register(bot) {
     }
 
     const changeVideo = async (streamPlan, playInfo, currentBv, currentCtx) => {
-      const { videoPath, audioPath, resultPath } = getVideoCachePaths(currentBv)
+      const { videoPath, audioPath, resultPath } = bilibiliCachePaths.getVideoCachePaths(currentBv)
       const cleanupPaths = [videoPath, audioPath, resultPath]
       const videoRelativePath = `${BILIBILI_VIDEO_DIR}/source_${currentBv}.mp4`
       const audioRelativePath = `${BILIBILI_VIDEO_DIR}/source_${currentBv}.mp3`

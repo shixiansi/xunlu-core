@@ -13,6 +13,7 @@ import { getRuntimePaths } from "../src/runtime/runtime-context.js"
 import Download from "../src/utils/download.js"
 import { __resetParseDedupeForTests } from "../src/plugins/shared/parse-dedupe.js"
 import { installTestRuntime } from "./helpers/test-runtime.js"
+import { createBilibiliCachePaths } from "../src/plugins/bilibili/services/cache-paths.js"
 import {
   extractBilibiliUrl,
   extractBvId,
@@ -131,6 +132,34 @@ test("bilibili video planner estimates size and picks sendable streams", () => {
   assert.equal(normalized.stage, "download")
   assert.equal(normalized.actualBytes, 123)
   assert.equal(normalized.limitBytes, 45)
+})
+
+test("bilibili cache paths stay rooted in runtime directories", () => {
+  const paths = createBilibiliCachePaths(repoRoot)
+
+  assert.equal(paths.groupDataDir, "data/bilibili/group")
+  assert.equal(paths.videoDir, "temp/bilibili/video")
+  assert.equal(paths.dynamicForwardDir, "temp/bilibili/dynamic-forward")
+  assert.equal(paths.getGroupDataFile(12345), "data/bilibili/group/12345.json")
+
+  const videoPaths = paths.getVideoCachePaths("BV1xx411c7mD")
+  assert.equal(videoPaths.basePath, path.join(repoRoot, "temp", "bilibili", "video"))
+  assert.equal(videoPaths.videoPath, path.join(videoPaths.basePath, "source_BV1xx411c7mD.mp4"))
+  assert.equal(videoPaths.audioPath, path.join(videoPaths.basePath, "source_BV1xx411c7mD.mp3"))
+  assert.equal(videoPaths.resultPath, path.join(videoPaths.basePath, "BV1xx411c7mD.mp4"))
+
+  assert.equal(
+    paths.getDynamicForwardCachePath("dynamic1", 2, "https://example.com/img.png?x=1", 99),
+    "temp/bilibili/dynamic-forward/dynamic1_99_2.png",
+  )
+  assert.equal(
+    paths.getLiveClipPath("67890", 99),
+    path.join(repoRoot, "temp", "bilibili", "video", "live_67890_99.mp4"),
+  )
+  assert.equal(
+    paths.toAbsolutePath("temp/bilibili/dynamic-forward/a.jpg"),
+    path.join(repoRoot, "temp", "bilibili", "dynamic-forward", "a.jpg"),
+  )
 })
 
 async function withHarness(options, fn) {
