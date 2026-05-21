@@ -30,6 +30,14 @@ import {
   isBilibiliVideoUrl,
 } from "../services/url-parser.js"
 import {
+  DYNAMIC_TYPE_KEYS as dynamicTypeKeys,
+  DYNAMIC_TYPE_LABELS as dynamicType,
+  createBilibiliSubscriptionStore,
+  getDynamicTypeKey,
+  normalizeSubscriptionData,
+  normalizeTypeList,
+} from "../services/subscription-store.js"
+import {
   BILIBILI_VIDEO_MAX_RESULT_BYTES,
   BILIBILI_VIDEO_MAX_SOURCE_BYTES,
   createVideoTooLargeError,
@@ -44,17 +52,15 @@ const download = new Download()
 const bilibiliCachePaths = createBilibiliCachePaths(filemage.RootPath)
 const GROUP_DATA_DIR = bilibiliCachePaths.groupDataDir
 const BILIBILI_VIDEO_DIR = bilibiliCachePaths.videoDir
-
-const dynamicType = {
-  live: "直播",
-  text: "文字",
-  draw: "图文",
-  av: "视频",
-  forward: "转发",
-  article: "专栏",
-  raffle: "抽奖",
-}
-const dynamicTypeKeys = Object.keys(dynamicType)
+const {
+  getBiliData,
+  getUpList,
+  writeBiliData,
+  writeLiveData,
+} = createBilibiliSubscriptionStore({
+  filemage,
+  cachePaths: bilibiliCachePaths,
+})
 
 async function composeVideoFile(videoPath, audioPath, resultPath) {
   return await new Promise((resolve, reject) => {
@@ -98,38 +104,6 @@ function getSegmentImageSource(segmentLike) {
       segmentLike?.fileId ??
       "",
   ).trim()
-}
-
-function normalizeTypeList(types = []) {
-  const list = Array.isArray(types) ? types : [types]
-  return [...new Set(list.map(type => String(type || "").trim()).filter(type => dynamicType[type]))]
-}
-
-function normalizeSubscriptionData(data) {
-  if (!data || typeof data !== "object" || Array.isArray(data)) return null
-
-  const normalized = { ...data }
-  const subscribedTypes = normalizeTypeList(normalized.dynamicType)
-  const blockedTypes = normalizeTypeList(normalized.unpush)
-  const filteredBlockedTypes = subscribedTypes.length
-    ? blockedTypes.filter(type => !subscribedTypes.includes(type))
-    : blockedTypes
-
-  if (subscribedTypes.length > 0) normalized.dynamicType = subscribedTypes
-  else delete normalized.dynamicType
-
-  if (filteredBlockedTypes.length > 0) normalized.unpush = filteredBlockedTypes
-  else delete normalized.unpush
-
-  if (!normalized.live || typeof normalized.live !== "object" || Array.isArray(normalized.live)) {
-    delete normalized.live
-  }
-
-  return normalized
-}
-
-function getDynamicTypeKey(label = "") {
-  return Object.entries(dynamicType).find(([, value]) => value === label)?.[0] || ""
 }
 
 function getRandomBilibiliBackground() {
@@ -261,62 +235,6 @@ async function prepareDynamicForwardImages(baseBot, ctx, dynamicId, msgList = []
   }
 
   return { msgList: prepared, cleanupPaths }
-}
-
-function writeBiliData(groupId, uid, data) {
-  if (!groupId || !uid) return false
-
-  const gdata = getBiliData(groupId) || {}
-  const normalizedData = normalizeSubscriptionData(data)
-  if (normalizedData) {
-    gdata[uid] = normalizedData
-  } else {
-    delete gdata[uid]
-  }
-
-  filemage.writeFileJsonData(bilibiliCachePaths.getGroupDataFile(groupId), gdata)
-
-  const liveStatus = normalizedData?.live?.live_status
-  if (liveStatus !== undefined) {
-    logger.debug(
-      `[Bilibili] 更新直播状态，群ID：${groupId}，用户ID：${uid}，状态：${liveStatus === 1 ? "直播中" : "下播"}`,
-    )
-  }
-
-  return true
-}
-
-function getUpList(groupId) {
-  return Object.keys(getBiliData(groupId) || {})
-}
-
-function getBiliData(groupId, uid) {
-  if (!groupId) return uid ? null : {}
-
-  let gdata = {}
-  try {
-    gdata = filemage.getFileDataToJson(bilibiliCachePaths.getGroupDataFile(groupId)) || {}
-  } catch (e) {
-    filemage.writeFileJsonData(bilibiliCachePaths.getGroupDataFile(groupId), gdata)
-    return uid ? null : gdata
-  }
-
-  const normalized = Object.fromEntries(
-    Object.entries(gdata)
-      .map(([key, value]) => [key, normalizeSubscriptionData(value)])
-      .filter(([, value]) => value),
-  )
-  return uid ? normalized[uid] || null : normalized
-}
-
-function writeLiveData(groupId, uid, data) {
-  const current = getBiliData(groupId, uid)
-  if (!current) return false
-
-  return writeBiliData(groupId, uid, {
-    ...current,
-    live: data && typeof data === "object" ? data : {},
-  })
 }
 
 export function register(bot) {

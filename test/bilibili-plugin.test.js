@@ -42,6 +42,13 @@ import {
   isBilibiliVideoUrl,
 } from "../src/plugins/bilibili/services/url-parser.js"
 import {
+  DYNAMIC_TYPE_LABELS,
+  createBilibiliSubscriptionStore,
+  getDynamicTypeKey,
+  normalizeSubscriptionData,
+  normalizeTypeList,
+} from "../src/plugins/bilibili/services/subscription-store.js"
+import {
   createVideoTooLargeError,
   estimateMuxedVideoBytes,
   formatBytes,
@@ -402,6 +409,84 @@ test("bilibili dynamic renderer formats cards and fallbacks", async () => {
   assert.deepEqual(renderedDynamic, ["rendered-dynamic"])
   assert.equal(dynamicPayload.radom, "bg-a.png")
   assert.equal(dynamicPayload.id, "dynamic-1")
+})
+
+test("bilibili subscription store normalizes types and live state", () => {
+  assert.equal(DYNAMIC_TYPE_LABELS.av, "视频")
+  assert.equal(getDynamicTypeKey("视频"), "av")
+  assert.equal(getDynamicTypeKey("不存在"), "")
+  assert.deepEqual(normalizeTypeList(["av", "bad", "text", "av"]), ["av", "text"])
+  assert.deepEqual(
+    normalizeSubscriptionData({
+      nickname: "测试UP",
+      dynamicType: ["av", "bad"],
+      unpush: ["av", "text"],
+      live: [],
+    }),
+    {
+      nickname: "测试UP",
+      dynamicType: ["av"],
+      unpush: ["text"],
+    },
+  )
+
+  const files = new Map()
+  const debugMessages = []
+  const store = createBilibiliSubscriptionStore({
+    filemage: {
+      getFileDataToJson(file) {
+        if (!files.has(file)) throw new Error("missing")
+        return files.get(file)
+      },
+      writeFileJsonData(file, data) {
+        files.set(file, JSON.parse(JSON.stringify(data)))
+      },
+    },
+    cachePaths: {
+      getGroupDataFile(groupId) {
+        return `group-${groupId}.json`
+      },
+    },
+    getLogger: () => ({
+      debug(message) {
+        debugMessages.push(message)
+      },
+    }),
+  })
+
+  assert.deepEqual(store.getBiliData("991010"), {})
+  assert.deepEqual(files.get("group-991010.json"), {})
+
+  assert.equal(
+    store.writeBiliData("991010", "123", {
+      nickname: "测试UP",
+      dynamicType: ["av", "av"],
+      unpush: ["av", "text"],
+      live: {
+        live_status: 1,
+      },
+    }),
+    true,
+  )
+  assert.deepEqual(store.getUpList("991010"), ["123"])
+  assert.deepEqual(store.getBiliData("991010", "123"), {
+    nickname: "测试UP",
+    dynamicType: ["av"],
+    unpush: ["text"],
+    live: {
+      live_status: 1,
+    },
+  })
+  assert.match(debugMessages.at(-1), /状态：直播中/)
+
+  assert.equal(store.writeLiveData("991010", "123", { live_status: 0 }), true)
+  assert.equal(store.getBiliData("991010", "123").live.live_status, 0)
+  assert.match(debugMessages.at(-1), /状态：下播/)
+
+  assert.equal(store.writeBiliData("991010", "123", null), true)
+  assert.equal(store.getBiliData("991010", "123"), null)
+  assert.deepEqual(store.getBiliData("991010"), {})
+  assert.equal(store.writeLiveData("991010", "missing", { live_status: 1 }), false)
 })
 
 async function withHarness(options, fn) {
