@@ -1119,7 +1119,7 @@ test("xunlu-dev simulate supports douyin plugin on protocol both", async () => {
         "--json",
       ])
 
-      assert.equal(res.status, 0)
+      assert.equal(res.status, 0, res.stderr || res.stdout)
       const data = JSON.parse(res.stdout)
       assert.equal(data.results.milky.ok, true)
       assert.equal(data.results.onebotv11.ok, true)

@@ -57,6 +57,10 @@ export class RuntimeContext {
 
 let runtimeContext = null
 
+export function getCurrentRuntimeContext() {
+  return runtimeContext
+}
+
 export function getRuntimeContext(options = {}) {
   if (!runtimeContext) {
     runtimeContext = new RuntimeContext(options)

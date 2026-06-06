@@ -149,6 +149,21 @@ export class RuntimeConfigManager {
     return path.join(this.getConfigDir(configType), ...parts) + ".config.yaml"
   }
 
+  ensureUserConfigFile(configName) {
+    const filePath = this.getConfigFilePath(configName, "user")
+    if (fs.existsSync(filePath)) return filePath
+
+    const defaultPath = this.getConfigFilePath(configName, "default")
+    if (fs.existsSync(defaultPath)) {
+      copyMissingTree(defaultPath, filePath)
+      return filePath
+    }
+
+    ensureDir(path.dirname(filePath))
+    fs.writeFileSync(filePath, "{}\n", "utf8")
+    return filePath
+  }
+
   loadConfigData(configName, configType = "user") {
     const filePath = this.getConfigFilePath(configName, configType)
     try {
@@ -175,7 +190,10 @@ export class RuntimeConfigManager {
       return this.configCache.get(cacheKey).jsonData
     }
 
-    const filePath = this.getConfigFilePath(configName, configType)
+    const filePath =
+      configType === "user"
+        ? this.ensureUserConfigFile(configName)
+        : this.getConfigFilePath(configName, configType)
     const configReader = new YamlReader(filePath)
     this.configCache.set(cacheKey, configReader)
 
