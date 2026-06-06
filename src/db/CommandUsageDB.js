@@ -5,15 +5,25 @@ import { DataTypes, Op, Sequelize } from "sequelize"
 
 import env from "../lib/env.js"
 
-const DATA_DIR = path.resolve(env.RootPath, "data")
-const DB_PATH = path.join(DATA_DIR, "command_usage.sqlite")
-
 let sequelize = null
 let CommandUsageLog = null
 let indexesEnsured = false
+let activeDbPath = ""
+
+function getDataDir() {
+  return path.resolve(env.RootPath, "data")
+}
+
+function getDbPath() {
+  return activeDbPath || path.join(getDataDir(), "command_usage.sqlite")
+}
+
+function resolveDbPath() {
+  return path.join(getDataDir(), "command_usage.sqlite")
+}
 
 function ensureDir() {
-  fs.mkdirSync(DATA_DIR, { recursive: true })
+  fs.mkdirSync(getDataDir(), { recursive: true })
 }
 
 function pad(num) {
@@ -58,13 +68,18 @@ async function initDb() {
   if (CommandUsageLog) return { sequelize, CommandUsageLog }
 
   ensureDir()
+  const dbPath = resolveDbPath()
   if (!sequelize) {
     sequelize = new Sequelize({
       dialect: "sqlite",
-      storage: DB_PATH,
+      storage: dbPath,
       logging: false,
     })
+    activeDbPath = dbPath
     await sequelize.authenticate()
+  } else if (activeDbPath && activeDbPath !== dbPath) {
+    await close()
+    return await initDb()
   }
 
   CommandUsageLog = sequelize.define(
@@ -271,6 +286,7 @@ async function hasRecentManualUsage({ groupId, userId, reg, sinceMs = 0 } = {}) 
 async function close() {
   CommandUsageLog = null
   indexesEnsured = false
+  activeDbPath = ""
   const db = sequelize
   sequelize = null
   if (db && typeof db.close === "function") {
@@ -288,10 +304,6 @@ export {
   listUsage,
   normalizeCommand,
   recordUsage,
-}
-
-function getDbPath() {
-  return DB_PATH
 }
 
 export default {
