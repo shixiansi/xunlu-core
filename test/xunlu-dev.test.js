@@ -257,6 +257,66 @@ test("server and bot commands return JSON payloads", async () => {
   }
 })
 
+test("learning-chat proactive-test uses injected stdio for status and backup errors", async () => {
+  const tempDir = path.join(repoRoot, "temp", "test")
+  const existingBackup = path.join(tempDir, "xunlu-dev-existing-backup.json")
+  const missingBackup = path.join(tempDir, "xunlu-dev-missing-backup.json")
+  fs.mkdirSync(tempDir, { recursive: true })
+  fs.writeFileSync(existingBackup, JSON.stringify({ ok: true }), "utf8")
+  fs.rmSync(missingBackup, { force: true })
+
+  try {
+    const status = await runCli([
+      "learning-chat",
+      "proactive-test",
+      "status",
+      "--group",
+      "123456",
+      "--backup",
+      existingBackup,
+      "--json",
+    ])
+    assert.equal(status.status, 0)
+    assert.equal(status.stderr, "")
+    const statusData = JSON.parse(status.stdout)
+    assert.equal(statusData.ok, true)
+    assert.equal(statusData.action, "status")
+    assert.equal(statusData.backupPath, existingBackup)
+    assert.equal(statusData.backupExists, true)
+
+    const prepare = await runCli([
+      "learning-chat",
+      "proactive-test",
+      "prepare",
+      "--backup",
+      existingBackup,
+      "--json",
+    ])
+    assert.equal(prepare.status, 2)
+    assert.equal(prepare.stdout, "")
+    assert.match(prepare.stderr, /backup already exists/)
+    assert.match(prepare.stderr, /Use --force to overwrite it/)
+
+    const restore = await runCli([
+      "learning-chat",
+      "proactive-test",
+      "restore",
+      "--backup",
+      missingBackup,
+      "--json",
+    ])
+    assert.equal(restore.status, 2)
+    assert.equal(restore.stdout, "")
+    assert.match(restore.stderr, /backup not found/)
+  } finally {
+    fs.rmSync(existingBackup, { force: true })
+    fs.rmSync(missingBackup, { force: true })
+    try {
+      fs.rmdirSync(tempDir)
+    } catch {}
+  }
+})
+
 test("invalid protocol, invalid event, and invalid task index return exit code 2", async () => {
   const invalidProtocol = await runCli([
     "simulate",
