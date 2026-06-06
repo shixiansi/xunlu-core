@@ -64,6 +64,45 @@ test("simulateIncomingEvent supports message/notice/request payloads", async () 
   })
 })
 
+test("simulateIncomingEvent can preserve explicit self message payloads", async () => {
+  await withHarness({ plugins: [fixturePlugin], protocol: "milky", selfId: 10000 }, async harness => {
+    const defaultRes = await simulateIncomingEvent({
+      bot: harness.bot,
+      protocol: "milky",
+      adapterType: "Mock",
+      event: "message.group.normal",
+      payload: { text: "fixture ping", group_id: 123, user_id: 10000 },
+      selfId: 10000,
+      bindEvent: harness.runtimeBot,
+    })
+    assert.equal(defaultRes.ok, true)
+    assert.equal(defaultRes.user_id, 10001)
+
+    for (const allowFlag of [
+      { allowSelfMessage: true },
+      { allow_self_message: true },
+      { __xunluAllowSelfMessage: true },
+    ]) {
+      const selfRes = await simulateIncomingEvent({
+        bot: harness.bot,
+        protocol: "milky",
+        adapterType: "Mock",
+        event: "message.group.normal",
+        payload: {
+          text: "fixture ping",
+          group_id: 123,
+          user_id: 10000,
+          ...allowFlag,
+        },
+        selfId: 10000,
+        bindEvent: harness.runtimeBot,
+      })
+      assert.equal(selfRes.ok, true)
+      assert.equal(selfRes.user_id, 10000)
+    }
+  })
+})
+
 test("resetCaptures keeps bot context state alive", async () => {
   await withHarness({ plugins: [fixturePlugin], protocol: "milky" }, async harness => {
     const start = await harness.emitMessage({

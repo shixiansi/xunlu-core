@@ -954,7 +954,8 @@ test("bilibili parser deduplicates normalized video resources across senders", a
           scene: "group",
           text: "B站解析\n链接：https://www.bilibili.com/video/BV1xx411c7mD",
           group_id: 991010,
-          user_id: 10002,
+          user_id: 10000,
+          allowSelfMessage: true,
         })
 
         assert.equal(first.ok, true)

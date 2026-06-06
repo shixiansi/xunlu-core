@@ -147,7 +147,14 @@ function buildCommonSyntheticEvent({
 
   const rawUserId =
     toInt(payload.user_id ?? payload.userId ?? payload.sender_id ?? payload.senderId) ?? defaultUserId
-  const userId = isMessage && String(rawUserId) === String(botSelfId) ? rawUserId + 1 : rawUserId
+  const allowSelfMessage =
+    payload.allowSelfMessage === true ||
+    payload.allow_self_message === true ||
+    payload.__xunluAllowSelfMessage === true
+  const userId =
+    isMessage && !allowSelfMessage && String(rawUserId) === String(botSelfId)
+      ? rawUserId + 1
+      : rawUserId
   const groupId = isGroup ? toInt(payload.group_id ?? payload.groupId ?? defaultGroupId) : undefined
   const peerId = isGroup ? groupId : userId
   const operatorId = toInt(payload.operator_id ?? payload.operatorId ?? userId)
