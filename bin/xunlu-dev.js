@@ -259,6 +259,14 @@ function fileExists(relPath) {
   return fs.existsSync(path.join(repoRoot, relPath))
 }
 
+function readPackageManifest() {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8"))
+  } catch (error) {
+    return { error: error?.message || String(error) }
+  }
+}
+
 function getLearningChatPaths() {
   const dataDir = path.join(repoRoot, "data")
   const learningChatDir = path.join(dataDir, "learning_chat")
@@ -478,15 +486,49 @@ async function devCheck() {
   const checks = []
 
   const requiredFiles = [
+    "package.json",
     "src/index.js",
     "src/Bot/index.js",
     "src/Bot/message/context.js",
     "src/Bot/message/universal-message.js",
+    "src/dev/plugin-test-harness.js",
+    "src/dev/protocol-mock.js",
     "bin/xunlu.js",
+    "bin/xunlu-dev.js",
     "bin/xunlubot.js",
+    "test/plugin-test-harness.test.js",
+    "test/protocol-api.test.js",
+    "test/xunlu-dev.test.js",
   ]
   for (const f of requiredFiles) {
     checks.push({ name: `file:${f}`, ok: fileExists(f) })
+  }
+
+  const manifest = readPackageManifest()
+  checks.push({
+    name: "package:manifest",
+    ok: !manifest?.error,
+    detail: manifest?.error,
+  })
+  const scripts = manifest?.scripts && typeof manifest.scripts === "object" ? manifest.scripts : {}
+  const requiredScripts = ["test:unit", "dev:check", "xunlu-dev"]
+  for (const scriptName of requiredScripts) {
+    checks.push({
+      name: `package:scripts:${scriptName}`,
+      ok: typeof scripts[scriptName] === "string" && scripts[scriptName].trim().length > 0,
+    })
+  }
+
+  const requiredUnitTests = [
+    "test/plugin-test-harness.test.js",
+    "test/protocol-api.test.js",
+    "test/xunlu-dev.test.js",
+  ]
+  for (const testFile of requiredUnitTests) {
+    checks.push({
+      name: `package:test:unit:${testFile}`,
+      ok: typeof scripts["test:unit"] === "string" && scripts["test:unit"].includes(testFile),
+    })
   }
 
   const cfg = await readBotCtlConfig()

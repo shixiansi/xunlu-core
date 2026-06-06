@@ -144,7 +144,15 @@ test("dev check --json returns structured check results", async () => {
   const data = JSON.parse(res.stdout)
   assert.equal(data.ok, true)
   assert.ok(Array.isArray(data.checks))
-  assert.ok(data.checks.some(item => item?.name === "file:src/index.js" && item?.ok === true))
+  const checkNames = new Set(data.checks.filter(item => item?.ok === true).map(item => item.name))
+  assert.ok(checkNames.has("file:src/index.js"))
+  assert.ok(checkNames.has("file:src/dev/plugin-test-harness.js"))
+  assert.ok(checkNames.has("file:src/dev/protocol-mock.js"))
+  assert.ok(checkNames.has("package:scripts:test:unit"))
+  assert.ok(checkNames.has("package:scripts:dev:check"))
+  assert.ok(checkNames.has("package:test:unit:test/plugin-test-harness.test.js"))
+  assert.ok(checkNames.has("package:test:unit:test/protocol-api.test.js"))
+  assert.ok(checkNames.has("package:test:unit:test/xunlu-dev.test.js"))
 })
 
 test("invalid protocol, invalid event, and invalid task index return exit code 2", async () => {
