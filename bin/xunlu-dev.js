@@ -1062,6 +1062,11 @@ Usage:
 
     if (sub === "check") {
       const result = await devCheck()
+      if (flags.json) {
+        stdout.write(`${JSON.stringify(result, null, 2)}\n`)
+        process.exitCode = result.ok ? 0 : 1
+        return
+      }
       console.log(formatCheckReport(result))
       process.exitCode = result.ok ? 0 : 1
       return
