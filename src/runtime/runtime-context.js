@@ -22,11 +22,10 @@ class RuntimeEnvFacade {
 export class RuntimeContext {
   constructor(options = {}) {
     this.paths = createRuntimePaths(options)
-    this.paths.ensureRuntimeLayout()
-    this.config = createRuntimeConfigManager({
-      rootDir: this.paths.rootDir,
+    this.configOptions = {
       isWatcher: options.isWatcher,
-    })
+    }
+    this.configManager = null
     this.env = new RuntimeEnvFacade(this)
   }
 
@@ -46,12 +45,31 @@ export class RuntimeContext {
     return this.paths.rootPath
   }
 
+  get config() {
+    return this.getConfigManager()
+  }
+
+  getConfigManager({ create = true } = {}) {
+    if (!this.configManager && create) {
+      this.configManager = createRuntimeConfigManager({
+        rootDir: this.paths.rootDir,
+        isWatcher: this.configOptions.isWatcher,
+      })
+    }
+    return this.configManager
+  }
+
   ensureRuntimeLayout() {
     return this.paths.ensureRuntimeLayout()
   }
 
+  cleanupConfig() {
+    this.configManager?.cleanup()
+    this.configManager = null
+  }
+
   cleanup() {
-    this.config.cleanup()
+    this.cleanupConfig()
   }
 }
 

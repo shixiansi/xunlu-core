@@ -8,7 +8,7 @@ function getConfigManager() {
 }
 
 function getExistingConfigManager() {
-  return getCurrentRuntimeContext()?.config || null
+  return getCurrentRuntimeContext()?.getConfigManager?.({ create: false }) || null
 }
 
 const cfgTarget = {}
