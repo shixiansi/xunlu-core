@@ -8,8 +8,16 @@ const __dirname = path.dirname(__filename)
 const repoRoot = path.resolve(__dirname, "..")
 let importNonce = 0
 
-function printHelp() {
-  console.log(`
+function writeLine(stream, value = "") {
+  stream.write(`${value}\n`)
+}
+
+function writeJson(stream, value) {
+  writeLine(stream, JSON.stringify(value, null, 2))
+}
+
+function printHelp(stdout = process.stdout) {
+  writeLine(stdout, `
 xunlu-dev (dev tools)
 
 Usage:
@@ -321,20 +329,20 @@ function writeJsonFile(filePath, data) {
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf8")
 }
 
-function printJsonOrSummary(data, { json = false } = {}) {
+function printJsonOrSummary(data, { json = false, stdout = process.stdout } = {}) {
   if (json) {
-    console.log(JSON.stringify(data, null, 2))
+    writeJson(stdout, data)
     return
   }
 
   for (const [key, value] of Object.entries(data || {})) {
     if (value === undefined || value === null || value === "") continue
     if (typeof value === "object") {
-      console.log(`${key}:`)
-      console.log(JSON.stringify(value, null, 2))
+      writeLine(stdout, `${key}:`)
+      writeJson(stdout, value)
       continue
     }
-    console.log(`${key}: ${value}`)
+    writeLine(stdout, `${key}: ${value}`)
   }
 }
 
@@ -387,14 +395,17 @@ async function getLearningChatStatus(flags = {}) {
   return result
 }
 
-async function prepareLearningChatProactiveTest(flags = {}) {
+async function prepareLearningChatProactiveTest(flags = {}, io = {}) {
+  const stdout = io?.stdout || process.stdout
+  const stderr = io?.stderr || process.stderr
   const paths = getLearningChatPaths()
   const groupId = normalizeLearningChatGroupId(flags.group || flags.group_id)
   const backupPath = flags.backup ? path.resolve(repoRoot, String(flags.backup)) : paths.backupPath
   const json = Boolean(flags.json)
 
   if (fs.existsSync(backupPath) && !flags.force) {
-    console.error(
+    writeLine(
+      stderr,
       `[xunlu-dev] backup already exists: ${backupPath}\nUse --force to overwrite it, or run restore first.`,
     )
     process.exitCode = 2
@@ -433,16 +444,18 @@ async function prepareLearningChatProactiveTest(flags = {}) {
     restoreHint: `node ./bin/xunlu-dev.js learning-chat proactive-test restore --backup "${backupPath}"`,
   }
 
-  printJsonOrSummary(result, { json })
+  printJsonOrSummary(result, { json, stdout })
 }
 
-async function restoreLearningChatProactiveTest(flags = {}) {
+async function restoreLearningChatProactiveTest(flags = {}, io = {}) {
+  const stdout = io?.stdout || process.stdout
+  const stderr = io?.stderr || process.stderr
   const paths = getLearningChatPaths()
   const backupPath = flags.backup ? path.resolve(repoRoot, String(flags.backup)) : paths.backupPath
   const json = Boolean(flags.json)
 
   if (!fs.existsSync(backupPath)) {
-    console.error(`[xunlu-dev] backup not found: ${backupPath}`)
+    writeLine(stderr, `[xunlu-dev] backup not found: ${backupPath}`)
     process.exitCode = 2
     return
   }
@@ -451,7 +464,7 @@ async function restoreLearningChatProactiveTest(flags = {}) {
   try {
     backup = JSON.parse(fs.readFileSync(backupPath, "utf8"))
   } catch (err) {
-    console.error(`[xunlu-dev] failed to read backup: ${err?.message || String(err)}`)
+    writeLine(stderr, `[xunlu-dev] failed to read backup: ${err?.message || String(err)}`)
     process.exitCode = 1
     return
   }
@@ -479,7 +492,7 @@ async function restoreLearningChatProactiveTest(flags = {}) {
     backupPath,
     backupKept: keepBackup,
   }
-  printJsonOrSummary(result, { json })
+  printJsonOrSummary(result, { json, stdout })
 }
 
 async function devCheck() {
@@ -694,13 +707,13 @@ function printSimulationResults({ targets, results, jsonOut, stdout = process.st
 
   if (targets.length === 1) {
     const key = targets[0]?.key
-    console.log(JSON.stringify(results[key], null, 2))
+    writeJson(stdout, results[key])
     return
   }
 
   for (const target of targets) {
-    console.log(`=== ${target.key} ===`)
-    console.log(JSON.stringify(results[target.key], null, 2))
+    writeLine(stdout, `=== ${target.key} ===`)
+    writeJson(stdout, results[target.key])
   }
 }
 
@@ -778,7 +791,7 @@ export async function main(argv = process.argv.slice(2), io = {}) {
   const stdout = io?.stdout || process.stdout
   const stderr = io?.stderr || process.stderr
   if (!argv.length || argv.includes("--help") || argv[0] === "help") {
-    printHelp()
+    printHelp(stdout)
     return
   }
 
@@ -901,7 +914,7 @@ export async function main(argv = process.argv.slice(2), io = {}) {
       return
     } catch (error) {
       process.exitCode = error?.exitCode ?? 1
-      console.error(error?.message || String(error))
+      writeLine(stderr, error?.message || String(error))
       return
     } finally {
       await cleanupRuntime()
@@ -923,9 +936,9 @@ export async function main(argv = process.argv.slice(2), io = {}) {
       const outAbs = path.resolve(repoRoot, output)
       ensureParentDir(outAbs)
       fs.writeFileSync(outAbs, tree, "utf8")
-      console.log(`[xunlu-dev] wrote tree to ${output}`)
+      writeLine(stdout, `[xunlu-dev] wrote tree to ${output}`)
     } else {
-      console.log(tree)
+      writeLine(stdout, tree)
     }
     return
   }
@@ -934,7 +947,7 @@ export async function main(argv = process.argv.slice(2), io = {}) {
     const { flags, positional } = parseArgs(rest)
     const sub = positional[0] || "list"
     if (sub !== "list") {
-      console.error(`[xunlu-dev] unknown plugins subcommand: ${sub}`)
+      writeLine(stderr, `[xunlu-dev] unknown plugins subcommand: ${sub}`)
       process.exitCode = 2
       return
     }
@@ -944,10 +957,10 @@ export async function main(argv = process.argv.slice(2), io = {}) {
       return
     }
     if (!list.length) {
-      console.log("(no plugins found)")
+      writeLine(stdout, "(no plugins found)")
       return
     }
-    list.forEach(p => console.log(p))
+    list.forEach(p => writeLine(stdout, p))
     return
   }
 
@@ -970,13 +983,13 @@ export async function main(argv = process.argv.slice(2), io = {}) {
     }
 
     if (!resolvedAction) {
-      console.error(`[xunlu-dev] unknown learning-chat command: ${commandChain || "(empty)"}`)
+      writeLine(stderr, `[xunlu-dev] unknown learning-chat command: ${commandChain || "(empty)"}`)
       process.exitCode = 2
       return
     }
 
     if (resolvedAction === "help") {
-      console.log(`
+      writeLine(stdout, `
 xunlu-dev learning-chat proactive-test
 
 Usage:
@@ -994,19 +1007,19 @@ Examples:
 
     if (resolvedAction === "status") {
       const result = await getLearningChatStatus(flags)
-      printJsonOrSummary(result, { json: Boolean(flags.json) })
+      printJsonOrSummary(result, { json: Boolean(flags.json), stdout })
       return
     }
     if (resolvedAction === "prepare") {
-      await prepareLearningChatProactiveTest(flags)
+      await prepareLearningChatProactiveTest(flags, { stdout, stderr })
       return
     }
     if (resolvedAction === "restore") {
-      await restoreLearningChatProactiveTest(flags)
+      await restoreLearningChatProactiveTest(flags, { stdout, stderr })
       return
     }
 
-    console.error(`[xunlu-dev] unknown learning-chat proactive-test action: ${resolvedAction}`)
+    writeLine(stderr, `[xunlu-dev] unknown learning-chat proactive-test action: ${resolvedAction}`)
     process.exitCode = 2
     return
   }
@@ -1016,7 +1029,7 @@ Examples:
     const { flags, positional } = parseArgs(rest.slice(1))
     const baseUrl = String(flags.url || "http://localhost:3000").replace(/\/+$/, "")
     if (!sub || sub === "help") {
-      console.log(`
+      writeLine(stdout, `
 xunlu-dev server
 
 Usage:
@@ -1033,7 +1046,7 @@ Usage:
     if (sub === "event") {
       const jsonFile = positional[0]
       if (!jsonFile) {
-        console.error("[xunlu-dev] server event requires <jsonFile>")
+        writeLine(stderr, "[xunlu-dev] server event requires <jsonFile>")
         process.exitCode = 2
         return
       }
@@ -1043,7 +1056,7 @@ Usage:
       stdout.write(`${JSON.stringify(res, null, 2)}\n`)
       return
     }
-    console.error(`[xunlu-dev] unknown server subcommand: ${sub}`)
+    writeLine(stderr, `[xunlu-dev] unknown server subcommand: ${sub}`)
     process.exitCode = 2
     return
   }
@@ -1056,7 +1069,7 @@ Usage:
     const token = flags.token || cfg.token || ""
 
     if (!sub || sub === "help") {
-      console.log(`
+      writeLine(stdout, `
 xunlu-dev bot
 
 Usage:
@@ -1081,7 +1094,7 @@ Usage:
       return
     }
 
-    console.error(`[xunlu-dev] unknown bot subcommand: ${sub}`)
+    writeLine(stderr, `[xunlu-dev] unknown bot subcommand: ${sub}`)
     process.exitCode = 2
     return
   }
@@ -1103,7 +1116,7 @@ Usage:
       const outAbs = path.resolve(repoRoot, output)
       ensureParentDir(outAbs)
       fs.writeFileSync(outAbs, tree, "utf8")
-      console.log(`[xunlu-dev] wrote dev tree to ${output}`)
+      writeLine(stdout, `[xunlu-dev] wrote dev tree to ${output}`)
       return
     }
 
@@ -1114,7 +1127,7 @@ Usage:
         process.exitCode = result.ok ? 0 : 1
         return
       }
-      console.log(formatCheckReport(result))
+      writeLine(stdout, formatCheckReport(result))
       process.exitCode = result.ok ? 0 : 1
       return
     }
@@ -1160,11 +1173,11 @@ ${formatCheckReport(check)}
       const outAbs = path.resolve(repoRoot, output)
       ensureParentDir(outAbs)
       fs.writeFileSync(outAbs, content, "utf8")
-      console.log(`[xunlu-dev] wrote report template to ${output}`)
+      writeLine(stdout, `[xunlu-dev] wrote report template to ${output}`)
       return
     }
 
-    console.log(`
+    writeLine(stdout, `
 xunlu-dev dev
 
 Usage:
@@ -1175,8 +1188,8 @@ Usage:
     return
   }
 
-  console.error(`[xunlu-dev] unknown command: ${cmd}`)
-  printHelp()
+  writeLine(stderr, `[xunlu-dev] unknown command: ${cmd}`)
+  printHelp(stdout)
   process.exitCode = 2
 }
 

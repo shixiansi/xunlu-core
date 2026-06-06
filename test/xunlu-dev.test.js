@@ -185,6 +185,24 @@ test("plugins list --json returns structured plugin names", async () => {
   assert.ok(data.plugins.includes("douyin"))
 })
 
+test("help tree and error paths use injected stdio", async () => {
+  const help = await runCli(["--help"])
+  assert.equal(help.status, 0)
+  assert.match(help.stdout, /xunlu-dev \(dev tools\)/)
+  assert.match(help.stdout, /Usage:/)
+  assert.equal(help.stderr, "")
+
+  const tree = await runCli(["tree", "--path", "src/dev", "--max-depth", "1"])
+  assert.equal(tree.status, 0)
+  assert.match(tree.stdout, /plugin-test-harness\.js/)
+  assert.equal(tree.stderr, "")
+
+  const invalid = await runCli(["plugins", "bad-subcommand"])
+  assert.equal(invalid.status, 2)
+  assert.equal(invalid.stdout, "")
+  assert.match(invalid.stderr, /unknown plugins subcommand: bad-subcommand/)
+})
+
 test("server and bot commands return JSON payloads", async () => {
   const calls = []
   const restore = useFetchMock(async ({ url, options }) => {
