@@ -12,15 +12,21 @@ const PBKDF2_DIGEST = "sha256"
 
 export const WEBUI_COOKIE_NAME = "xunlu_webui_token"
 
-const DATA_DIR = path.resolve(env.RootPath, "data", "webui")
-const CONFIG_PATH = path.join(DATA_DIR, "config.yaml")
-
 let cached = null
+let cachedConfigPath = ""
 let saving = false
 let writeQueue = Promise.resolve()
 
+export function getWebuiDataDir() {
+  return path.resolve(env.RootPath, "data", "webui")
+}
+
+export function getWebuiConfigPath() {
+  return path.join(getWebuiDataDir(), "config.yaml")
+}
+
 function ensureDir() {
-  fs.mkdirSync(DATA_DIR, { recursive: true })
+  fs.mkdirSync(getWebuiDataDir(), { recursive: true })
 }
 
 function toNumber(value, fallback) {
@@ -102,15 +108,16 @@ function normalizeConfig(raw) {
 }
 
 function readConfigFromDisk() {
+  const configPath = getWebuiConfigPath()
   ensureDir()
-  if (!fs.existsSync(CONFIG_PATH)) {
+  if (!fs.existsSync(configPath)) {
     const init = defaultConfig()
-    fs.writeFileSync(CONFIG_PATH, YAML.stringify(init), "utf8")
+    fs.writeFileSync(configPath, YAML.stringify(init), "utf8")
     return init
   }
 
   try {
-    const raw = fs.readFileSync(CONFIG_PATH, "utf8")
+    const raw = fs.readFileSync(configPath, "utf8")
     const parsed = raw ? YAML.parse(raw) : null
     return normalizeConfig(parsed)
   } catch {
@@ -119,11 +126,12 @@ function readConfigFromDisk() {
 }
 
 async function saveConfigToDisk(nextCfg) {
+  const configPath = getWebuiConfigPath()
   writeQueue = writeQueue.then(async () => {
     ensureDir()
     saving = true
     try {
-      fs.writeFileSync(CONFIG_PATH, YAML.stringify(nextCfg), "utf8")
+      fs.writeFileSync(configPath, YAML.stringify(nextCfg), "utf8")
     } finally {
       saving = false
     }
@@ -132,15 +140,23 @@ async function saveConfigToDisk(nextCfg) {
   await writeQueue
 }
 
-export function getWebuiConfig() {
-  if (!cached) cached = readConfigFromDisk()
+function getCachedConfigForCurrentPath() {
+  return cached && cachedConfigPath === getWebuiConfigPath() ? cached : null
+}
+
+function setCachedConfig(nextCfg) {
+  cached = nextCfg
+  cachedConfigPath = getWebuiConfigPath()
   return cached
 }
 
+export function getWebuiConfig() {
+  return getCachedConfigForCurrentPath() || setCachedConfig(readConfigFromDisk())
+}
+
 export async function reloadWebuiConfig() {
-  if (saving) return cached || getWebuiConfig()
-  cached = readConfigFromDisk()
-  return cached
+  if (saving) return getCachedConfigForCurrentPath() || getWebuiConfig()
+  return setCachedConfig(readConfigFromDisk())
 }
 
 export function getSafeWebuiConfig() {
@@ -230,7 +246,7 @@ export async function updateWebuiAuth({ username, password, rotate_token_secret,
     cfg.ui.title = String(title || "").trim() || cfg.ui.title
   }
 
-  cached = normalizeConfig(cfg)
+  cached = setCachedConfig(normalizeConfig(cfg))
   await saveConfigToDisk(cached)
   return getSafeWebuiConfig()
 }
@@ -285,8 +301,4 @@ export function requireWebuiAuth(req, res, next) {
 
   req.user = session
   next()
-}
-
-export function getWebuiConfigPath() {
-  return CONFIG_PATH
 }
