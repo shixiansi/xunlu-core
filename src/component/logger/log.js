@@ -72,6 +72,110 @@ function setLoggerField(target, key, value) {
   }
 }
 
+function copyLoggerFields(source, { skipLogger = false } = {}) {
+  const target = {}
+  if (!source || (typeof source !== "object" && typeof source !== "function")) return target
+
+  for (const key of Reflect.ownKeys(source)) {
+    if (skipLogger && key === "logger") continue
+
+    try {
+      const desc = Object.getOwnPropertyDescriptor(source, key)
+      if (!desc) continue
+
+      let value
+      if (Object.prototype.hasOwnProperty.call(desc, "value")) {
+        value = desc.value
+      } else if (typeof desc.get === "function") {
+        value = desc.get.call(source)
+      } else {
+        continue
+      }
+
+      Object.defineProperty(target, key, {
+        configurable: true,
+        enumerable: desc.enumerable ?? true,
+        writable: true,
+        value,
+      })
+    } catch {
+      // Ignore unreadable compatibility fields from foreign logger implementations.
+    }
+  }
+
+  return target
+}
+
+function installLoggerColors(targetLogger, colors = chalk) {
+  if (!targetLogger || (typeof targetLogger !== "object" && typeof targetLogger !== "function")) {
+    return false
+  }
+
+  return [
+    setLoggerField(targetLogger, "chalk", colors),
+    setLoggerField(targetLogger, "red", colors.red),
+    setLoggerField(targetLogger, "green", colors.green),
+    setLoggerField(targetLogger, "yellow", colors.yellow),
+    setLoggerField(targetLogger, "blue", colors.blue),
+    setLoggerField(targetLogger, "magenta", colors.magenta),
+    setLoggerField(targetLogger, "cyan", colors.cyan),
+  ].every(Boolean)
+}
+
+export function applyLoggerColors(targetLogger, colors = chalk) {
+  installLoggerColors(targetLogger, colors)
+  return targetLogger
+}
+
+function installLoggerFacadeFields(targetLogger, levelMethods, colors) {
+  const results = []
+
+  for (const [level, fn] of Object.entries(levelMethods)) {
+    results.push(setLoggerField(targetLogger, level, fn))
+  }
+
+  const nestedLogger =
+    targetLogger.logger && typeof targetLogger.logger === "object" ? targetLogger.logger : {}
+
+  for (const [level, fn] of Object.entries(levelMethods)) {
+    results.push(setLoggerField(nestedLogger, level, (...args) => fn(...args)))
+  }
+
+  if (typeof targetLogger.log !== "function") {
+    results.push(setLoggerField(targetLogger, "log", (...args) => targetLogger.info(...args)))
+  }
+
+  results.push(setLoggerField(targetLogger, "logger", nestedLogger))
+  results.push(installLoggerColors(targetLogger, colors))
+
+  return results.every(Boolean)
+}
+
+function buildFallbackLoggerFacade(previousLogger) {
+  const targetLogger = copyLoggerFields(previousLogger, { skipLogger: true })
+  const nestedLogger = copyLoggerFields(previousLogger?.logger)
+  targetLogger.logger = nestedLogger
+  return targetLogger
+}
+
+export function createLoggerFacade({
+  previousLogger = null,
+  levelMethods = {},
+  colors = chalk,
+} = {}) {
+  let targetLogger =
+    previousLogger && (typeof previousLogger === "object" || typeof previousLogger === "function")
+      ? previousLogger
+      : {}
+
+  if (!installLoggerFacadeFields(targetLogger, levelMethods, colors)) {
+    targetLogger = buildFallbackLoggerFacade(previousLogger)
+    installLoggerFacadeFields(targetLogger, levelMethods, colors)
+  }
+
+  return targetLogger
+}
+
 /**
  * 设置日志样式
  */
@@ -131,7 +235,6 @@ export default function setLog() {
     (typeof globalThis.logger === "object" || typeof globalThis.logger === "function")
       ? globalThis.logger
       : null
-  const targetLogger = previousLogger || {}
 
   const levelMethods = {
     trace() {
@@ -158,35 +261,11 @@ export default function setLog() {
     },
   }
 
-  /* eslint-disable no-useless-call */
   /** 全局变量 logger */
-  for (const [level, fn] of Object.entries(levelMethods)) {
-    setLoggerField(targetLogger, level, fn)
-  }
-
-  const nestedLogger =
-    targetLogger.logger && typeof targetLogger.logger === "object" ? targetLogger.logger : {}
-
-  for (const [level, fn] of Object.entries(levelMethods)) {
-    setLoggerField(nestedLogger, level, (...args) => fn(...args))
-  }
-
-  if (typeof targetLogger.log !== "function") {
-    setLoggerField(targetLogger, "log", (...args) => targetLogger.info(...args))
-  }
-
-  setLoggerField(targetLogger, "logger", nestedLogger)
+  const targetLogger = createLoggerFacade({
+    previousLogger,
+    levelMethods,
+  })
   global.logger = targetLogger
-
-  logColor()
-}
-
-function logColor() {
-  setLoggerField(logger, "chalk", chalk)
-  setLoggerField(logger, "red", chalk.red)
-  setLoggerField(logger, "green", chalk.green)
-  setLoggerField(logger, "yellow", chalk.yellow)
-  setLoggerField(logger, "blue", chalk.blue)
-  setLoggerField(logger, "magenta", chalk.magenta)
-  setLoggerField(logger, "cyan", chalk.cyan)
+  return targetLogger
 }
