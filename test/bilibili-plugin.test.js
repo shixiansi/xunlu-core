@@ -920,6 +920,108 @@ test("bilibili parser deduplicates repeated video link events", async () => {
   )
 })
 
+test("bilibili parser deduplicates short and expanded video links by bvid", async () => {
+  let completeUrlCalls = 0
+  let videoInfoCalls = 0
+  const savedPaths = []
+
+  await withPatchedMethods(
+    Bili,
+    {
+      async getCompleteUrl() {
+        completeUrlCalls += 1
+        return "https://www.bilibili.com/video/BV1xx411c7mD"
+      },
+      async getVideoInfo() {
+        videoInfoCalls += 1
+        return {
+          bvid: "BV1xx411c7mD",
+          ctime: 1710000000,
+          pic: "https://example.com/video-cover.jpg",
+          title: "test video title",
+          desc: "test video desc",
+          duration: 123,
+          owner: {
+            name: "test uploader",
+          },
+          stat: {},
+        }
+      },
+      async getQnVideo() {
+        return {
+          qn: 80,
+          audio: "https://example.com/audio.mp3",
+          duration: 123,
+          audioBandwidth: 128000,
+          videoStreams: [
+            {
+              qn: 80,
+              url: "https://example.com/video.mp4",
+              bandwidth: 800000,
+            },
+          ],
+        }
+      },
+    },
+    async () => {
+      await withPatchedMethods(
+        ffmpeg,
+        {
+          VideoComposite(_videoPath, _audioPath, outputPath, suc) {
+            fs.writeFileSync(outputPath, Buffer.from("fake-video"))
+            void suc()
+          },
+        },
+        async () => {
+          await withPatchedMethods(
+            Download.prototype,
+            {
+              async downloadFile(_url, savePath) {
+                savedPaths.push(savePath)
+                const full = path.resolve(repoRoot, savePath)
+                fs.mkdirSync(path.dirname(full), { recursive: true })
+                fs.writeFileSync(full, Buffer.from("fake-media"))
+                return true
+              },
+            },
+            async () => {
+              await withHarness({}, async harness => {
+                const first = await harness.emitMessage({
+                  scene: "group",
+                  text: "https://b23.tv/short123",
+                  group_id: 991011,
+                  user_id: 10001,
+                })
+                const second = await harness.emitMessage({
+                  scene: "group",
+                  text: "https://www.bilibili.com/video/BV1xx411c7mD",
+                  group_id: 991011,
+                  user_id: 10001,
+                })
+
+                const videoReplyCount = [...first.replies, ...second.replies].filter(item =>
+                  Array.isArray(item?.message)
+                    ? item.message.some(seg => String(seg?.type || "").toLowerCase() === "video")
+                    : String(item?.message?.type || "").toLowerCase() === "video",
+                ).length
+
+                assert.equal(first.ok, true)
+                assert.equal(second.ok, true)
+                assert.equal(completeUrlCalls, 1)
+                assert.equal(videoInfoCalls, 1)
+                assert.equal(videoReplyCount, 1)
+                assert.equal(second.replies.length, 0)
+                assert.ok(savedPaths.some(item => /temp\/bilibili\/video\/source_.*\.mp4$/i.test(String(item))))
+                assert.ok(savedPaths.some(item => /temp\/bilibili\/video\/source_.*\.mp3$/i.test(String(item))))
+              })
+            },
+          )
+        },
+      )
+    },
+  )
+})
+
 test("latest dynamic query falls back to text when render fails", async () => {
   await withPatchedMethods(
     Bili,

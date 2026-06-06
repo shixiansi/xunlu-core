@@ -123,6 +123,12 @@ function getBilibiliGroupList() {
   }
 }
 
+function isDuplicateBilibiliResource(ctx, resourceType, resourceId) {
+  const normalizedId = String(resourceId || "").trim()
+  if (!normalizedId) return false
+  return isDuplicateParseRequest(ctx, `${resourceType}:${normalizedId}`, { parser: "bilibili" })
+}
+
 async function ensureGroupCommand(ctx) {
   if (ctx?.isGroup && ctx?.group_id) return true
   await ctx.reply("请在群聊中使用该命令！")
@@ -153,6 +159,7 @@ async function handleBilibiliLiveUrl(ctx, inputUrl) {
   if (!roomId) {
     return await ctx.reply("未识别到有效的B站直播间链接，请确认链接后再试。")
   }
+  if (isDuplicateBilibiliResource(ctx, "live", roomId)) return true
 
   const roomInfo = await Bili.getRoomInfo(roomId)
   if (roomInfo?.code && roomInfo?.code != 0) {
@@ -410,6 +417,7 @@ export function register(bot) {
     if (!bv) {
       return await ctx.reply("未识别到有效的B站视频链接，请确认链接后再试。")
     }
+    if (isDuplicateBilibiliResource(ctx, "video", bv)) return true
 
     let videoInfo = await Bili.getVideoInfo(bv)
     if (videoInfo?.code && videoInfo?.code != 0) {
