@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import fs from "node:fs"
 import { Readable } from "node:stream"
 import path from "node:path"
 import test from "node:test"
@@ -67,6 +68,24 @@ function useAxiosMock(handler) {
   axios.post = async (url, body, options) => await handler({ url, body, options })
   return () => {
     axios.post = originalPost
+  }
+}
+
+function useFetchMock(handler) {
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async (url, options = {}) => {
+    const result = await handler({ url: String(url), options })
+    return {
+      status: result?.status ?? 200,
+      async text() {
+        if (typeof result?.body === "string") return result.body
+        return JSON.stringify(result?.body ?? result ?? {})
+      },
+    }
+  }
+  return () => {
+    if (originalFetch) globalThis.fetch = originalFetch
+    else delete globalThis.fetch
   }
 }
 
@@ -164,6 +183,60 @@ test("plugins list --json returns structured plugin names", async () => {
   assert.ok(Array.isArray(data.plugins))
   assert.ok(data.plugins.includes("bilibili"))
   assert.ok(data.plugins.includes("douyin"))
+})
+
+test("server and bot commands return JSON payloads", async () => {
+  const calls = []
+  const restore = useFetchMock(async ({ url, options }) => {
+    calls.push({ url, method: options?.method || "GET", body: options?.body, headers: options?.headers })
+    if (url.endsWith("/health")) return { body: { ok: true, name: "xunlu-server" } }
+    if (url.endsWith("/bot/event")) return { body: { ok: true, accepted: true } }
+    if (url.endsWith("/status")) return { body: { ok: true, status: "running" } }
+    if (url.endsWith("/restart")) return { body: { ok: true, action: "restart" } }
+    return { status: 404, body: { ok: false } }
+  })
+
+  const tempDir = path.join(repoRoot, "temp", "test")
+  const eventFile = path.join(tempDir, "xunlu-dev-event.json")
+  fs.mkdirSync(tempDir, { recursive: true })
+  fs.writeFileSync(eventFile, JSON.stringify({ post_type: "message", raw_message: "ping" }), "utf8")
+
+  try {
+    const health = await runCli(["server", "health", "--url", "http://example.test"])
+    assert.equal(health.status, 0)
+    assert.deepEqual(JSON.parse(health.stdout), { ok: true, name: "xunlu-server" })
+
+    const event = await runCli(["server", "event", eventFile, "--url", "http://example.test"])
+    assert.equal(event.status, 0)
+    assert.deepEqual(JSON.parse(event.stdout), { ok: true, accepted: true })
+
+    const status = await runCli(["bot", "status", "--url", "http://bot.test", "--token", "secret"])
+    assert.equal(status.status, 0)
+    assert.deepEqual(JSON.parse(status.stdout), { ok: true, status: "running" })
+
+    const restart = await runCli(["bot", "restart", "--url", "http://bot.test", "--token", "secret"])
+    assert.equal(restart.status, 0)
+    assert.deepEqual(JSON.parse(restart.stdout), { ok: true, action: "restart" })
+
+    assert.deepEqual(
+      calls.map(call => [call.method, call.url]),
+      [
+        ["GET", "http://example.test/health"],
+        ["POST", "http://example.test/bot/event"],
+        ["GET", "http://bot.test/status"],
+        ["POST", "http://bot.test/restart"],
+      ],
+    )
+    assert.equal(JSON.parse(calls[1].body).raw_message, "ping")
+    assert.equal(calls[2].headers.authorization, "Bearer secret")
+    assert.equal(calls[3].headers.authorization, "Bearer secret")
+  } finally {
+    restore()
+    fs.rmSync(eventFile, { force: true })
+    try {
+      fs.rmdirSync(tempDir)
+    } catch {}
+  }
 })
 
 test("invalid protocol, invalid event, and invalid task index return exit code 2", async () => {

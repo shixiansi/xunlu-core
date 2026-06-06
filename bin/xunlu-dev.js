@@ -1027,7 +1027,7 @@ Usage:
     }
     if (sub === "health") {
       const json = await httpGetJson(`${baseUrl}/health`)
-      console.log(JSON.stringify(json, null, 2))
+      stdout.write(`${JSON.stringify(json, null, 2)}\n`)
       return
     }
     if (sub === "event") {
@@ -1040,7 +1040,7 @@ Usage:
       const abs = path.resolve(repoRoot, jsonFile)
       const payload = JSON.parse(fs.readFileSync(abs, "utf8"))
       const res = await httpPostJson(`${baseUrl}/bot/event`, payload)
-      console.log(JSON.stringify(res, null, 2))
+      stdout.write(`${JSON.stringify(res, null, 2)}\n`)
       return
     }
     console.error(`[xunlu-dev] unknown server subcommand: ${sub}`)
@@ -1067,17 +1067,17 @@ Usage:
 
     if (sub === "status") {
       const json = await httpGetJson(`${baseUrl}/status`, { token })
-      console.log(JSON.stringify(json, null, 2))
+      stdout.write(`${JSON.stringify(json, null, 2)}\n`)
       return
     }
     if (sub === "restart" || sub === "reload") {
       const json = await httpPostJson(`${baseUrl}/restart`, {}, { token })
-      console.log(JSON.stringify(json, null, 2))
+      stdout.write(`${JSON.stringify(json, null, 2)}\n`)
       return
     }
     if (sub === "exit") {
       const json = await httpPostJson(`${baseUrl}/exit`, {}, { token })
-      console.log(JSON.stringify(json, null, 2))
+      stdout.write(`${JSON.stringify(json, null, 2)}\n`)
       return
     }
 
