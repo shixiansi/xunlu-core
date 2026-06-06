@@ -126,7 +126,10 @@ function getBilibiliGroupList() {
 function isDuplicateBilibiliResource(ctx, resourceType, resourceId) {
   const normalizedId = String(resourceId || "").trim()
   if (!normalizedId) return false
-  return isDuplicateParseRequest(ctx, `${resourceType}:${normalizedId}`, { parser: "bilibili" })
+  return isDuplicateParseRequest(ctx, `${resourceType}:${normalizedId}`, {
+    parser: "bilibili",
+    includeSender: false,
+  })
 }
 
 async function ensureGroupCommand(ctx) {

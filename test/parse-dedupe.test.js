@@ -63,6 +63,35 @@ test("parse dedupe keeps parser peer and sender scopes independent", () => {
   )
 })
 
+test("parse dedupe can share resource keys across senders in one peer", () => {
+  const ctx = {
+    group_id: 10001,
+    user_id: 20001,
+  }
+
+  assert.equal(
+    isDuplicateParseRequest(ctx, "video:BV1xx411c7mD", {
+      parser: "bilibili",
+      includeSender: false,
+    }),
+    false,
+  )
+  assert.equal(
+    isDuplicateParseRequest({ ...ctx, user_id: 20002 }, "video:BV1xx411c7mD", {
+      parser: "bilibili",
+      includeSender: false,
+    }),
+    true,
+  )
+  assert.equal(
+    isDuplicateParseRequest({ ...ctx, group_id: 10002 }, "video:BV1xx411c7mD", {
+      parser: "bilibili",
+      includeSender: false,
+    }),
+    false,
+  )
+})
+
 test("parse dedupe expires keys after ttl", () => {
   const ctx = {
     group_id: 10001,

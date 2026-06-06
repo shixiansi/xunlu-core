@@ -17,10 +17,11 @@ function normalizeUrlForDedupe(url = "") {
   }
 }
 
-function getParsePeerKey(ctx = {}) {
+function getParsePeerKey(ctx = {}, options = {}) {
   const scene = ctx?.group_id ? "group" : "private"
   const peerId = ctx?.group_id ?? ctx?.peer_id ?? ctx?.target_id ?? ctx?.user_id ?? ""
   const userId = ctx?.user_id ?? ctx?.sender_id ?? ""
+  if (options.includeSender === false) return `${scene}:${peerId}`
   return `${scene}:${peerId}:${userId}`
 }
 
@@ -39,7 +40,7 @@ export function isDuplicateParseRequest(ctx, url, options = {}) {
   pruneExpiredParseKeys(now)
 
   const ttlMs = Math.max(1, Number(options.ttlMs) || DEFAULT_PARSE_DEDUPE_TTL_MS)
-  const key = `${parser}:${getParsePeerKey(ctx)}:${normalizedUrl}`
+  const key = `${parser}:${getParsePeerKey(ctx, options)}:${normalizedUrl}`
   if (activeParseKeys.has(key)) return true
 
   activeParseKeys.set(key, now + ttlMs)

@@ -920,6 +920,52 @@ test("bilibili parser deduplicates repeated video link events", async () => {
   )
 })
 
+test("bilibili parser deduplicates normalized video resources across senders", async () => {
+  let videoInfoCalls = 0
+
+  await withPatchedMethods(
+    Bili,
+    {
+      async getVideoInfo() {
+        videoInfoCalls += 1
+        return {
+          bvid: "BV1xx411c7mD",
+          ctime: 1710000000,
+          pic: "https://example.com/video-cover.jpg",
+          title: "test video title",
+          desc: "test video desc",
+          duration: 1800,
+          owner: {
+            name: "test uploader",
+          },
+          stat: {},
+        }
+      },
+    },
+    async () => {
+      await withHarness({}, async harness => {
+        const first = await harness.emitMessage({
+          scene: "group",
+          text: "https://www.bilibili.com/video/BV1xx411c7mD",
+          group_id: 991010,
+          user_id: 10001,
+        })
+        const second = await harness.emitMessage({
+          scene: "group",
+          text: "B站解析\n链接：https://www.bilibili.com/video/BV1xx411c7mD",
+          group_id: 991010,
+          user_id: 10002,
+        })
+
+        assert.equal(first.ok, true)
+        assert.equal(second.ok, true)
+        assert.equal(videoInfoCalls, 1)
+        assert.equal(second.replies.length, 0)
+      })
+    },
+  )
+})
+
 test("bilibili parser deduplicates short and expanded video links by bvid", async () => {
   let completeUrlCalls = 0
   let videoInfoCalls = 0
