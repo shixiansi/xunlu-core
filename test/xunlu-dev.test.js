@@ -155,6 +155,17 @@ test("dev check --json returns structured check results", async () => {
   assert.ok(checkNames.has("package:test:unit:test/xunlu-dev.test.js"))
 })
 
+test("plugins list --json returns structured plugin names", async () => {
+  const res = await runCli(["plugins", "list", "--json"])
+  assert.equal(res.status, 0)
+
+  const data = JSON.parse(res.stdout)
+  assert.equal(data.ok, true)
+  assert.ok(Array.isArray(data.plugins))
+  assert.ok(data.plugins.includes("bilibili"))
+  assert.ok(data.plugins.includes("douyin"))
+})
+
 test("invalid protocol, invalid event, and invalid task index return exit code 2", async () => {
   const invalidProtocol = await runCli([
     "simulate",

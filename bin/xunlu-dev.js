@@ -931,13 +931,18 @@ export async function main(argv = process.argv.slice(2), io = {}) {
   }
 
   if (cmd === "plugins") {
-    const sub = rest[0] || "list"
+    const { flags, positional } = parseArgs(rest)
+    const sub = positional[0] || "list"
     if (sub !== "list") {
       console.error(`[xunlu-dev] unknown plugins subcommand: ${sub}`)
       process.exitCode = 2
       return
     }
     const list = listPlugins()
+    if (flags.json) {
+      stdout.write(`${JSON.stringify({ ok: true, plugins: list }, null, 2)}\n`)
+      return
+    }
     if (!list.length) {
       console.log("(no plugins found)")
       return
