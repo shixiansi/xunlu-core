@@ -6,7 +6,6 @@ import fetch from "node-fetch"
 import Download from "../../../utils/download.js"
 import env from "../../../lib/env.js"
 
-const TEMP_DIR = path.join(env.RootPath, "temp", "diange")
 const NETEASE_SEARCH_API = "https://music.163.com/api/search/get/web"
 const NETEASE_PLAYER_API = "https://interface3.music.163.com/api/song/enhance/player/url/v1"
 const QQ_SEARCH_API = "https://c.y.qq.com/soso/fcgi-bin/client_search_cp"
@@ -35,6 +34,10 @@ function buildQqHeaders() {
     "User-Agent":
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
   }
+}
+
+function getTempDir() {
+  return path.join(env.RootPath, "temp", "diange")
 }
 
 function formatArtists(song = {}) {
@@ -305,7 +308,7 @@ class MusicService {
     const audioUrl = await this.getSongAudioUrl(song)
     if (!audioUrl) throw new Error("未找到歌曲音频地址")
 
-    fs.mkdirSync(TEMP_DIR, { recursive: true })
+    fs.mkdirSync(getTempDir(), { recursive: true })
     const safeName = sanitizeFileName(`${song.id}_${song.name}`) || `song_${song.id}`
     const relativePath = path.posix.join("temp", "diange", `${safeName}.mp3`)
     await this.downloader.downloadFile(audioUrl, relativePath, {

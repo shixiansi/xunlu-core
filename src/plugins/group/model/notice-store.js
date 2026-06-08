@@ -3,9 +3,6 @@ import path from "node:path"
 
 import env from "../../../lib/env.js"
 
-const DATA_DIR = path.resolve(env.RootPath, "data", "group")
-const STORE_PATH = path.join(DATA_DIR, "notice-settings.json")
-
 const DEFAULT_SYSTEM = {
   notify_all_masters: false,
   cache_ttl_sec: 60,
@@ -33,8 +30,12 @@ const DEFAULT_GLOBAL = {
   friend_list_change: false,
 }
 
-function ensureDir() {
-  fs.mkdirSync(DATA_DIR, { recursive: true })
+function getNoticeStorePath() {
+  return path.resolve(env.RootPath, "data", "group", "notice-settings.json")
+}
+
+function ensureDir(storePath = getNoticeStorePath()) {
+  fs.mkdirSync(path.dirname(storePath), { recursive: true })
 }
 
 function defaultStore() {
@@ -58,12 +59,12 @@ function safeObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : null
 }
 
-function readStoreFromDisk() {
-  ensureDir()
-  if (!fs.existsSync(STORE_PATH)) return defaultStore()
+function readStoreFromDisk(storePath = getNoticeStorePath()) {
+  ensureDir(storePath)
+  if (!fs.existsSync(storePath)) return defaultStore()
 
   try {
-    const raw = fs.readFileSync(STORE_PATH, "utf8")
+    const raw = fs.readFileSync(storePath, "utf8")
     const data = raw ? JSON.parse(raw) : null
     if (!data || typeof data !== "object") return defaultStore()
 
@@ -83,18 +84,22 @@ function readStoreFromDisk() {
 }
 
 function saveStoreToDisk(store) {
-  ensureDir()
+  const storePath = getNoticeStorePath()
+  ensureDir(storePath)
   const payload = JSON.stringify(store, null, 2)
-  const tmpPath = `${STORE_PATH}.tmp`
+  const tmpPath = `${storePath}.tmp`
   fs.writeFileSync(tmpPath, payload, "utf8")
-  fs.renameSync(tmpPath, STORE_PATH)
+  fs.renameSync(tmpPath, storePath)
 }
 
 let cache = null
+let cachePath = ""
 
 export function loadNoticeStore() {
-  if (cache) return cache
-  cache = readStoreFromDisk()
+  const storePath = getNoticeStorePath()
+  if (cache && cachePath === storePath) return cache
+  cache = readStoreFromDisk(storePath)
+  cachePath = storePath
   return cache
 }
 

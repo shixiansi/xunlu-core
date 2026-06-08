@@ -10,15 +10,21 @@ const PBKDF2_ITERATIONS = 120_000
 const PBKDF2_KEYLEN = 32
 const PBKDF2_DIGEST = "sha256"
 
-const DATA_DIR = path.resolve(env.RootPath, "data", "learning_chat")
-const CONFIG_PATH = path.join(DATA_DIR, "config.yaml")
-
 let cached = null
+let cachedPath = ""
 let saving = false
 let writeQueue = Promise.resolve()
 
-function ensureDir() {
-  fs.mkdirSync(DATA_DIR, { recursive: true })
+function getDataDir() {
+  return path.resolve(env.RootPath, "data", "learning_chat")
+}
+
+export function getConfigPath() {
+  return path.join(getDataDir(), "config.yaml")
+}
+
+function ensureDir(configPath = getConfigPath()) {
+  fs.mkdirSync(path.dirname(configPath), { recursive: true })
 }
 
 function base64urlEncode(input) {
@@ -236,16 +242,16 @@ function normalizeConfig(raw) {
   return out
 }
 
-function readConfigFromDisk() {
-  ensureDir()
-  if (!fs.existsSync(CONFIG_PATH)) {
+function readConfigFromDisk(configPath = getConfigPath()) {
+  ensureDir(configPath)
+  if (!fs.existsSync(configPath)) {
     const init = defaultConfig()
-    fs.writeFileSync(CONFIG_PATH, YAML.stringify(init), "utf8")
+    fs.writeFileSync(configPath, YAML.stringify(init), "utf8")
     return init
   }
 
   try {
-    const raw = fs.readFileSync(CONFIG_PATH, "utf8")
+    const raw = fs.readFileSync(configPath, "utf8")
     const parsed = raw ? YAML.parse(raw) : null
     const normalized = normalizeConfig(parsed)
     return normalized
@@ -255,12 +261,12 @@ function readConfigFromDisk() {
   }
 }
 
-async function saveConfigToDisk(nextCfg) {
+async function saveConfigToDisk(nextCfg, configPath = getConfigPath()) {
   writeQueue = writeQueue.then(async () => {
-    ensureDir()
+    ensureDir(configPath)
     saving = true
     try {
-      fs.writeFileSync(CONFIG_PATH, YAML.stringify(nextCfg), "utf8")
+      fs.writeFileSync(configPath, YAML.stringify(nextCfg), "utf8")
     } finally {
       saving = false
     }
@@ -268,18 +274,20 @@ async function saveConfigToDisk(nextCfg) {
   await writeQueue
 }
 
-export function getConfigPath() {
-  return CONFIG_PATH
-}
-
 export function getConfig() {
-  if (!cached) cached = readConfigFromDisk()
+  const configPath = getConfigPath()
+  if (!cached || cachedPath !== configPath) {
+    cached = readConfigFromDisk(configPath)
+    cachedPath = configPath
+  }
   return cached
 }
 
 export async function reloadConfig() {
-  if (saving) return cached || getConfig()
-  cached = readConfigFromDisk()
+  const configPath = getConfigPath()
+  if (saving && cachedPath === configPath) return cached || getConfig()
+  cached = readConfigFromDisk(configPath)
+  cachedPath = configPath
   return cached
 }
 
@@ -410,7 +418,8 @@ export async function setGroupOverrides(groupId, patch = {}) {
   if (patch.block_users !== undefined) g.block_users = normalizeArray(patch.block_users)
 
   cached = normalizeConfig(cfg)
-  await saveConfigToDisk(cached)
+  cachedPath = getConfigPath()
+  await saveConfigToDisk(cached, cachedPath)
   return cached
 }
 
@@ -520,7 +529,8 @@ export async function updateGlobalConfig(patch = {}) {
   }
 
   cached = normalizeConfig(cfg)
-  await saveConfigToDisk(cached)
+  cachedPath = getConfigPath()
+  await saveConfigToDisk(cached, cachedPath)
   return cached
 }
 
@@ -537,6 +547,7 @@ export async function updateAuth({ username, password, rotate_token_secret } = {
   }
 
   cached = normalizeConfig(cfg)
-  await saveConfigToDisk(cached)
+  cachedPath = getConfigPath()
+  await saveConfigToDisk(cached, cachedPath)
   return cached
 }

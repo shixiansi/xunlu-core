@@ -3,14 +3,16 @@ import path from "node:path"
 
 import env from "../../../lib/env.js"
 
-const DATA_DIR = path.resolve(env.RootPath, "data", "chuo")
-const CONFIG_PATH = path.join(DATA_DIR, "config.json")
-
 let cachedConfig = null
 let cachedAt = 0
+let cachedPath = ""
 
-function ensureDir() {
-  fs.mkdirSync(DATA_DIR, { recursive: true })
+export function getChuoConfigPath() {
+  return path.resolve(env.RootPath, "data", "chuo", "config.json")
+}
+
+function ensureDir(configPath = getChuoConfigPath()) {
+  fs.mkdirSync(path.dirname(configPath), { recursive: true })
 }
 
 function normalizeConfig(raw) {
@@ -20,17 +22,17 @@ function normalizeConfig(raw) {
   }
 }
 
-function readConfigFromDisk() {
-  ensureDir()
+function readConfigFromDisk(configPath = getChuoConfigPath()) {
+  ensureDir(configPath)
 
-  if (!fs.existsSync(CONFIG_PATH)) {
+  if (!fs.existsSync(configPath)) {
     const init = { enabled: true }
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(init, null, 2), "utf8")
+    fs.writeFileSync(configPath, JSON.stringify(init, null, 2), "utf8")
     return init
   }
 
   try {
-    const raw = fs.readFileSync(CONFIG_PATH, "utf8")
+    const raw = fs.readFileSync(configPath, "utf8")
     const data = raw ? JSON.parse(raw) : null
     return normalizeConfig(data)
   } catch {
@@ -40,22 +42,22 @@ function readConfigFromDisk() {
 
 export function getChuoConfig({ ttlMs = 5000 } = {}) {
   const now = Date.now()
-  if (cachedConfig && now - cachedAt < ttlMs) return cachedConfig
-  cachedConfig = readConfigFromDisk()
+  const configPath = getChuoConfigPath()
+  if (cachedConfig && cachedPath === configPath && now - cachedAt < ttlMs) return cachedConfig
+  cachedConfig = readConfigFromDisk(configPath)
   cachedAt = now
+  cachedPath = configPath
   return cachedConfig
 }
 
 export function setChuoEnabled(enabled) {
-  ensureDir()
+  const configPath = getChuoConfigPath()
+  ensureDir(configPath)
   cachedConfig = {
     enabled: Boolean(enabled),
   }
   cachedAt = Date.now()
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(cachedConfig, null, 2), "utf8")
+  cachedPath = configPath
+  fs.writeFileSync(configPath, JSON.stringify(cachedConfig, null, 2), "utf8")
   return cachedConfig
-}
-
-export function getChuoConfigPath() {
-  return CONFIG_PATH
 }

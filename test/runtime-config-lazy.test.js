@@ -93,6 +93,62 @@ test("lib env root path access does not create runtime layout or config manager"
   }
 })
 
+test("plugin stores do not pin root paths at import time", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "xunlu-store-path-lazy-"))
+  const previousCwd = process.cwd()
+
+  try {
+    resetRuntimeContextForTests()
+    process.chdir(tempRoot)
+
+    const [
+      antiPhish,
+      chuoConfig,
+      fuduStore,
+      learningConfig,
+      learningDb,
+      qunDailyPush,
+      qunDailyStats,
+      douyinRuntime,
+    ] = await Promise.all([
+      import(`../src/plugins/anti-phish/model/store.js?lazy=${Date.now()}`),
+      import(`../src/plugins/chuo/model/config.js?lazy=${Date.now()}`),
+      import(`../src/plugins/fudu-ban/model/store.js?lazy=${Date.now()}`),
+      import(`../src/plugins/learning_chat/model/config.js?lazy=${Date.now()}`),
+      import(`../src/plugins/learning_chat/model/db.js?lazy=${Date.now()}`),
+      import(`../src/plugins/qun-daily/model/push-store.js?lazy=${Date.now()}`),
+      import(`../src/plugins/qun-daily/model/store.js?lazy=${Date.now()}`),
+      import(`../src/plugins/douyin/services/douyin-runtime.js?lazy=${Date.now()}`),
+    ])
+
+    assert.equal(fs.existsSync(path.join(tempRoot, "data")), false)
+    assert.equal(fs.existsSync(path.join(tempRoot, "temp")), false)
+    assert.equal(fs.existsSync(path.join(tempRoot, "config")), false)
+
+    assert.equal(antiPhish.getAntiPhishStorePath(), path.join(tempRoot, "data", "anti-phish.json"))
+    assert.equal(chuoConfig.getChuoConfigPath(), path.join(tempRoot, "data", "chuo", "config.json"))
+    assert.equal(fuduStore.getDbPath(), path.join(tempRoot, "data", "fudu-ban.json"))
+    assert.equal(learningConfig.getConfigPath(), path.join(tempRoot, "data", "learning_chat", "config.yaml"))
+    assert.equal(learningDb.getDbPath(), path.join(tempRoot, "data", "learning_chat", "learning_chat.sqlite"))
+    assert.equal(
+      qunDailyPush.getGroupPushStorePath(),
+      path.join(tempRoot, "data", "qun-daily", "push-settings.json"),
+    )
+    assert.equal(
+      qunDailyStats.getStatsFilePath("10001", "2026-06-08"),
+      path.join(tempRoot, "data", "qun-daily", "stats", "10001", "2026-06-08.json"),
+    )
+    assert.equal(douyinRuntime.getTempVideoDir(), path.join(tempRoot, "temp", "douyin", "video"))
+
+    assert.equal(fs.existsSync(path.join(tempRoot, "data")), false)
+    assert.equal(fs.existsSync(path.join(tempRoot, "temp")), false)
+  } finally {
+    process.chdir(previousCwd)
+    resetRuntimeContextForTests()
+    fs.rmSync(tempRoot, { recursive: true, force: true })
+  }
+})
+
 test("runtime config creates missing user config files on demand", () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "xunlu-config-lazy-"))
   const manager = createRuntimeConfigManager({ rootDir: tempRoot, isWatcher: false })

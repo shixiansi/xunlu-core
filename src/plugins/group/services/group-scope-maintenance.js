@@ -22,7 +22,9 @@ import {
 } from "../../scheduler/model/store.js"
 import { getClaimedSchedulerRuntime } from "../../scheduler/model/runtime.js"
 
-const STATE_FILE = path.join(getRuntimePaths().getPluginDataDir("group"), "group-scope-maintenance.json")
+function getStateFile() {
+  return path.join(getRuntimePaths().getPluginDataDir("group"), "group-scope-maintenance.json")
+}
 
 function ensureParentDir(filePath) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true })
@@ -33,16 +35,17 @@ function normalizeId(value) {
 }
 
 function readState() {
-  ensureParentDir(STATE_FILE)
+  const stateFile = getStateFile()
+  ensureParentDir(stateFile)
   try {
-    if (!fs.existsSync(STATE_FILE)) {
+    if (!fs.existsSync(stateFile)) {
       return {
         version: 1,
         owner_self_id: "",
         updated_at: 0,
       }
     }
-    const data = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"))
+    const data = JSON.parse(fs.readFileSync(stateFile, "utf8"))
     return {
       version: 1,
       owner_self_id: normalizeId(data?.owner_self_id),
@@ -58,9 +61,10 @@ function readState() {
 }
 
 function writeState(next = {}) {
-  ensureParentDir(STATE_FILE)
+  const stateFile = getStateFile()
+  ensureParentDir(stateFile)
   fs.writeFileSync(
-    STATE_FILE,
+    stateFile,
     JSON.stringify(
       {
         version: 1,

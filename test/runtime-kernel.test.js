@@ -235,3 +235,92 @@ test("RuntimeKernel registers only api service in api-only mode", () => {
   kernel.registerDefaultServices()
   assert.deepEqual(kernel.services.list(), ["api"])
 })
+
+test("RuntimeKernel rolls back started services and driver when startup fails", async () => {
+  const calls = []
+  const hadBot = Object.prototype.hasOwnProperty.call(globalThis, "Bot")
+  const originalBot = globalThis.Bot
+  const hadRuntimeBot = Object.prototype.hasOwnProperty.call(globalThis, "__xunlu_runtime_bot")
+  const originalRuntimeBot = globalThis.__xunlu_runtime_bot
+  const previousBot = { uin: 90000, nickname: "previous-bot" }
+  const previousRuntimeBot = { uin: 90001, nickname: "previous-runtime-bot" }
+  const runtimeBot = { uin: 10000, nickname: "runtime-bot" }
+
+  try {
+    globalThis.Bot = previousBot
+    globalThis.__xunlu_runtime_bot = previousRuntimeBot
+
+    const fakeDriver = {
+      async start() {
+        calls.push("driver:start")
+      },
+      async stop() {
+        calls.push("driver:stop")
+      },
+      getRuntimeBot() {
+        return runtimeBot
+      },
+      getBotCore() {
+        return {}
+      },
+    }
+
+    const kernel = new RuntimeKernel({
+      modeState: {
+        mode: "standalone-milky",
+        adapter: "milky",
+      },
+      context: {
+        ensureRuntimeLayout() {
+          calls.push("layout")
+        },
+      },
+      async loadRuntimeEnvironment() {
+        calls.push("environment")
+      },
+    })
+
+    kernel.createDriver = async () => fakeDriver
+    kernel.registerDefaultServices = () => {
+      kernel.services.register("ok", {
+        async start() {
+          calls.push("service:start:ok")
+        },
+        async stop() {
+          calls.push("service:stop:ok")
+        },
+      })
+      kernel.services.register("bad", {
+        async start() {
+          calls.push("service:start:bad")
+          throw new Error("service failed")
+        },
+        async stop() {
+          calls.push("service:stop:bad")
+        },
+      })
+    }
+
+    await assert.rejects(() => kernel.start(), /service failed/)
+
+    assert.equal(kernel.started, false)
+    assert.equal(kernel.driver, null)
+    assert.equal(kernel.facade, null)
+    assert.equal(globalThis.Bot, previousBot)
+    assert.equal(globalThis.__xunlu_runtime_bot, previousRuntimeBot)
+    assert.deepEqual(calls, [
+      "layout",
+      "environment",
+      "driver:start",
+      "service:start:ok",
+      "service:start:bad",
+      "service:stop:ok",
+      "driver:stop",
+    ])
+  } finally {
+    if (hadBot) globalThis.Bot = originalBot
+    else delete globalThis.Bot
+    if (hadRuntimeBot) globalThis.__xunlu_runtime_bot = originalRuntimeBot
+    else delete globalThis.__xunlu_runtime_bot
+  }
+})

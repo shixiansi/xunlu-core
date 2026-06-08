@@ -8,11 +8,26 @@ import {
   resolvePluginTempPath,
 } from "#utils"
 
-export const ROOT_PATH = getRuntimePaths().rootDir
-export const TEMP_DIR = resolvePluginTempPath("douyin")
-export const TEMP_VIDEO_DIR = resolvePluginTempPath("douyin", "video")
-export const BROWSER_PROFILE_ROOT = resolvePluginTempPath("douyin", "browser-profile")
-export const QR_IMAGE_PATH = resolvePluginTempPath("douyin", "login-qrcode.png")
+export function getRootPath() {
+  return getRuntimePaths().rootDir
+}
+
+export function getTempDir() {
+  return resolvePluginTempPath("douyin")
+}
+
+export function getTempVideoDir() {
+  return resolvePluginTempPath("douyin", "video")
+}
+
+export function getBrowserProfileRoot() {
+  return resolvePluginTempPath("douyin", "browser-profile")
+}
+
+export function getQrImagePath() {
+  return resolvePluginTempPath("douyin", "login-qrcode.png")
+}
+
 export const VIDEO_MAX_BYTES = 70 * 1024 * 1024
 export const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"

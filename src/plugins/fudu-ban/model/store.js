@@ -3,19 +3,20 @@ import path from "node:path"
 
 import env from "../../../lib/env.js"
 
-const DATA_DIR = path.resolve(env.RootPath, "data")
-const DB_PATH = path.join(DATA_DIR, "fudu-ban.json")
-
 function nowTs() {
   return Date.now()
 }
 
-function ensureDataDir() {
-  fs.mkdirSync(DATA_DIR, { recursive: true })
+function resolveDbPath() {
+  return path.resolve(env.RootPath, "data", "fudu-ban.json")
+}
+
+function ensureDataDir(dbPath = resolveDbPath()) {
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true })
 }
 
 export function getDbPath() {
-  return DB_PATH
+  return resolveDbPath()
 }
 
 function createDefaultDb() {
@@ -34,11 +35,12 @@ export function normalizeId(value) {
 }
 
 export function loadDb() {
-  ensureDataDir()
-  if (!fs.existsSync(DB_PATH)) return createDefaultDb()
+  const dbPath = resolveDbPath()
+  ensureDataDir(dbPath)
+  if (!fs.existsSync(dbPath)) return createDefaultDb()
 
   try {
-    const raw = fs.readFileSync(DB_PATH, "utf8")
+    const raw = fs.readFileSync(dbPath, "utf8")
     const data = raw ? JSON.parse(raw) : null
     if (!data || typeof data !== "object") return createDefaultDb()
     if (!data.groups || typeof data.groups !== "object") data.groups = {}
@@ -73,8 +75,9 @@ export function loadDb() {
 }
 
 export function saveDb(db) {
-  ensureDataDir()
-  fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2), "utf8")
+  const dbPath = resolveDbPath()
+  ensureDataDir(dbPath)
+  fs.writeFileSync(dbPath, JSON.stringify(db, null, 2), "utf8")
 }
 
 export function getOrCreateGroup(db, groupId) {

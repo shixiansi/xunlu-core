@@ -3,11 +3,12 @@ import path from "node:path"
 
 import env from "../../../lib/env.js"
 
-const DATA_DIR = path.resolve(env.RootPath, "data")
-const STORE_PATH = path.join(DATA_DIR, "anti-phish.json")
+export function getAntiPhishStorePath() {
+  return path.resolve(env.RootPath, "data", "anti-phish.json")
+}
 
-function ensureDir() {
-  fs.mkdirSync(DATA_DIR, { recursive: true })
+function ensureDir(storePath = getAntiPhishStorePath()) {
+  fs.mkdirSync(path.dirname(storePath), { recursive: true })
 }
 
 function normalizeDomain(input) {
@@ -35,40 +36,47 @@ function createDefaultStore() {
 }
 
 let cache = null
+let cachePath = ""
 
 export function loadStore() {
-  if (cache) return cache
-  ensureDir()
+  const storePath = getAntiPhishStorePath()
+  if (cache && cachePath === storePath) return cache
+  ensureDir(storePath)
 
-  if (!fs.existsSync(STORE_PATH)) {
+  if (!fs.existsSync(storePath)) {
     cache = createDefaultStore()
+    cachePath = storePath
     return cache
   }
 
   try {
-    const raw = fs.readFileSync(STORE_PATH, "utf8")
+    const raw = fs.readFileSync(storePath, "utf8")
     const parsed = raw ? JSON.parse(raw) : null
     if (!parsed || typeof parsed !== "object") {
       cache = createDefaultStore()
+      cachePath = storePath
       return cache
     }
     if (!parsed.blacklist || typeof parsed.blacklist !== "object") parsed.blacklist = {}
     if (!parsed.version) parsed.version = 1
     if (!parsed.updatedAt) parsed.updatedAt = Date.now()
     cache = parsed
+    cachePath = storePath
     return cache
   } catch {
     cache = createDefaultStore()
+    cachePath = storePath
     return cache
   }
 }
 
 function saveStore(store) {
-  ensureDir()
+  const storePath = getAntiPhishStorePath()
+  ensureDir(storePath)
   const payload = JSON.stringify(store, null, 2)
-  const tmpPath = `${STORE_PATH}.tmp`
+  const tmpPath = `${storePath}.tmp`
   fs.writeFileSync(tmpPath, payload, "utf8")
-  fs.renameSync(tmpPath, STORE_PATH)
+  fs.renameSync(tmpPath, storePath)
 }
 
 export function listBlacklist() {

@@ -1,9 +1,7 @@
 import fs from "node:fs"
 import path from "node:path"
 
-import { getRuntimePaths } from "../../../runtime/runtime-context.js"
-
-const DATA_ROOT = getRuntimePaths().getPluginDataDir("qun-daily", "stats")
+import env from "../../../lib/env.js"
 
 function pad(num) {
   return String(num).padStart(2, "0")
@@ -40,9 +38,13 @@ function ensureDir(dir) {
   return dir
 }
 
+function getStatsRoot() {
+  return path.resolve(env.RootPath, "data", "qun-daily", "stats")
+}
+
 export function getStatsFilePath(groupId, dateKey) {
   const gid = String(groupId || "").trim()
-  return path.join(DATA_ROOT, gid, `${dateKey}.json`)
+  return path.join(getStatsRoot(), gid, `${dateKey}.json`)
 }
 
 export function readDailyStats(groupId, dateKey) {

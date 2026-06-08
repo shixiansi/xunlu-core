@@ -3,9 +3,6 @@ import path from "node:path"
 
 import env from "../../../lib/env.js"
 
-const DATA_DIR = path.resolve(env.RootPath, "data")
-const STORE_PATH = path.join(DATA_DIR, "other-reaction.json")
-
 function defaultStore() {
   return {
     version: 1,
@@ -20,45 +17,56 @@ function normalizeUserId(uid) {
   return s
 }
 
-function ensureDir() {
-  fs.mkdirSync(DATA_DIR, { recursive: true })
+function getReactionStorePath() {
+  return path.resolve(env.RootPath, "data", "other-reaction.json")
+}
+
+function ensureDir(storePath = getReactionStorePath()) {
+  fs.mkdirSync(path.dirname(storePath), { recursive: true })
 }
 
 let cache = null
+let cachePath = ""
 
 export function loadReactionStore() {
-  if (cache) return cache
-  ensureDir()
+  const storePath = getReactionStorePath()
+  if (cache && cachePath === storePath) return cache
+  ensureDir(storePath)
 
-  if (!fs.existsSync(STORE_PATH)) {
+  if (!fs.existsSync(storePath)) {
     cache = defaultStore()
+    cachePath = storePath
     return cache
   }
 
   try {
-    const raw = fs.readFileSync(STORE_PATH, "utf8")
+    const raw = fs.readFileSync(storePath, "utf8")
     const data = raw ? JSON.parse(raw) : null
     if (!data || typeof data !== "object") {
       cache = defaultStore()
+      cachePath = storePath
       return cache
     }
     if (!data.users || typeof data.users !== "object") data.users = {}
     if (!data.version) data.version = 1
     if (!data.updatedAt) data.updatedAt = Date.now()
     cache = data
+    cachePath = storePath
     return cache
   } catch {
     cache = defaultStore()
+    cachePath = storePath
     return cache
   }
 }
 
 function saveReactionStore(store) {
-  ensureDir()
+  const storePath = getReactionStorePath()
+  ensureDir(storePath)
   const payload = JSON.stringify(store, null, 2)
-  const tmpPath = `${STORE_PATH}.tmp`
+  const tmpPath = `${storePath}.tmp`
   fs.writeFileSync(tmpPath, payload, "utf8")
-  fs.renameSync(tmpPath, STORE_PATH)
+  fs.renameSync(tmpPath, storePath)
 }
 
 export function getUserReactionConfig(uid) {

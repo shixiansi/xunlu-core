@@ -1,9 +1,9 @@
 import assert from "node:assert/strict"
+import { spawn } from "node:child_process"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import test from "node:test"
-import { Worker } from "node:worker_threads"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
 import { installTestRuntime } from "./helpers/test-runtime.js"
@@ -12,10 +12,11 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const repoRoot = path.resolve(__dirname, "..")
 const tempDirs = new Set()
+const RUNNER_RESULT_PREFIX = "__XUNLU_WEBUI_ADAPTER_RESULT__"
 
 let workspaceRunQueue = Promise.resolve()
 
-installTestRuntime(test)
+installTestRuntime(test, { cleanupAdapter: false, cleanupDatabases: false })
 
 function toModuleUrl(relativePath) {
   return pathToFileURL(path.resolve(repoRoot, relativePath)).href
@@ -59,72 +60,148 @@ function createTempWorkspace({ masters = ["10001"] } = {}) {
 
 async function runWorkspaceScript(workspace, scriptBody) {
   const runTask = async () => {
-    const previousCwd = process.cwd()
-    process.chdir(workspace)
+    const runnerPath = path.join(workspace, `.webui-adapter-runner-${Date.now()}-${Math.random().toString(16).slice(2)}.mjs`)
 
-    const workerSource = `
-      import { parentPort } from "node:worker_threads"
+    const runnerSource = `
+      const runtimeModule = await import(${JSON.stringify(toModuleUrl("src/runtime/runtime-context.js"))})
+      const workspaceRoot = ${JSON.stringify(workspace)}
+      const resultPrefix = ${JSON.stringify(RUNNER_RESULT_PREFIX)}
 
-      console.log = () => {}
+      console.debug = () => {}
       console.info = () => {}
       console.warn = () => {}
 
+      function writeResult(payload) {
+        process.stdout.write("\\n" + resultPrefix + JSON.stringify(payload) + "\\n")
+      }
+
       try {
+        runtimeModule.resetRuntimeContextForTests()
+        runtimeModule.getRuntimeContext({ cwd: workspaceRoot, isWatcher: false })
         const result = await (async () => {
 ${scriptBody}
         })()
-        parentPort.postMessage({ ok: true, result })
+        writeResult({ ok: true, result })
       } catch (error) {
-        parentPort.postMessage({
+        writeResult({
           ok: false,
           error: {
             message: error?.message || String(error),
             stack: error?.stack || "",
           },
         })
+        process.exitCode = 1
+      } finally {
+        runtimeModule.resetRuntimeContextForTests()
       }
     `
 
-    const worker = new Worker(workerSource, { eval: true, type: "module" })
+    fs.writeFileSync(runnerPath, runnerSource, "utf8")
+
+    const formatRunnerFailure = ({ reason, code, signal, stdout, stderr }) => {
+      const detail = [
+        `${reason}; workspace=${workspace}; exitCode=${code ?? ""}; signal=${signal ?? ""}`,
+      ]
+      if (stdout) detail.push(`stdout:\n${stdout}`)
+      if (stderr) detail.push(`stderr:\n${stderr}`)
+      return detail.join("\n")
+    }
 
     try {
-      const message = await new Promise((resolve, reject) => {
-        let settled = false
-
-        worker.once("message", payload => {
-          settled = true
-          resolve(payload)
-        })
-
-        worker.once("error", error => {
-          settled = true
-          reject(error)
-        })
-
-        worker.once("exit", code => {
-          if (!settled && code !== 0) {
-            reject(new Error(`worker exited with code ${code}`))
-          }
-        })
+      const { code, signal, stdout, stderr, payload } = await runWorkspaceChild(runnerPath, {
+        cwd: workspace,
       })
-
-      if (!message?.ok) {
-        const detail = message?.error?.stack || message?.error?.message || "worker script failed"
-        throw new Error(detail)
+      if (!payload) {
+        throw new Error(
+          formatRunnerFailure({
+            reason: "runner exited without result payload",
+            code,
+            signal,
+            stdout,
+            stderr,
+          }),
+        )
       }
-
-      return message.result
+      if (!payload.ok) {
+        const reason = payload.error?.stack || payload.error?.message || "runner script failed"
+        throw new Error(formatRunnerFailure({ reason, code, signal, stdout, stderr }))
+      }
+      return payload.result
     } finally {
       try {
-        await worker.terminate()
+        fs.rmSync(runnerPath, { force: true })
       } catch {}
-      process.chdir(previousCwd)
     }
   }
 
   const queued = workspaceRunQueue.then(runTask)
   workspaceRunQueue = queued.catch(() => {})
   return await queued
+}
+
+function extractRunnerPayload(stdout) {
+  let payload = null
+  for (const line of String(stdout || "").split(/\r?\n/)) {
+    if (!line.startsWith(RUNNER_RESULT_PREFIX)) continue
+    const raw = line.slice(RUNNER_RESULT_PREFIX.length)
+    try {
+      payload = JSON.parse(raw)
+    } catch {}
+  }
+  return payload
+}
+
+async function runWorkspaceChild(runnerPath, { cwd, timeoutMs = 30000 } = {}) {
+  return await new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [runnerPath], {
+      cwd,
+      windowsHide: true,
+      env: {
+        ...process.env,
+        NO_COLOR: "1",
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    })
+
+    let stdout = ""
+    let stderr = ""
+    let killAfterPayloadTimer = null
+
+    const timeout = setTimeout(() => {
+      child.kill()
+    }, timeoutMs)
+
+    const scheduleKillAfterPayload = () => {
+      if (killAfterPayloadTimer) return
+      killAfterPayloadTimer = setTimeout(() => {
+        child.kill()
+      }, 25)
+    }
+
+    child.stdout.on("data", chunk => {
+      stdout += chunk.toString()
+      if (extractRunnerPayload(stdout)) scheduleKillAfterPayload()
+    })
+    child.stderr.on("data", chunk => {
+      stderr += chunk.toString()
+    })
+    child.once("error", error => {
+      clearTimeout(timeout)
+      if (killAfterPayloadTimer) clearTimeout(killAfterPayloadTimer)
+      reject(error)
+    })
+    child.once("close", (code, signal) => {
+      clearTimeout(timeout)
+      if (killAfterPayloadTimer) clearTimeout(killAfterPayloadTimer)
+      resolve({
+        code,
+        signal,
+        stdout,
+        stderr,
+        payload: extractRunnerPayload(stdout),
+      })
+    })
+  })
 }
 
 test.after(() => {
@@ -134,6 +211,49 @@ test.after(() => {
     } catch {}
   }
   tempDirs.clear()
+})
+
+test("workspace runner reports script failures with workspace context", async () => {
+  const workspace = createTempWorkspace()
+
+  await assert.rejects(
+    () =>
+      runWorkspaceScript(
+        workspace,
+        `
+          throw new Error("planned script failure")
+`,
+      ),
+    error => {
+      assert.match(error.message, /planned script failure/)
+      assert.match(error.message, /workspace=/)
+      return true
+    },
+  )
+})
+
+test("workspace runner reports stdout and stderr when child exits without payload", async () => {
+  const workspace = createTempWorkspace()
+
+  await assert.rejects(
+    () =>
+      runWorkspaceScript(
+        workspace,
+        `
+          process.stdout.write("child-stdout")
+          process.stderr.write("child-stderr")
+          process.exit(7)
+`,
+      ),
+    error => {
+      assert.match(error.message, /runner exited without result payload/)
+      assert.match(error.message, /exitCode=7/)
+      assert.match(error.message, /child-stdout/)
+      assert.match(error.message, /child-stderr/)
+      assert.match(error.message, /workspace=/)
+      return true
+    },
+  )
 })
 
 test("group webui adapter persists global, bot, and group configs", async () => {
@@ -194,7 +314,7 @@ test("group webui adapter persists global, bot, and group configs", async () => 
           })
 
           const store = JSON.parse(
-            fs.readFileSync(path.join(process.cwd(), "data", "group", "notice-settings.json"), "utf8"),
+            fs.readFileSync(path.join(workspaceRoot, "data", "group", "notice-settings.json"), "utf8"),
           )
 
           return {
@@ -343,7 +463,7 @@ test("other webui adapter exposes master defaults and saves user overrides", asy
 
           const scopesAfter = await provider.listScopes({ scope: "user" })
           const stored = JSON.parse(
-            fs.readFileSync(path.join(process.cwd(), "data", "other-reaction.json"), "utf8"),
+            fs.readFileSync(path.join(workspaceRoot, "data", "other-reaction.json"), "utf8"),
           )
 
           return {

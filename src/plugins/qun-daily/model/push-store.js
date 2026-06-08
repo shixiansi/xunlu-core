@@ -1,10 +1,7 @@
 import fs from "node:fs"
 import path from "node:path"
 
-import { getRuntimePaths } from "../../../runtime/runtime-context.js"
-
-const DATA_DIR = getRuntimePaths().getPluginDataDir("qun-daily")
-const STORE_PATH = path.join(DATA_DIR, "push-settings.json")
+import env from "../../../lib/env.js"
 
 const DEFAULT_GROUP_PUSH = Object.freeze({
   stats: false,
@@ -12,8 +9,12 @@ const DEFAULT_GROUP_PUSH = Object.freeze({
   commands: false,
 })
 
-function ensureDir() {
-  fs.mkdirSync(DATA_DIR, { recursive: true })
+export function getGroupPushStorePath() {
+  return path.resolve(env.RootPath, "data", "qun-daily", "push-settings.json")
+}
+
+function ensureDir(storePath = getGroupPushStorePath()) {
+  fs.mkdirSync(path.dirname(storePath), { recursive: true })
 }
 
 function defaultStore() {
@@ -33,12 +34,12 @@ function safeObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : null
 }
 
-function readStoreFromDisk() {
-  ensureDir()
-  if (!fs.existsSync(STORE_PATH)) return defaultStore()
+function readStoreFromDisk(storePath = getGroupPushStorePath()) {
+  ensureDir(storePath)
+  if (!fs.existsSync(storePath)) return defaultStore()
 
   try {
-    const raw = fs.readFileSync(STORE_PATH, "utf8")
+    const raw = fs.readFileSync(storePath, "utf8")
     const data = raw ? JSON.parse(raw) : null
     if (!safeObject(data)) return defaultStore()
 
@@ -53,22 +54,27 @@ function readStoreFromDisk() {
 }
 
 function saveStoreToDisk(store) {
-  ensureDir()
-  const tmpPath = `${STORE_PATH}.tmp`
+  const storePath = getGroupPushStorePath()
+  ensureDir(storePath)
+  const tmpPath = `${storePath}.tmp`
   fs.writeFileSync(tmpPath, JSON.stringify(store, null, 2), "utf8")
-  fs.renameSync(tmpPath, STORE_PATH)
+  fs.renameSync(tmpPath, storePath)
 }
 
 let cache = null
+let cachePath = ""
 
 export function loadGroupPushStore() {
-  if (cache) return cache
-  cache = readStoreFromDisk()
+  const storePath = getGroupPushStorePath()
+  if (cache && cachePath === storePath) return cache
+  cache = readStoreFromDisk(storePath)
+  cachePath = storePath
   return cache
 }
 
 export function resetGroupPushStoreCache() {
   cache = null
+  cachePath = ""
 }
 
 export function getGroupPushConfig(groupId) {

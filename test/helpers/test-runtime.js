@@ -1,5 +1,3 @@
-import CommandUsageDB from "../../src/db/CommandUsageDB.js"
-import MessageDB from "../../src/db/MessageDB.js"
 import cfg from "../../src/lib/config.js"
 import { resetRuntimeContextForTests } from "../../src/runtime/runtime-context.js"
 
@@ -11,26 +9,41 @@ const originalConsole = {
   warn: console.warn,
 }
 
-export async function cleanupTestRuntime() {
+async function cleanupDatabases() {
+  try {
+    const { default: CommandUsageDB } = await import("../../src/db/CommandUsageDB.js")
+    await CommandUsageDB?.close?.()
+  } catch {}
+  try {
+    const { default: MessageDB } = await import("../../src/db/MessageDB.js")
+    await MessageDB?.close?.()
+  } catch {}
+  try {
+    const learningChatDb = await import("../../src/plugins/learning_chat/model/db.js")
+    await learningChatDb?.closeDb?.()
+  } catch {}
+}
+
+export async function cleanupTestRuntime({
+  cleanupAdapter: shouldCleanupAdapter = true,
+  cleanupDatabases: shouldCleanupDatabases = true,
+} = {}) {
   try {
     cfg?.cleanup?.()
   } catch {}
   try {
     resetRuntimeContextForTests?.()
   } catch {}
-  try {
-    const adapter = await import("../../src/Bot/adapter/index.js")
-    adapter.resetActiveIcqqPluginLoader?.()
-  } catch {}
-  try {
-    await CommandUsageDB?.close?.()
-  } catch {}
-  try {
-    await MessageDB?.close?.()
-  } catch {}
+  if (shouldCleanupAdapter) {
+    try {
+      const adapter = await import("../../src/Bot/adapter/index.js")
+      adapter.resetActiveIcqqPluginLoader?.()
+    } catch {}
+  }
+  if (shouldCleanupDatabases) await cleanupDatabases()
 }
 
-export function installTestRuntime(test) {
+export function installTestRuntime(test, options = {}) {
   test.before(() => {
     console.debug = () => {}
     console.error = () => {}
@@ -40,11 +53,11 @@ export function installTestRuntime(test) {
   })
 
   test.afterEach(async () => {
-    await cleanupTestRuntime()
+    await cleanupTestRuntime(options)
   })
 
   test.after(async () => {
-    await cleanupTestRuntime()
+    await cleanupTestRuntime(options)
     console.debug = originalConsole.debug
     console.error = originalConsole.error
     console.info = originalConsole.info

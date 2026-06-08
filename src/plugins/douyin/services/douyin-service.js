@@ -15,13 +15,8 @@ import {
   writeDouyinAuth,
 } from "../model/auth-store.js"
 import {
-  BROWSER_PROFILE_ROOT,
   LOGIN_WINDOW_ENV,
   MOBILE_DOUYIN_USER_AGENT,
-  QR_IMAGE_PATH,
-  ROOT_PATH,
-  TEMP_DIR,
-  TEMP_VIDEO_DIR,
   USER_AGENT,
   VIDEO_MAX_BYTES,
   WEB_REFERER,
@@ -30,6 +25,11 @@ import {
   cleanupFile,
   delay,
   ensureDir,
+  getBrowserProfileRoot,
+  getQrImagePath,
+  getRootPath,
+  getTempDir,
+  getTempVideoDir,
   parseDataUrl,
 } from "./douyin-runtime.js"
 
@@ -38,7 +38,7 @@ const { generate_a_bogus } = require("../utils/a-bogus.cjs")
 const { sign: generate_x_bogus } = require("../utils/x-bogus.cjs")
 
 function toRootRelativePath(filePath = "") {
-  return path.relative(ROOT_PATH, filePath).replace(/\\/g, "/")
+  return path.relative(getRootPath(), filePath).replace(/\\/g, "/")
 }
 
 const LOGIN_QUERY_TEMPLATE = {
@@ -1281,7 +1281,7 @@ function extractCommentsFromRenderedText(text = "", limit = 10) {
 
 class DouyinService {
   constructor() {
-    this.qrImagePath = QR_IMAGE_PATH
+    this.qrImagePath = getQrImagePath()
     this.videoMaxBytes = VIDEO_MAX_BYTES
     this.loginSessions = new Map()
     this.validationCache = {
@@ -1290,18 +1290,18 @@ class DouyinService {
       userInfo: null,
       checkedAt: 0,
     }
-    this.downloader = new Download(ROOT_PATH)
+    this.downloader = new Download(getRootPath())
   }
 
   ensureTempDirs() {
-    ensureDir(TEMP_DIR)
-    ensureDir(TEMP_VIDEO_DIR)
-    ensureDir(BROWSER_PROFILE_ROOT)
+    ensureDir(getTempDir())
+    ensureDir(getTempVideoDir())
+    ensureDir(getBrowserProfileRoot())
   }
 
   createLoginProfileDir() {
     this.ensureTempDirs()
-    return fs.mkdtempSync(path.join(BROWSER_PROFILE_ROOT, "session-"))
+    return fs.mkdtempSync(path.join(getBrowserProfileRoot(), "session-"))
   }
 
   getLoginLaunchOptions(profileDir) {
@@ -2398,7 +2398,7 @@ class DouyinService {
     this.ensureTempDirs()
     const safeId =
       normalizeString(awemeId || Date.now()).replace(/[^\w-]/g, "_") || `douyin_${Date.now()}`
-    const absolutePath = path.join(TEMP_VIDEO_DIR, `${safeId}.mp4`)
+    const absolutePath = path.join(getTempVideoDir(), `${safeId}.mp4`)
     const relativePath = toRootRelativePath(absolutePath)
 
     try {
@@ -2438,11 +2438,12 @@ class DouyinService {
       checkedAt: 0,
     }
     this.cleanupQrImage()
-    const hadVideoDir = fs.existsSync(TEMP_VIDEO_DIR)
-    cleanupDir(TEMP_VIDEO_DIR)
+    const tempVideoDir = getTempVideoDir()
+    const hadVideoDir = fs.existsSync(tempVideoDir)
+    cleanupDir(tempVideoDir)
     if (hadVideoDir) {
       try {
-        ensureDir(TEMP_VIDEO_DIR)
+        ensureDir(tempVideoDir)
       } catch {}
     }
   }

@@ -5,30 +5,42 @@ import { Sequelize, DataTypes, Op } from "sequelize"
 
 import env from "../../../lib/env.js"
 
-const DATA_DIR = path.resolve(env.RootPath, "data", "learning_chat")
-const DB_PATH = path.join(DATA_DIR, "learning_chat.sqlite")
-
 let sequelize = null
 let models = null
+let activeDbPath = ""
+
+function getDataDir() {
+  return path.resolve(env.RootPath, "data", "learning_chat")
+}
+
+function resolveDbPath() {
+  return path.join(getDataDir(), "learning_chat.sqlite")
+}
 
 function ensureDir() {
-  fs.mkdirSync(DATA_DIR, { recursive: true })
+  fs.mkdirSync(getDataDir(), { recursive: true })
 }
 
 export function getDbPath() {
-  return DB_PATH
+  return activeDbPath || resolveDbPath()
 }
 
 export async function initDb() {
-  if (models) return models
+  const dbPath = resolveDbPath()
+  if (models && activeDbPath === dbPath) return models
+  if (models && activeDbPath && activeDbPath !== dbPath) {
+    await closeDb()
+  }
+
   ensureDir()
 
   if (!sequelize) {
     sequelize = new Sequelize({
       dialect: "sqlite",
-      storage: DB_PATH,
+      storage: dbPath,
       logging: false,
     })
+    activeDbPath = dbPath
     await sequelize.authenticate()
   }
 
@@ -110,6 +122,15 @@ export async function initDb() {
 
   models = { sequelize, Signature, Transition, BanReply, GroupState, ProactiveState, ProactiveCommandState }
   return models
+}
+
+export async function closeDb() {
+  if (sequelize) {
+    await sequelize.close()
+  }
+  sequelize = null
+  models = null
+  activeDbPath = ""
 }
 
 export async function upsertSignature({ hash, sig, preview, segments }) {

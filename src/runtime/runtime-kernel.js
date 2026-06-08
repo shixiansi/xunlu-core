@@ -20,6 +20,23 @@ async function loadRuntimeEnvironment() {
   await startRedis()
 }
 
+function captureRuntimeBotGlobals() {
+  return {
+    hadBot: Object.prototype.hasOwnProperty.call(globalThis, "Bot"),
+    bot: globalThis.Bot,
+    hadRuntimeBot: Object.prototype.hasOwnProperty.call(globalThis, "__xunlu_runtime_bot"),
+    runtimeBot: globalThis.__xunlu_runtime_bot,
+  }
+}
+
+function restoreRuntimeBotGlobals(snapshot = {}) {
+  if (snapshot.hadBot) globalThis.Bot = snapshot.bot
+  else delete globalThis.Bot
+
+  if (snapshot.hadRuntimeBot) globalThis.__xunlu_runtime_bot = snapshot.runtimeBot
+  else delete globalThis.__xunlu_runtime_bot
+}
+
 /**
  * 统一运行时内核。
  *
@@ -39,6 +56,7 @@ export class RuntimeKernel {
     this.facade = null
     this.services = new ServiceRegistry()
     this.started = false
+    this.loadRuntimeEnvironment = options.loadRuntimeEnvironment || loadRuntimeEnvironment
   }
 
   static async create(options = {}) {
@@ -48,23 +66,42 @@ export class RuntimeKernel {
 
   async start() {
     if (this.started) return this
+    const globals = captureRuntimeBotGlobals()
 
-    this.context.ensureRuntimeLayout()
-    await loadRuntimeEnvironment()
-    this.driver = await this.createDriver()
-    if (!this.driver?.__startedByAutoFallback) {
-      await this.driver.start(this)
+    try {
+      this.context.ensureRuntimeLayout()
+      await this.loadRuntimeEnvironment()
+      this.driver = await this.createDriver()
+      if (!this.driver?.__startedByAutoFallback) {
+        await this.driver.start(this)
+      }
+      this.facade =
+        this.mode === "api-only"
+          ? null
+          : createBotFacade({
+            driver: this.driver,
+          })
+      this.registerDefaultServices()
+      await this.services.startAll(this)
+      this.started = true
+      return this
+    } catch (err) {
+      await this.rollbackFailedStart(globals)
+      throw err
     }
-    this.facade =
-      this.mode === "api-only"
-        ? null
-        : createBotFacade({
-          driver: this.driver,
-        })
-    this.registerDefaultServices()
-    await this.services.startAll(this)
-    this.started = true
-    return this
+  }
+
+  async rollbackFailedStart(globals) {
+    await this.services.stopAll().catch(err => {
+      console.warn("[RuntimeKernel] service rollback failed:", err?.message || err)
+    })
+    await this.driver?.stop?.().catch(err => {
+      console.warn("[RuntimeKernel] driver rollback failed:", err?.message || err)
+    })
+    this.facade = null
+    this.driver = null
+    this.started = false
+    restoreRuntimeBotGlobals(globals)
   }
 
   async createDriver() {

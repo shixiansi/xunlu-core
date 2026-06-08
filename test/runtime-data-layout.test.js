@@ -6,10 +6,10 @@ import test from "node:test"
 
 import { getDouyinAuthFilePath, getDouyinDataDir } from "../src/plugins/douyin/model/auth-store.js"
 import {
-  BROWSER_PROFILE_ROOT,
-  QR_IMAGE_PATH,
-  TEMP_DIR as DOUYIN_TEMP_DIR,
-  TEMP_VIDEO_DIR,
+  getBrowserProfileRoot,
+  getQrImagePath,
+  getTempDir as getDouyinTempDir,
+  getTempVideoDir,
 } from "../src/plugins/douyin/services/douyin-runtime.js"
 import { RuntimePaths } from "../src/runtime/runtime-paths.js"
 import {
@@ -187,10 +187,10 @@ test("shared utils expose focused file and path helpers", async () => {
 
     assert.equal(getDouyinDataDir(), path.join(process.cwd(), "data", "douyin"))
     assert.equal(getDouyinAuthFilePath(), path.join(process.cwd(), "data", "douyin", "auth.json"))
-    assert.equal(DOUYIN_TEMP_DIR, path.join(process.cwd(), "temp", "douyin"))
-    assert.equal(TEMP_VIDEO_DIR, path.join(process.cwd(), "temp", "douyin", "video"))
-    assert.equal(BROWSER_PROFILE_ROOT, path.join(process.cwd(), "temp", "douyin", "browser-profile"))
-    assert.equal(QR_IMAGE_PATH, path.join(process.cwd(), "temp", "douyin", "login-qrcode.png"))
+    assert.equal(getDouyinTempDir(), path.join(process.cwd(), "temp", "douyin"))
+    assert.equal(getTempVideoDir(), path.join(process.cwd(), "temp", "douyin", "video"))
+    assert.equal(getBrowserProfileRoot(), path.join(process.cwd(), "temp", "douyin", "browser-profile"))
+    assert.equal(getQrImagePath(), path.join(process.cwd(), "temp", "douyin", "login-qrcode.png"))
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true })
   }

@@ -5,6 +5,8 @@ import path from "node:path"
 import test from "node:test"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
+import { resetRuntimeContextForTests } from "../src/runtime/runtime-context.js"
+
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const repoRoot = path.resolve(__dirname, "..")
@@ -26,10 +28,12 @@ test("douyin test reset clears video temp files", async () => {
   const tempRoot = createTempProjectRoot()
 
   try {
+    resetRuntimeContextForTests()
     process.chdir(tempRoot)
     const { default: DouyinService } = await import(`${serviceUrl}?reset=${Date.now()}`)
-    const { TEMP_VIDEO_DIR } = await import(runtimeUrl)
-    const staleVideo = path.join(TEMP_VIDEO_DIR, "stale.mp4")
+    const { getTempVideoDir } = await import(runtimeUrl)
+    const tempVideoDir = getTempVideoDir()
+    const staleVideo = path.join(tempVideoDir, "stale.mp4")
 
     fs.mkdirSync(path.dirname(staleVideo), { recursive: true })
     fs.writeFileSync(staleVideo, "video")
@@ -37,9 +41,10 @@ test("douyin test reset clears video temp files", async () => {
     DouyinService.__resetForTests()
 
     assert.equal(fs.existsSync(staleVideo), false)
-    assert.equal(fs.existsSync(TEMP_VIDEO_DIR), true)
+    assert.equal(fs.existsSync(tempVideoDir), true)
   } finally {
     process.chdir(previousCwd)
+    resetRuntimeContextForTests()
     fs.rmSync(tempRoot, { recursive: true, force: true })
   }
 })

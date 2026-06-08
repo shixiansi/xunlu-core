@@ -2,7 +2,7 @@ import { createRequire } from "module"
 import lodash from "lodash"
 import env from "../../../lib/env.js"
 const require = createRequire(import.meta.url)
-const { exec, execSync } = require("child_process")
+const { exec, execFile, execFileSync } = require("child_process")
 
 // 全局状态：防止重复更新
 let uping = false
@@ -15,6 +15,40 @@ const PLUGIN_CONFIG = {
 }
 
 const pluginPath = env.CurEnv == "xunlu-core" ? "./" : `./plugins/${PLUGIN_CONFIG.pluginDir}/`
+
+function getGitCwd(plugin = "") {
+  return plugin ? pluginPath : undefined
+}
+
+function execFileCmd(command, args = [], options = {}) {
+  return new Promise(resolve => {
+    execFile(command, args, { windowsHide: true, ...options }, (error, stdout, stderr) => {
+      resolve({ error, stdout: stdout.toString(), stderr: stderr.toString() })
+    })
+  })
+}
+
+function execGitSync(args = [], options = {}) {
+  return execFileSync("git", args, {
+    encoding: "utf-8",
+    windowsHide: true,
+    ...options,
+  })
+}
+
+function buildGitUpdateArgs(isForce = false) {
+  return isForce ? ["pull", "--rebase", "--allow-unrelated-histories"] : ["pull", "--no-rebase"]
+}
+
+async function getDirtyWorktree(cwd = pluginPath) {
+  const ret = await execFileCmd("git", ["status", "--porcelain"], { cwd })
+  if (ret.error) return { error: ret.error, stdout: ret.stdout, stderr: ret.stderr, dirty: true }
+  return { error: null, stdout: ret.stdout, stderr: ret.stderr, dirty: Boolean(ret.stdout.trim()) }
+}
+
+async function runGitUpdate(isForce = false) {
+  return await execFileCmd("git", buildGitUpdateArgs(isForce), { cwd: pluginPath })
+}
 /**
  * 初始化重启状态检查（原init逻辑）
  */
@@ -49,7 +83,7 @@ async function initRestartStatus() {
  */
 async function checkGit(ctx) {
   try {
-    let ret = await execSync("git --version", { encoding: "utf-8" })
+    let ret = execGitSync(["--version"])
     if (!ret || !ret.includes("git version")) {
       await ctx.reply("请先安装git")
       return false
@@ -80,11 +114,7 @@ async function execSyncCmd(cmd) {
  */
 async function getCommitId(plugin = "") {
   try {
-    let cm = "git rev-parse --short HEAD"
-    if (plugin) {
-      cm = `git -C ${pluginPath} rev-parse --short HEAD`
-    }
-    let commitId = await execSync(cm, { encoding: "utf-8" })
+    let commitId = execGitSync(["rev-parse", "--short", "HEAD"], { cwd: getGitCwd(plugin) })
     return lodash.trim(commitId)
   } catch (error) {
     logger.error(`[荨鹿更新] 获取CommitId失败：${error.stack}`)
@@ -97,13 +127,11 @@ async function getCommitId(plugin = "") {
  * @param {string} plugin 插件目录
  */
 async function getUpdateTime(plugin = "") {
-  let cm = 'git log  -1 --oneline --pretty=format:"%cd" --date=format:"%m-%d %H:%M"'
-  if (plugin) {
-    cm = `cd ${pluginPath} && git log -1 --oneline --pretty=format:"%cd" --date=format:"%m-%d %H:%M"`
-  }
-
   try {
-    let time = await execSync(cm, { encoding: "utf-8" })
+    let time = execGitSync(
+      ["log", "-1", "--oneline", "--pretty=format:%cd", "--date=format:%m-%d %H:%M"],
+      { cwd: getGitCwd(plugin) },
+    )
     return lodash.trim(time)
   } catch (error) {
     logger.error(`[荨鹿更新] 获取更新时间失败：${error.toString()}`)
@@ -162,15 +190,12 @@ async function handleGitError(ctx, err, stdout) {
 async function getUpdateLog(ctx, plugin = "", oldCommitId = "") {
   plugin = plugin || PLUGIN_CONFIG.pluginDir
   // 修复：去掉--oneline，避免和--pretty冲突
-  let cm = 'git log -20 --pretty=format:"%h||[%cd]  %s" --date=format:"%m-%d %H:%M"'
-  if (plugin) {
-    // 修复：给路径加引号
-    cm = `cd "${pluginPath}" && ${cm}`
-  }
-
   let logAll
   try {
-    logAll = await execSync(cm, { encoding: "utf-8" })
+    logAll = execGitSync(
+      ["log", "-20", "--pretty=format:%h||[%cd]  %s", "--date=format:%m-%d %H:%M"],
+      { cwd: getGitCwd(plugin) },
+    )
   } catch (error) {
     logger.error(`[荨鹿更新] 获取更新日志失败：${error.toString()}`)
     await ctx.reply(error.toString())
@@ -305,13 +330,24 @@ async function runUpdate(ctx, isForce = false) {
   // 检查Git
   if (!(await checkGit(ctx))) return false
 
+  const dirty = await getDirtyWorktree(pluginPath)
+  if (dirty.error) {
+    await ctx.reply(`Update failed: unable to check local changes\n${dirty.stderr || dirty.error.message}`)
+    return false
+  }
+  if (dirty.dirty) {
+    await ctx.reply(
+      [
+        "Update cancelled: local changes were detected.",
+        "Please commit or back up local changes before updating.",
+        dirty.stdout.trim(),
+      ].filter(Boolean).join("\n"),
+    )
+    return false
+  }
+
   // 构建更新命令
   let type = isForce ? "强制更新" : "更新"
-  let cm = isForce
-    ? `git reset --hard && git pull --rebase --allow-unrelated-histories`
-    : "git pull --no-rebase"
-  // 给路径加引号
-  cm = `cd "${pluginPath}" && ${cm}`
 
   // 记录旧CommitId（现在真正用上了）
   const oldCommitId = await getCommitId(PLUGIN_CONFIG.pluginDir)
@@ -322,7 +358,7 @@ async function runUpdate(ctx, isForce = false) {
 
   await ctx.reply(`开始#${type}${PLUGIN_CONFIG.typeName}`)
   uping = true
-  let ret = await execSyncCmd(cm)
+  let ret = await runGitUpdate(isForce)
   uping = false
 
   // 处理更新错误

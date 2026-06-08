@@ -4,11 +4,12 @@ import path from "node:path"
 import env from "../../../lib/env.js"
 import { getNewUserDefaults } from "./config.js"
 
-const DATA_DIR = path.resolve(env.RootPath, "data")
-const DB_PATH = path.join(DATA_DIR, "diaoyu.json")
-
 function nowTs() {
   return Date.now()
+}
+
+function getDiaoyuDbPath() {
+  return path.resolve(env.RootPath, "data", "diaoyu.json")
 }
 
 export function dateKey(d = new Date()) {
@@ -23,8 +24,8 @@ export function yesterdayKey(d = new Date()) {
   return dateKey(t)
 }
 
-function ensureDataDir() {
-  fs.mkdirSync(DATA_DIR, { recursive: true })
+function ensureDataDir(dbPath = getDiaoyuDbPath()) {
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true })
 }
 
 function defaultDb() {
@@ -35,10 +36,11 @@ function defaultDb() {
 }
 
 export function loadDb() {
-  ensureDataDir()
-  if (!fs.existsSync(DB_PATH)) return defaultDb()
+  const dbPath = getDiaoyuDbPath()
+  ensureDataDir(dbPath)
+  if (!fs.existsSync(dbPath)) return defaultDb()
   try {
-    const raw = fs.readFileSync(DB_PATH, "utf8")
+    const raw = fs.readFileSync(dbPath, "utf8")
     const data = raw ? JSON.parse(raw) : null
     if (!data || typeof data !== "object") return defaultDb()
     if (!data.users || typeof data.users !== "object") data.users = {}
@@ -50,8 +52,9 @@ export function loadDb() {
 }
 
 export function saveDb(db) {
-  ensureDataDir()
-  fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2), "utf8")
+  const dbPath = getDiaoyuDbPath()
+  ensureDataDir(dbPath)
+  fs.writeFileSync(dbPath, JSON.stringify(db, null, 2), "utf8")
 }
 
 export function normalizeUserId(uid) {
