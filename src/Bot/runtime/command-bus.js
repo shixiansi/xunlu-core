@@ -11,6 +11,7 @@ import {
 } from "../yunzai/command-bridge.js"
 import { applyPrefixCompatibilityToEvent, buildCommandTextCandidates } from "./prefix-compat.js"
 import { normalizeOptionalString, resolveSyntheticProtocol } from "./shared.js"
+import cfg from "../../lib/config.js"
 
 /**
  * CommandBus 统一管理插件注册、命令索引、合成事件和命令调用。
@@ -24,7 +25,14 @@ export class CommandBus {
 
   async loadPlugins(options = {}) {
     try {
-      const plugins = await loadPlugins(path.join(getRuntimePaths().rootDir, "src", "plugins"), options)
+      // 获取禁用插件列表
+      const botCfg = cfg.getConfig("bot") || {}
+      const disabledPlugins = botCfg?.plugin_control?.disabled_plugins || []
+
+      const plugins = await loadPlugins(path.join(getRuntimePaths().rootDir, "src", "plugins"), {
+        ...options,
+        disabledPlugins,
+      })
 
       for (const plugin of plugins) {
         logger.debug("加载插件:", plugin)
@@ -52,6 +60,11 @@ export class CommandBus {
 
   async registerPlugin(plugin) {
     if (!plugin.implementation?.register) return
+
+    // 获取禁用命令列表
+    const botCfg = cfg.getConfig("bot") || {}
+    const disabledCommands = botCfg?.plugin_control?.disabled_commands || []
+
     let idx = 1
     this.baseBot.pluginCatalog[plugin.name] = {
       name: plugin.name,
@@ -63,7 +76,7 @@ export class CommandBus {
       rootDir: plugin.rootDir,
     }
     const pluginAPI = {
-      registerCommand: this.createCommandRegistrar(plugin, idx),
+      registerCommand: this.createCommandRegistrar(plugin, idx, disabledCommands),
       contextReply: this.baseBot.createContextReplyHandler(),
       setTask: this.collectTimerTasks(),
       callFnc: this.callPluginFnc(),
@@ -426,7 +439,7 @@ export class CommandBus {
     return await this.invokeMatchedCommand(command, ctx)
   }
 
-  createCommandRegistrar(pluginMeta, idx) {
+  createCommandRegistrar(pluginMeta, idx, disabledCommands = []) {
     return (command, handler) => {
       if (!command || !handler) return
 
@@ -479,6 +492,29 @@ export class CommandBus {
           if (example !== undefined || desc !== undefined) {
             help = { example, desc }
           }
+        }
+      }
+
+      // 检查命令是否被禁用
+      const commandReg = String(reg || "").trim()
+      if (commandReg) {
+        const commandKey = `${pname}:${commandReg}`
+        const isDisabled = disabledCommands.some(item => {
+          const disabledKey = String(item || "").trim()
+          if (!disabledKey) return false
+
+          // 支持两种格式：
+          // 1. 完整格式：插件名:命令正则
+          // 2. 简写格式：命令正则（匹配当前插件）
+          if (disabledKey.includes(":")) {
+            return disabledKey === commandKey
+          }
+          return disabledKey === commandReg
+        })
+
+        if (isDisabled) {
+          logger.info?.(`[commandBus] skip disabled command: ${commandKey}`)
+          return
         }
       }
 

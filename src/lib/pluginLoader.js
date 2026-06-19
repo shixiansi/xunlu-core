@@ -98,7 +98,16 @@ export async function loadPlugins(dir, options = {}) {
   const plugins = []
   const loadedTargets = new Set()
 
+  // 获取禁用插件列表
+  const disabledPlugins = Array.isArray(options.disabledPlugins) ? options.disabledPlugins : []
+
   for (const candidate of discoverPluginEntries(dir)) {
+    // 检查插件是否被禁用
+    if (disabledPlugins.includes(candidate.entryName)) {
+      logger.info?.(`[pluginLoader] skip disabled plugin: ${candidate.entryName}`)
+      continue
+    }
+
     try {
       const importUrl = createImportUrl(candidate.entryPath, cacheBust)
       const baseUrl = pathToFileURL(candidate.entryPath).href

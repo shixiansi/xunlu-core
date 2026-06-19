@@ -96,6 +96,14 @@ function getBotValues() {
       masterQQ: normalizeMasterIds(bot.masterQQ),
       log_level: normalizeLogLevel(bot.log_level),
     },
+    plugin_control: {
+      disabled_plugins: Array.isArray(bot?.plugin_control?.disabled_plugins)
+        ? bot.plugin_control.disabled_plugins
+        : [],
+      disabled_commands: Array.isArray(bot?.plugin_control?.disabled_commands)
+        ? bot.plugin_control.disabled_commands
+        : [],
+    },
   }
 }
 
@@ -107,6 +115,8 @@ function getBotSummary() {
     `WebUI ${values.webui.enabled ? `${values.webui.host}:${values.webui.port}` : "关闭"}`,
     `主人 ${values.admin.masterQQ.length} 个`,
     `日志 ${values.admin.log_level}`,
+    `禁用插件 ${values.plugin_control.disabled_plugins.length} 个`,
+    `禁用命令 ${values.plugin_control.disabled_commands.length} 个`,
   ].join(" | ")
 }
 
@@ -117,6 +127,7 @@ function saveBotValues(values = {}) {
   const control = values?.control || {}
   const webui = values?.webui || {}
   const admin = values?.admin || {}
+  const pluginControl = values?.plugin_control || {}
 
   const next = {
     ...current,
@@ -149,6 +160,14 @@ function saveBotValues(values = {}) {
     webui_port: normalizePort(webui.port, nextValues.webui.port),
     masterQQ: normalizeMasterIds(admin.masterQQ ?? nextValues.admin.masterQQ),
     log_level: normalizeLogLevel(admin.log_level ?? nextValues.admin.log_level),
+    plugin_control: {
+      disabled_plugins: Array.isArray(pluginControl.disabled_plugins)
+        ? pluginControl.disabled_plugins
+        : nextValues.plugin_control.disabled_plugins,
+      disabled_commands: Array.isArray(pluginControl.disabled_commands)
+        ? pluginControl.disabled_commands
+        : nextValues.plugin_control.disabled_commands,
+    },
   }
 
   cfg.getConfigReader("bot").setData(next)
@@ -255,6 +274,28 @@ export default {
             label: "日志等级",
             type: "select",
             options: LOG_LEVEL_OPTIONS,
+          },
+        ],
+      },
+      {
+        id: "plugin_control",
+        scope: "global",
+        title: "插件管理",
+        description: "管理插件和命令的启用/禁用状态，修改后需重载插件生效。",
+        fields: [
+          {
+            path: "plugin_control.disabled_plugins",
+            label: "禁用的插件",
+            type: "array",
+            rows: 5,
+            description: "每行一个插件名，禁用后该插件将不会被加载。",
+          },
+          {
+            path: "plugin_control.disabled_commands",
+            label: "禁用的命令",
+            type: "array",
+            rows: 5,
+            description: "每行一个命令，格式：插件名:命令正则 或 命令正则，禁用后该命令将不会被注册。",
           },
         ],
       },
