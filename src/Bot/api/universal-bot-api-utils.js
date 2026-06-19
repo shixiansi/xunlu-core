@@ -18,6 +18,22 @@ export function getRuntimeBotOrNull() {
   }
 }
 
+/**
+ * 获取 fallback runtimeBot（取 globalThis.Bot）。
+ *
+ * 在 takeover 模式下 __xunlu_runtime_bot 是 adapter（不含 sendApi），
+ * 而 globalThis.Bot 是 Yunzai 原始 bot 的 compat 代理，可能带有原始 API 方法。
+ * 用于 sendApi / callApi 在 primary bot 找不到方法时的 fallback。
+ */
+export function getRuntimeBotFallback() {
+  try {
+    // eslint-disable-next-line no-undef
+    return Bot || globalThis.Bot || null
+  } catch {
+    return globalThis.Bot || null
+  }
+}
+
 export function toInt(value) {
   if (value === undefined || value === null) return undefined
   const v = typeof value === "string" ? value.trim() : value

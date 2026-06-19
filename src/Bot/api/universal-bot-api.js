@@ -9,6 +9,7 @@ import {
   getFastBotRoleFlags,
   getFastMemberRoleFlags,
   getRawMethod,
+  getRuntimeBotFallback,
   getRuntimeBotOrNull,
   getSelfIdFromTarget,
   getYunzaiSendApi,
@@ -180,6 +181,20 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       const sendApi = getYunzaiSendApi(runtimeBot)
       if (sendApi) return await sendApi(normalizedAction, params)
 
+      // fallback: takeover 模式下 __xunlu_runtime_bot 是 adapter，
+      // 而 globalThis.Bot 是 Yunzai 原始 bot 的 compat 代理，可能带有 sendApi
+      const fallbackBot = getRuntimeBotFallback()
+      if (fallbackBot && fallbackBot !== runtimeBot) {
+        const fbRawSendApi = getRawMethod(fallbackBot, "sendApi", api.sendApi)
+        if (fbRawSendApi) return await fbRawSendApi.call(fallbackBot, normalizedAction, params)
+
+        const fbRawCallApi = getRawMethod(fallbackBot, "callApi", api.callApi)
+        if (fbRawCallApi) return await fbRawCallApi.call(fallbackBot, normalizedAction, params)
+
+        const fbSendApi = getYunzaiSendApi(fallbackBot)
+        if (fbSendApi) return await fbSendApi(normalizedAction, params)
+      }
+
       throw new Error("[sendApi] API not available")
     },
 
@@ -199,6 +214,20 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
 
       const sendApi = getYunzaiSendApi(runtimeBot)
       if (sendApi) return await sendApi(normalizedAction, params)
+
+      // fallback: takeover 模式下 __xunlu_runtime_bot 是 adapter，
+      // 而 globalThis.Bot 是 Yunzai 原始 bot 的 compat 代理，可能带有 callApi/sendApi
+      const fallbackBot = getRuntimeBotFallback()
+      if (fallbackBot && fallbackBot !== runtimeBot) {
+        const fbRawCallApi = getRawMethod(fallbackBot, "callApi", api.callApi)
+        if (fbRawCallApi) return await fbRawCallApi.call(fallbackBot, normalizedAction, params)
+
+        const fbRawSendApi = getRawMethod(fallbackBot, "sendApi", api.sendApi)
+        if (fbRawSendApi) return await fbRawSendApi.call(fallbackBot, normalizedAction, params)
+
+        const fbSendApi = getYunzaiSendApi(fallbackBot)
+        if (fbSendApi) return await fbSendApi(normalizedAction, params)
+      }
 
       throw new Error("[callApi] API not available")
     },
