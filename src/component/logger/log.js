@@ -119,6 +119,9 @@ function installLoggerColors(targetLogger, colors = chalk) {
     setLoggerField(targetLogger, "blue", colors.blue),
     setLoggerField(targetLogger, "magenta", colors.magenta),
     setLoggerField(targetLogger, "cyan", colors.cyan),
+    setLoggerField(targetLogger, "gray", colors.gray || colors.grey || colors.dim),
+    setLoggerField(targetLogger, "white", colors.white),
+    setLoggerField(targetLogger, "black", colors.black),
   ].every(Boolean)
 }
 
