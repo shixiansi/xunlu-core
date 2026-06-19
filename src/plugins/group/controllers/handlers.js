@@ -1044,7 +1044,7 @@ export function register(bot) {
 
   // ===================== 群管（管理员/主人） =====================
   bot.registerCommand(
-    ["^(|#)禁言\\s+.*$", { example: ["#禁言 @用户 60秒"], desc: "禁言群成员（管理员/主人）" }],
+    ["^(|#)禁言\\s*.*$", { example: ["#禁言 @用户 60秒", "#禁言60秒"], desc: "禁言群成员（管理员/主人）" }],
     async ctx => {
       if (!ctx.group_id) return await ctx.reply("请在群内使用")
       if (!(await checkUserAdminOrMaster(ctx))) return await ctx.reply("需要管理员权限")
@@ -1072,7 +1072,7 @@ export function register(bot) {
   )
 
   bot.registerCommand(
-    ["^(|#)解禁\\s+.*$", { example: ["#解禁 @用户"], desc: "解除禁言（管理员/主人）" }],
+    ["^(|#)解禁\\s*.*$", { example: ["#解禁 @用户"], desc: "解除禁言（管理员/主人）" }],
     async ctx => {
       if (!ctx.group_id) return await ctx.reply("请在群内使用")
       if (!(await checkUserAdminOrMaster(ctx))) return await ctx.reply("需要管理员权限")
@@ -1128,7 +1128,7 @@ export function register(bot) {
   )
 
   bot.registerCommand(
-    ["^(|#)踢黑\\s+.*$", { example: ["#踢黑 @用户"], desc: "踢出并拉黑（管理员/主人）" }],
+    ["^(|#)踢黑\\s*.*$", { example: ["#踢黑 @用户"], desc: "踢出并拉黑（管理员/主人）" }],
     async ctx => {
       if (!ctx.group_id) return await ctx.reply("请在群内使用")
       if (!(await checkUserAdminOrMaster(ctx))) return await ctx.reply("需要管理员权限")
@@ -1156,7 +1156,7 @@ export function register(bot) {
   )
 
   bot.registerCommand(
-    ["^(|#)踢\\s+.*$", { example: ["#踢 @用户"], desc: "踢出群成员（管理员/主人）" }],
+    ["^(|#)踢\\s*.*$", { example: ["#踢 @用户"], desc: "踢出群成员（管理员/主人）" }],
     async ctx => {
       if (!ctx.group_id) return await ctx.reply("请在群内使用")
       if (!(await checkUserAdminOrMaster(ctx))) return await ctx.reply("需要管理员权限")
