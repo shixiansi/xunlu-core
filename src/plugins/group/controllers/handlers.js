@@ -1061,8 +1061,13 @@ export function register(bot) {
       if (!target) return await ctx.reply("用法：#禁言 @用户 60秒")
       if (duration <= 0) return await ctx.reply("用法：#禁言 @用户 60秒（支持 秒/分/小时/天）")
 
-      await ctx.setGroupMemberMute({ group_id: ctx.group_id, user_id: target, duration })
-      return await ctx.reply(`已禁言：${target}（${duration} 秒）`)
+      try {
+        await ctx.setGroupMemberMute({ group_id: ctx.group_id, user_id: target, duration })
+        return await ctx.reply(`已禁言：${target}（${duration} 秒）`)
+      } catch (err) {
+        console.error("[group] setGroupMemberMute failed:", err?.message || err)
+        return await ctx.reply(`禁言失败：${err?.message || "未知错误"}`)
+      }
     },
   )
 
@@ -1080,8 +1085,13 @@ export function register(bot) {
       const target = toInt(ctx.at) ?? toInt(parts[0])
       if (!target) return await ctx.reply("用法：#解禁 @用户")
 
-      await ctx.setGroupMemberMute({ group_id: ctx.group_id, user_id: target, duration: 0 })
-      return await ctx.reply(`已解禁：${target}`)
+      try {
+        await ctx.setGroupMemberMute({ group_id: ctx.group_id, user_id: target, duration: 0 })
+        return await ctx.reply(`已解禁：${target}`)
+      } catch (err) {
+        console.error("[group] setGroupMemberMute (unmute) failed:", err?.message || err)
+        return await ctx.reply(`解禁失败：${err?.message || "未知错误"}`)
+      }
     },
   )
 
@@ -1091,8 +1101,13 @@ export function register(bot) {
       if (!ctx.group_id) return await ctx.reply("请在群内使用")
       if (!(await checkUserAdminOrMaster(ctx))) return await ctx.reply("需要管理员权限")
       if (!(await checkBotAdmin(ctx))) return await ctx.reply("Bot 需要管理员权限")
-      await ctx.setGroupWholeMute({ group_id: ctx.group_id, enable: true })
-      return await ctx.reply("已尝试开启全体禁言")
+      try {
+        await ctx.setGroupWholeMute({ group_id: ctx.group_id, enable: true })
+        return await ctx.reply("已尝试开启全体禁言")
+      } catch (err) {
+        console.error("[group] setGroupWholeMute (enable) failed:", err?.message || err)
+        return await ctx.reply(`全体禁言失败：${err?.message || "未知错误"}`)
+      }
     },
   )
 
@@ -1102,8 +1117,13 @@ export function register(bot) {
       if (!ctx.group_id) return await ctx.reply("请在群内使用")
       if (!(await checkUserAdminOrMaster(ctx))) return await ctx.reply("需要管理员权限")
       if (!(await checkBotAdmin(ctx))) return await ctx.reply("Bot 需要管理员权限")
-      await ctx.setGroupWholeMute({ group_id: ctx.group_id, enable: false })
-      return await ctx.reply("已尝试解除全体禁言")
+      try {
+        await ctx.setGroupWholeMute({ group_id: ctx.group_id, enable: false })
+        return await ctx.reply("已尝试解除全体禁言")
+      } catch (err) {
+        console.error("[group] setGroupWholeMute (disable) failed:", err?.message || err)
+        return await ctx.reply(`解除全体禁言失败：${err?.message || "未知错误"}`)
+      }
     },
   )
 
@@ -1121,12 +1141,17 @@ export function register(bot) {
       const target = toInt(ctx.at) ?? toInt(parts[0])
       if (!target) return await ctx.reply("用法：#踢黑 @用户")
 
-      await ctx.kickGroupMember({
-        group_id: ctx.group_id,
-        user_id: target,
-        reject_add_request: true,
-      })
-      return await ctx.reply(`已尝试踢黑：${target}`)
+      try {
+        await ctx.kickGroupMember({
+          group_id: ctx.group_id,
+          user_id: target,
+          reject_add_request: true,
+        })
+        return await ctx.reply(`已尝试踢黑：${target}`)
+      } catch (err) {
+        console.error("[group] kickGroupMember (ban) failed:", err?.message || err)
+        return await ctx.reply(`踢黑失败：${err?.message || "未知错误"}`)
+      }
     },
   )
 
@@ -1144,12 +1169,17 @@ export function register(bot) {
       const target = toInt(ctx.at) ?? toInt(parts[0])
       if (!target) return await ctx.reply("用法：#踢 @用户")
 
-      await ctx.kickGroupMember({
-        group_id: ctx.group_id,
-        user_id: target,
-        reject_add_request: false,
-      })
-      return await ctx.reply(`已尝试踢出：${target}`)
+      try {
+        await ctx.kickGroupMember({
+          group_id: ctx.group_id,
+          user_id: target,
+          reject_add_request: false,
+        })
+        return await ctx.reply(`已尝试踢出：${target}`)
+      } catch (err) {
+        console.error("[group] kickGroupMember failed:", err?.message || err)
+        return await ctx.reply(`踢出失败：${err?.message || "未知错误"}`)
+      }
     },
   )
 
