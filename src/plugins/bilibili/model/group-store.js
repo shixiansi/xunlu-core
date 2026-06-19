@@ -37,11 +37,17 @@ export function removeBilibiliGroupData(groupId) {
 }
 
 export function reconcileBilibiliGroupData(activeGroupIds = []) {
-  const active = new Set(
-    (Array.isArray(activeGroupIds) ? activeGroupIds : [])
-      .map(id => String(id || "").trim())
-      .filter(Boolean),
-  )
+  const normalizedIds = (Array.isArray(activeGroupIds) ? activeGroupIds : [])
+    .map(id => String(id || "").trim())
+    .filter(Boolean)
+
+  // 保护机制：如果 activeGroupIds 为空，不执行清理，避免启动时误删数据
+  if (normalizedIds.length === 0) {
+    console.warn("[bilibili] skip reconcile: activeGroupIds is empty")
+    return []
+  }
+
+  const active = new Set(normalizedIds)
   const removed = []
 
   for (const gid of listBilibiliConfiguredGroupIds()) {
