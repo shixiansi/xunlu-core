@@ -1062,7 +1062,14 @@ export function register(bot) {
       if (duration <= 0) return await ctx.reply("用法：#禁言 @用户 60秒（支持 秒/分/小时/天）")
 
       try {
-        await ctx.setGroupMemberMute({ group_id: ctx.group_id, user_id: target, duration })
+        // 优先使用 ctx.setGroupMemberMute，如果不存在则使用 bot.setGroupMemberMute
+        const muteFn = typeof ctx.setGroupMemberMute === "function"
+          ? ctx.setGroupMemberMute.bind(ctx)
+          : typeof bot.setGroupMemberMute === "function"
+            ? bot.setGroupMemberMute.bind(bot)
+            : null
+        if (!muteFn) throw new Error("setGroupMemberMute API not available")
+        await muteFn({ group_id: ctx.group_id, user_id: target, duration })
         return await ctx.reply(`已禁言：${target}（${duration} 秒）`)
       } catch (err) {
         console.error("[group] setGroupMemberMute failed:", err?.message || err)
@@ -1086,7 +1093,14 @@ export function register(bot) {
       if (!target) return await ctx.reply("用法：#解禁 @用户")
 
       try {
-        await ctx.setGroupMemberMute({ group_id: ctx.group_id, user_id: target, duration: 0 })
+        // 优先使用 ctx.setGroupMemberMute，如果不存在则使用 bot.setGroupMemberMute
+        const muteFn = typeof ctx.setGroupMemberMute === "function"
+          ? ctx.setGroupMemberMute.bind(ctx)
+          : typeof bot.setGroupMemberMute === "function"
+            ? bot.setGroupMemberMute.bind(bot)
+            : null
+        if (!muteFn) throw new Error("setGroupMemberMute API not available")
+        await muteFn({ group_id: ctx.group_id, user_id: target, duration: 0 })
         return await ctx.reply(`已解禁：${target}`)
       } catch (err) {
         console.error("[group] setGroupMemberMute (unmute) failed:", err?.message || err)
@@ -1102,7 +1116,14 @@ export function register(bot) {
       if (!(await checkUserAdminOrMaster(ctx))) return await ctx.reply("需要管理员权限")
       if (!(await checkBotAdmin(ctx))) return await ctx.reply("Bot 需要管理员权限")
       try {
-        await ctx.setGroupWholeMute({ group_id: ctx.group_id, enable: true })
+        // 优先使用 ctx.setGroupWholeMute，如果不存在则使用 bot.setGroupWholeMute
+        const muteAllFn = typeof ctx.setGroupWholeMute === "function"
+          ? ctx.setGroupWholeMute.bind(ctx)
+          : typeof bot.setGroupWholeMute === "function"
+            ? bot.setGroupWholeMute.bind(bot)
+            : null
+        if (!muteAllFn) throw new Error("setGroupWholeMute API not available")
+        await muteAllFn({ group_id: ctx.group_id, enable: true })
         return await ctx.reply("已尝试开启全体禁言")
       } catch (err) {
         console.error("[group] setGroupWholeMute (enable) failed:", err?.message || err)
@@ -1118,7 +1139,14 @@ export function register(bot) {
       if (!(await checkUserAdminOrMaster(ctx))) return await ctx.reply("需要管理员权限")
       if (!(await checkBotAdmin(ctx))) return await ctx.reply("Bot 需要管理员权限")
       try {
-        await ctx.setGroupWholeMute({ group_id: ctx.group_id, enable: false })
+        // 优先使用 ctx.setGroupWholeMute，如果不存在则使用 bot.setGroupWholeMute
+        const muteAllFn = typeof ctx.setGroupWholeMute === "function"
+          ? ctx.setGroupWholeMute.bind(ctx)
+          : typeof bot.setGroupWholeMute === "function"
+            ? bot.setGroupWholeMute.bind(bot)
+            : null
+        if (!muteAllFn) throw new Error("setGroupWholeMute API not available")
+        await muteAllFn({ group_id: ctx.group_id, enable: false })
         return await ctx.reply("已尝试解除全体禁言")
       } catch (err) {
         console.error("[group] setGroupWholeMute (disable) failed:", err?.message || err)
@@ -1142,7 +1170,14 @@ export function register(bot) {
       if (!target) return await ctx.reply("用法：#踢黑 @用户")
 
       try {
-        await ctx.kickGroupMember({
+        // 优先使用 ctx.kickGroupMember，如果不存在则使用 bot.kickGroupMember
+        const kickFn = typeof ctx.kickGroupMember === "function"
+          ? ctx.kickGroupMember.bind(ctx)
+          : typeof bot.kickGroupMember === "function"
+            ? bot.kickGroupMember.bind(bot)
+            : null
+        if (!kickFn) throw new Error("kickGroupMember API not available")
+        await kickFn({
           group_id: ctx.group_id,
           user_id: target,
           reject_add_request: true,
@@ -1170,7 +1205,14 @@ export function register(bot) {
       if (!target) return await ctx.reply("用法：#踢 @用户")
 
       try {
-        await ctx.kickGroupMember({
+        // 优先使用 ctx.kickGroupMember，如果不存在则使用 bot.kickGroupMember
+        const kickFn = typeof ctx.kickGroupMember === "function"
+          ? ctx.kickGroupMember.bind(ctx)
+          : typeof bot.kickGroupMember === "function"
+            ? bot.kickGroupMember.bind(bot)
+            : null
+        if (!kickFn) throw new Error("kickGroupMember API not available")
+        await kickFn({
           group_id: ctx.group_id,
           user_id: target,
           reject_add_request: false,
