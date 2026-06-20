@@ -28,6 +28,7 @@ export default async function attachApisMiddleware(ctx, next) {
     "setGroupMemberMute",
     "makeGroupForwardMsg",
     "makeGroupForwardMsgByUser",
+    "getGroupChatHistory",
     "pickUser",
     "renderImg",
   ]

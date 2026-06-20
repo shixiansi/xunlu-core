@@ -1060,7 +1060,7 @@ export function register(bot) {
       if (duration <= 0) return await ctx.reply("用法：#禁言 @用户 60秒（支持 秒/分/小时/天）")
 
       try {
-        await ctx.api.setGroupMemberMute({ group_id: ctx.group_id, user_id: target, duration })
+        await ctx.setGroupMemberMute({ group_id: ctx.group_id, user_id: target, duration })
         return await ctx.reply(`已禁言：${target}（${duration} 秒）`)
       } catch (err) {
         console.error("[group] setGroupMemberMute failed:", err?.message || err)
@@ -1084,7 +1084,7 @@ export function register(bot) {
       if (!target) return await ctx.reply("用法：#解禁 @用户")
 
       try {
-        await ctx.api.setGroupMemberMute({ group_id: ctx.group_id, user_id: target, duration: 0 })
+        await ctx.setGroupMemberMute({ group_id: ctx.group_id, user_id: target, duration: 0 })
         return await ctx.reply(`已解禁：${target}`)
       } catch (err) {
         console.error("[group] setGroupMemberMute (unmute) failed:", err?.message || err)
@@ -1100,7 +1100,7 @@ export function register(bot) {
       if (!(await checkUserAdminOrMaster(ctx))) return await ctx.reply("需要管理员权限")
       if (!(await checkBotAdmin(ctx))) return await ctx.reply("Bot 需要管理员权限")
       try {
-        await ctx.api.setGroupWholeMute({ group_id: ctx.group_id, enable: true })
+        await ctx.setGroupWholeMute({ group_id: ctx.group_id, enable: true })
         return await ctx.reply("已尝试开启全体禁言")
       } catch (err) {
         console.error("[group] setGroupWholeMute (enable) failed:", err?.message || err)
@@ -1116,7 +1116,7 @@ export function register(bot) {
       if (!(await checkUserAdminOrMaster(ctx))) return await ctx.reply("需要管理员权限")
       if (!(await checkBotAdmin(ctx))) return await ctx.reply("Bot 需要管理员权限")
       try {
-        await ctx.api.setGroupWholeMute({ group_id: ctx.group_id, enable: false })
+        await ctx.setGroupWholeMute({ group_id: ctx.group_id, enable: false })
         return await ctx.reply("已尝试解除全体禁言")
       } catch (err) {
         console.error("[group] setGroupWholeMute (disable) failed:", err?.message || err)
@@ -1140,7 +1140,7 @@ export function register(bot) {
       if (!target) return await ctx.reply("用法：#踢黑 @用户")
 
       try {
-        await ctx.api.kickGroupMember({ group_id: ctx.group_id, user_id: target, reject_add_request: true })
+        await ctx.kickGroupMember({ group_id: ctx.group_id, user_id: target, reject_add_request: true })
         return await ctx.reply(`已尝试踢黑：${target}`)
       } catch (err) {
         console.error("[group] kickGroupMember (ban) failed:", err?.message || err)
@@ -1164,7 +1164,7 @@ export function register(bot) {
       if (!target) return await ctx.reply("用法：#踢 @用户")
 
       try {
-        await ctx.api.kickGroupMember({ group_id: ctx.group_id, user_id: target, reject_add_request: false })
+        await ctx.kickGroupMember({ group_id: ctx.group_id, user_id: target, reject_add_request: false })
         return await ctx.reply(`已尝试踢出：${target}`)
       } catch (err) {
         console.error("[group] kickGroupMember failed:", err?.message || err)
@@ -1390,7 +1390,7 @@ export function register(bot) {
     const rkeySuffix = String((await getSceneRkey("group"))?.value || "").trim()
     console.log("rkeysuffix:", rkeySuffix)
 
-    let msgChat = await Bot.getGroupChatHistory(ctx.group_id)
+    let msgChat = await ctx.getGroupChatHistory(ctx.group_id)
     let msgList = msgChat
       .filter(item => item.user_id == targetUserId)
       .map(item => ({
@@ -1405,7 +1405,7 @@ export function register(bot) {
 
   bot.registerCommand(["^今日表情包$"], async ctx => {
     const targetUserId = ctx.at || ctx.user_id
-    let msgChat = await Bot.getGroupChatHistory(ctx.group_id)
+    let msgChat = await ctx.getGroupChatHistory(ctx.group_id)
     const rkey = String((await getSceneRkey("group"))?.value || "").trim()
     const dealQQImgUrl = url => {
       if (!url) return ""
