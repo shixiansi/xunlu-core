@@ -394,13 +394,16 @@ async function runUpdate(ctx, isForce = false) {
  * 注册命令（核心入口）
  * @param {Object} bot 机器人实例
  */
+export async function onEnable(pluginDef) {
+  try {
+    await initRestartStatus()
+  } catch (err) {
+    logger.error(`[荨鹿更新] 初始化失败：${err.stack}`)
+  }
+}
+
 export function register(bot) {
   if (!bot || !bot.registerCommand) return
-
-  // 初始化重启状态检查
-  bot.onMount(() =>
-    initRestartStatus().catch(err => logger.error(`[荨鹿更新] 初始化失败：${err.stack}`)),
-  )
 
   // 注册「荨鹿更新」命令
   bot.registerCommand(["^荨鹿更新$"], async ctx => {

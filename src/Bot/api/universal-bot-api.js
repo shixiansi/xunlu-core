@@ -1,5 +1,6 @@
 import { coerceToUniversalMessage } from "../message/context.js"
 import { UniversalMessage } from "../message/universal-message.js"
+import { protocolDispatcher } from "../../protocol-dispatcher/index.js"
 import {
   getMemberRoleFlagsWithFallback,
   hasAdminRole,
@@ -15,67 +16,14 @@ import {
   getYunzaiSendApi,
   hasMilkyForwardSegments,
   hasOnebotNodeSegments,
-  mapMilkyNotificationType,
-  mapOnebotGroupRequestSubType,
   normalizeApiActionName,
   normalizeProtocol,
   normalizeTarget,
   rememberOutgoingGroupMessage,
   resolveProtocol,
   toInt,
-  toKeyMap,
-  toMemberMap,
   toSendTargetObject,
 } from "./universal-bot-api-utils.js"
-
-function getOnebotReactionSendApiCandidate(target) {
-  if (!target || (typeof target !== "object" && typeof target !== "function")) return null
-
-  if (typeof target.__xunlu_raw_sendApi === "function") {
-    return target.__xunlu_raw_sendApi.bind(target)
-  }
-
-  if (target.__xunlu_takeover_state) return null
-
-  if (typeof target.sendApi === "function" && !target.sendApi?.__xunlu_universal) {
-    return target.sendApi.bind(target)
-  }
-
-  return null
-}
-
-function getOnebotReactionSendApi({ ctx, runtimeBot } = {}) {
-  return (
-    getOnebotReactionSendApiCandidate(ctx?.bot) ||
-    getOnebotReactionSendApiCandidate(globalThis.Bot) ||
-    getOnebotReactionSendApiCandidate(runtimeBot)
-  )
-}
-
-function getDirectOnebotReactionMethod(runtimeBot) {
-  if (!runtimeBot || (typeof runtimeBot !== "object" && typeof runtimeBot !== "function")) {
-    return null
-  }
-
-  if (typeof runtimeBot.__xunlu_raw_sendGroupMessageReaction === "function") {
-    return runtimeBot.__xunlu_raw_sendGroupMessageReaction.bind(runtimeBot)
-  }
-
-  if (runtimeBot.__xunlu_takeover_state) return null
-
-  const adapterIdentity = String(
-    runtimeBot?.adapterType ??
-      runtimeBot?.adapter?.name ??
-      runtimeBot?.adapter_name ??
-      runtimeBot?.constructor?.name ??
-      "",
-  ).toLowerCase()
-  if (!adapterIdentity.includes("onebot")) return null
-
-  return typeof runtimeBot.sendGroupMessageReaction === "function"
-    ? runtimeBot.sendGroupMessageReaction.bind(runtimeBot)
-    : null
-}
 
 function collectMessageBotCandidates(...targets) {
   const out = []
@@ -236,68 +184,26 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       const ctx = this && typeof this === "object" ? this : null
       const runtimeBot = getRuntimeBotOrNull()
       const protocol = resolveProtocol({ ctx, bot, runtimeBot, adapterHint })
-
-      if (protocol === "icqq") {
-        const user_id = toInt(runtimeBot?.uin) ?? 0
-        const nickname = runtimeBot?.nickname ? String(runtimeBot.nickname) : ""
-        return { user_id, nickname }
-      }
-
-      const raw = getRawMethod(runtimeBot, "getLoginInfo", api.getLoginInfo)
-      if (!raw) throw new Error("[getLoginInfo] API not available")
-      return await raw.call(runtimeBot)
+      return protocolDispatcher.exec("getLoginInfo", protocol, {}, ctx)
     },
 
     async getFriendList() {
       const ctx = this && typeof this === "object" ? this : null
       const runtimeBot = getRuntimeBotOrNull()
       const protocol = resolveProtocol({ ctx, bot, runtimeBot, adapterHint })
-
-      const raw = getRawMethod(runtimeBot, "getFriendList", api.getFriendList)
-      if (!raw) throw new Error("[getFriendList] API not available")
-
-      if (protocol === "icqq") {
-        const res = await raw.call(runtimeBot)
-        return res instanceof Map ? res : toKeyMap(res?.friends ?? res, "user_id")
-      }
-
-      const res = await raw.call(runtimeBot, {})
-      return toKeyMap(res?.friends ?? res, "user_id")
+      return protocolDispatcher.exec("getFriendList", protocol, {}, ctx)
     },
 
     async getFriendInfo(input = {}) {
       const ctx = this && typeof this === "object" ? this : null
       const runtimeBot = getRuntimeBotOrNull()
       const protocol = resolveProtocol({ ctx, bot, runtimeBot, adapterHint })
-
-      const userId = toInt(input.user_id ?? input.userId ?? ctx?.user_id ?? ctx?.sender_id)
-      if (userId === undefined) throw new Error("[getFriendInfo] requires user_id")
-
-      if (protocol === "icqq") {
-        const rawGetStranger =
-          runtimeBot?.__xunlu_raw_getStrangerInfo || runtimeBot?.getStrangerInfo || null
-        if (rawGetStranger) return await rawGetStranger.call(runtimeBot, userId)
-
-        const rawGetFriendInfo = getRawMethod(runtimeBot, "getFriendInfo", api.getFriendInfo)
-        if (!rawGetFriendInfo) throw new Error("[getFriendInfo] icqq API not available")
-
-        const res = await rawGetFriendInfo.call(runtimeBot, {
-          user_id: userId,
-          no_cache: Boolean(input.no_cache),
-        })
-        return res?.friend ?? res
-      }
-
-      const raw = getRawMethod(runtimeBot, "getFriendInfo", api.getFriendInfo)
-      if (!raw) throw new Error("[getFriendInfo] API not available")
-
-      const res = await raw.call(runtimeBot, { user_id: userId, no_cache: Boolean(input.no_cache) })
-      return res?.friend ?? res
+      return protocolDispatcher.exec("getFriendInfo", protocol, {
+        user_id: toInt(input.user_id ?? input.userId ?? ctx?.user_id ?? ctx?.sender_id),
+        no_cache: input.no_cache,
+      }, ctx)
     },
 
-    /**
-     * 资料卡点赞（OneBot send_like / Milky send_profile_like）
-     */
     async sendProfileLike(input = {}) {
       const ctx = this && typeof this === "object" ? this : null
       const runtimeBot = getRuntimeBotOrNull()
@@ -305,98 +211,17 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
 
       const user_id = toInt(input.user_id ?? input.userId ?? ctx?.user_id ?? ctx?.sender_id)
       if (user_id === undefined) throw new Error("[sendProfileLike] requires user_id")
-
-      const timesRaw = input.times ?? input.count
-      const times = Math.max(1, Math.floor(Number(timesRaw ?? 1)))
-
-      const likeCandidates = collectMessageBotCandidates(ctx?.bot, runtimeBot, globalThis.Bot)
-
-      const tryRawSendLike = async candidates => {
-        for (const candidate of candidates) {
-          const raw = getRawMethod(candidate, "sendLike", api.sendProfileLike)
-          if (!raw) continue
-          return await raw.call(candidate, user_id, times)
-        }
-        return undefined
-      }
-
-      const tryThumbUp = async candidates => {
-        for (const candidate of candidates) {
-          const thumbTarget =
-            typeof candidate?.pickFriend === "function"
-              ? candidate.pickFriend(user_id)
-              : typeof candidate?.pickUser === "function"
-                ? candidate.pickUser(user_id)
-                : null
-          if (!thumbTarget?.thumbUp) continue
-          return await thumbTarget.thumbUp(times)
-        }
-        return undefined
-      }
-
-      if (protocol === "onebotv11") {
-        const rawLikeResult = await tryRawSendLike(likeCandidates)
-        if (rawLikeResult !== undefined) return rawLikeResult
-
-        const thumbUpResult = await tryThumbUp(likeCandidates)
-        if (thumbUpResult !== undefined) return thumbUpResult
-
-        const sendApi = getOnebotReactionSendApi({ ctx, runtimeBot })
-        if (sendApi) {
-          return await sendApi("send_like", { user_id, times })
-        }
-
-        throw new Error("[sendProfileLike] API not available")
-      }
-
-      if (protocol === "milky") {
-        try {
-          return await api.sendApi.call(ctx ?? api, "send_profile_like", { user_id, count: times })
-        } catch (error) {
-          const msg = error?.message || String(error)
-          if (/(missing|required|must be|缺少|字段|参数)/i.test(msg)) {
-            return await api.sendApi.call(ctx ?? api, "send_profile_like", {
-              user_id,
-              count: times,
-            })
-          }
-          throw error
-        }
-      }
-
-      // icqq: prefer native client API, fallback to yunzai/onebot-style send_like when available.
-      const rawLikeResult = await tryRawSendLike(likeCandidates)
-      if (rawLikeResult !== undefined) {
-        return rawLikeResult
-      }
-
-      const thumbUpResult = await tryThumbUp(likeCandidates)
-      if (thumbUpResult !== undefined) {
-        return thumbUpResult
-      }
-
-      try {
-        return await api.sendApi.call(ctx ?? api, "send_like", { user_id, times })
-      } catch (err) {
-        throw new Error("[sendProfileLike] API not available")
-      }
+      return protocolDispatcher.exec("sendProfileLike", protocol, {
+        user_id,
+        times: Math.max(1, Math.floor(Number(input.times ?? input.count ?? 1))),
+      }, ctx)
     },
 
     async getGroupList() {
       const ctx = this && typeof this === "object" ? this : null
       const runtimeBot = getRuntimeBotOrNull()
       const protocol = resolveProtocol({ ctx, bot, runtimeBot, adapterHint })
-
-      const raw = getRawMethod(runtimeBot, "getGroupList", api.getGroupList)
-      if (!raw) throw new Error("[getGroupList] API not available")
-
-      if (protocol === "icqq") {
-        const res = await raw.call(runtimeBot)
-        return res instanceof Map ? res : toKeyMap(res?.groups ?? res, "group_id")
-      }
-
-      const res = await raw.call(runtimeBot, {})
-      return toKeyMap(res?.groups ?? res, "group_id")
+      return protocolDispatcher.exec("getGroupList", protocol, {}, ctx)
     },
 
     async getGroupInfo(input = {}) {
@@ -406,19 +231,10 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
 
       const groupId = toInt(input.group_id ?? input.groupId ?? ctx?.group_id)
       if (groupId === undefined) throw new Error("[getGroupInfo] requires group_id")
-
-      const raw = getRawMethod(runtimeBot, "getGroupInfo", api.getGroupInfo)
-      if (!raw) throw new Error("[getGroupInfo] API not available")
-
-      if (protocol === "icqq") {
-        return await raw.call(runtimeBot, groupId, Boolean(input.no_cache))
-      }
-
-      const res = await raw.call(runtimeBot, {
+      return protocolDispatcher.exec("getGroupInfo", protocol, {
         group_id: groupId,
         no_cache: Boolean(input.no_cache),
-      })
-      return res?.group ?? res
+      }, ctx)
     },
 
     async setGroupName(input = {}) {
@@ -431,20 +247,10 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       if (groupId === undefined) throw new Error("[setGroupName] requires group_id")
       if (groupName === undefined || groupName === null)
         throw new Error("[setGroupName] requires group_name")
-
-      const raw = getRawMethod(runtimeBot, "setGroupName", api.setGroupName)
-      if (protocol === "icqq") {
-        if (!raw) throw new Error("[setGroupName] API not available")
-        return await raw.call(runtimeBot, groupId, String(groupName))
-      }
-
-      if (!raw) throw new Error("[setGroupName] API not available")
-
-      if (protocol === "milky") {
-        return await raw.call(runtimeBot, { group_id: groupId, new_group_name: String(groupName) })
-      }
-
-      return await raw.call(runtimeBot, { group_id: groupId, group_name: String(groupName) })
+      return protocolDispatcher.exec("setGroupName", protocol, {
+        group_id: groupId,
+        group_name: String(groupName),
+      }, ctx)
     },
 
     async setGroupMemberCard(input = {}) {
@@ -458,16 +264,9 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       if (groupId === undefined || userId === undefined)
         throw new Error("[setGroupMemberCard] requires group_id/user_id")
       if (card === undefined || card === null) throw new Error("[setGroupMemberCard] requires card")
-
-      if (protocol === "icqq") {
-        const raw = getRawMethod(runtimeBot, "setGroupCard", api.setGroupMemberCard)
-        if (!raw) throw new Error("[setGroupMemberCard] icqq API not available")
-        return await raw.call(runtimeBot, groupId, userId, String(card))
-      }
-
-      const raw = getRawMethod(runtimeBot, "setGroupMemberCard", api.setGroupMemberCard)
-      if (!raw) throw new Error("[setGroupMemberCard] API not available")
-      return await raw.call(runtimeBot, { group_id: groupId, user_id: userId, card: String(card) })
+      return protocolDispatcher.exec("setGroupMemberCard", protocol, {
+        group_id: groupId, user_id: userId, card: String(card),
+      }, ctx)
     },
 
     async setGroupMemberAdmin(input = {}) {
@@ -482,29 +281,9 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
         throw new Error("[setGroupMemberAdmin] requires group_id/user_id")
       if (enable === undefined || enable === null)
         throw new Error("[setGroupMemberAdmin] requires enable")
-
-      if (protocol === "icqq") {
-        const raw = getRawMethod(runtimeBot, "setGroupAdmin", api.setGroupMemberAdmin)
-        if (!raw) throw new Error("[setGroupMemberAdmin] icqq API not available")
-        return await raw.call(runtimeBot, groupId, userId, Boolean(enable))
-      }
-
-      const raw = getRawMethod(runtimeBot, "setGroupMemberAdmin", api.setGroupMemberAdmin)
-      if (!raw) throw new Error("[setGroupMemberAdmin] API not available")
-
-      if (protocol === "milky") {
-        return await raw.call(runtimeBot, {
-          group_id: groupId,
-          user_id: userId,
-          is_set: Boolean(enable),
-        })
-      }
-
-      return await raw.call(runtimeBot, {
-        group_id: groupId,
-        user_id: userId,
-        enable: Boolean(enable),
-      })
+      return protocolDispatcher.exec("setGroupMemberAdmin", protocol, {
+        group_id: groupId, user_id: userId, enable: Boolean(enable),
+      }, ctx)
     },
 
     async setGroupMemberSpecialTitle(input = {}) {
@@ -515,40 +294,14 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       const groupId = toInt(input.group_id ?? input.groupId ?? ctx?.group_id)
       const userId = toInt(input.user_id ?? input.userId ?? ctx?.user_id ?? ctx?.sender_id)
       const specialTitle = input.special_title ?? input.specialTitle
-      const duration = input.duration
       if (groupId === undefined || userId === undefined)
         throw new Error("[setGroupMemberSpecialTitle] requires group_id/user_id")
       if (specialTitle === undefined || specialTitle === null)
         throw new Error("[setGroupMemberSpecialTitle] requires special_title")
-
-      if (protocol === "icqq") {
-        const raw = getRawMethod(runtimeBot, "setGroupSpecialTitle", api.setGroupMemberSpecialTitle)
-        if (!raw) throw new Error("[setGroupMemberSpecialTitle] icqq API not available")
-        return await raw.call(runtimeBot, groupId, userId, String(specialTitle), duration)
-      }
-
-      const raw = getRawMethod(
-        runtimeBot,
-        "setGroupMemberSpecialTitle",
-        api.setGroupMemberSpecialTitle,
-      )
-      if (!raw) throw new Error("[setGroupMemberSpecialTitle] API not available")
-
-      if (protocol === "milky") {
-        // milky-types 不支持 duration
-        return await raw.call(runtimeBot, {
-          group_id: groupId,
-          user_id: userId,
-          special_title: String(specialTitle),
-        })
-      }
-
-      return await raw.call(runtimeBot, {
-        group_id: groupId,
-        user_id: userId,
-        special_title: String(specialTitle),
-        ...(duration !== undefined ? { duration: Number(duration) } : {}),
-      })
+      return protocolDispatcher.exec("setGroupMemberSpecialTitle", protocol, {
+        group_id: groupId, user_id: userId, special_title: String(specialTitle),
+        duration: input.duration,
+      }, ctx)
     },
 
     async setGroupWholeMute(input = {}) {
@@ -561,21 +314,9 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       if (groupId === undefined) throw new Error("[setGroupWholeMute] requires group_id")
       if (enable === undefined || enable === null)
         throw new Error("[setGroupWholeMute] requires enable")
-
-      if (protocol === "icqq") {
-        const raw = getRawMethod(runtimeBot, "setGroupWholeBan", api.setGroupWholeMute)
-        if (!raw) throw new Error("[setGroupWholeMute] icqq API not available")
-        return await raw.call(runtimeBot, groupId, Boolean(enable))
-      }
-
-      const raw = getRawMethod(runtimeBot, "setGroupWholeMute", api.setGroupWholeMute)
-      if (!raw) throw new Error("[setGroupWholeMute] API not available")
-
-      if (protocol === "milky") {
-        return await raw.call(runtimeBot, { group_id: groupId, is_mute: Boolean(enable) })
-      }
-
-      return await raw.call(runtimeBot, { group_id: groupId, enable: Boolean(enable) })
+      return protocolDispatcher.exec("setGroupWholeMute", protocol, {
+        group_id: groupId, enable: Boolean(enable),
+      }, ctx)
     },
 
     async kickGroupMember(input = {}) {
@@ -585,27 +326,13 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
 
       const groupId = toInt(input.group_id ?? input.groupId ?? ctx?.group_id)
       const userId = toInt(input.user_id ?? input.userId ?? ctx?.user_id ?? ctx?.sender_id)
-      const reject_add_request = input.reject_add_request ?? input.rejectAddRequest
-      const message = input.message
       if (groupId === undefined || userId === undefined)
         throw new Error("[kickGroupMember] requires group_id/user_id")
-
-      if (protocol === "icqq") {
-        const raw = getRawMethod(runtimeBot, "setGroupKick", api.kickGroupMember)
-        if (!raw) throw new Error("[kickGroupMember] icqq API not available")
-        return await raw.call(runtimeBot, groupId, userId, Boolean(reject_add_request), message)
-      }
-
-      const raw = getRawMethod(runtimeBot, "kickGroupMember", api.kickGroupMember)
-      if (!raw) throw new Error("[kickGroupMember] API not available")
-
-      return await raw.call(runtimeBot, {
-        group_id: groupId,
-        user_id: userId,
-        ...(reject_add_request !== undefined
-          ? { reject_add_request: Boolean(reject_add_request) }
-          : {}),
-      })
+      return protocolDispatcher.exec("kickGroupMember", protocol, {
+        group_id: groupId, user_id: userId,
+        reject_add_request: input.reject_add_request ?? input.rejectAddRequest,
+        message: input.message,
+      }, ctx)
     },
 
     async quitGroup(input = {}) {
@@ -614,114 +341,25 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       const protocol = resolveProtocol({ ctx, bot, runtimeBot, adapterHint })
 
       const groupId = toInt(input.group_id ?? input.groupId ?? ctx?.group_id)
-      const is_dismiss = input.is_dismiss ?? input.isDismiss
       if (groupId === undefined) throw new Error("[quitGroup] requires group_id")
-
-      if (protocol === "icqq") {
-        const raw = getRawMethod(runtimeBot, "setGroupLeave", api.quitGroup)
-        if (!raw) throw new Error("[quitGroup] icqq API not available")
-        return await raw.call(runtimeBot, groupId)
-      }
-
-      const raw = getRawMethod(runtimeBot, "quitGroup", api.quitGroup)
-      if (!raw) throw new Error("[quitGroup] API not available")
-
-      if (protocol === "milky") {
-        return await raw.call(runtimeBot, { group_id: groupId })
-      }
-
-      return await raw.call(runtimeBot, {
+      return protocolDispatcher.exec("quitGroup", protocol, {
         group_id: groupId,
-        ...(is_dismiss !== undefined ? { is_dismiss: Boolean(is_dismiss) } : {}),
-      })
+        is_dismiss: input.is_dismiss ?? input.isDismiss,
+      }, ctx)
     },
 
     async acceptFriendRequest(input = {}) {
       const ctx = this && typeof this === "object" ? this : null
       const runtimeBot = getRuntimeBotOrNull()
       const protocol = resolveProtocol({ ctx, bot, runtimeBot, adapterHint })
-
-      if (protocol === "milky") {
-        const raw = getRawMethod(runtimeBot, "acceptFriendRequest", api.acceptFriendRequest)
-        if (!raw) throw new Error("[acceptFriendRequest] milky API not available")
-        const initiator_uid = input.initiator_uid ?? input.initiatorUid
-        if (!initiator_uid) throw new Error("[acceptFriendRequest] milky requires initiator_uid")
-        const is_filtered =
-          input.is_filtered !== undefined
-            ? Boolean(input.is_filtered)
-            : input.isFiltered !== undefined
-              ? Boolean(input.isFiltered)
-              : false
-        const reason = input.reason
-        return await raw.call(runtimeBot, {
-          initiator_uid: String(initiator_uid),
-          is_filtered,
-          ...(reason !== undefined ? { reason: String(reason) } : {}),
-        })
-      }
-
-      const flag = input.flag
-      if (!flag) throw new Error("[acceptFriendRequest] requires flag")
-
-      if (protocol === "onebotv11") {
-        const raw = getRawMethod(runtimeBot, "acceptFriendRequest", api.acceptFriendRequest)
-        if (!raw) throw new Error("[acceptFriendRequest] onebotv11 API not available")
-        const remark = input.remark ?? input.reason
-        return await raw.call(runtimeBot, {
-          flag,
-          ...(remark !== undefined ? { remark: String(remark) } : {}),
-        })
-      }
-
-      // icqq
-      const raw = getRawMethod(runtimeBot, "setFriendAddRequest", api.acceptFriendRequest)
-      if (!raw) throw new Error("[acceptFriendRequest] icqq API not available")
-      const remark = input.remark ?? input.reason
-      return await raw.call(runtimeBot, flag, true, remark, input.block)
+      return protocolDispatcher.exec("acceptFriendRequest", protocol, input, ctx)
     },
 
     async rejectFriendRequest(input = {}) {
       const ctx = this && typeof this === "object" ? this : null
       const runtimeBot = getRuntimeBotOrNull()
       const protocol = resolveProtocol({ ctx, bot, runtimeBot, adapterHint })
-
-      if (protocol === "milky") {
-        const raw = getRawMethod(runtimeBot, "rejectFriendRequest", api.rejectFriendRequest)
-        if (!raw) throw new Error("[rejectFriendRequest] milky API not available")
-        const initiator_uid = input.initiator_uid ?? input.initiatorUid
-        if (!initiator_uid) throw new Error("[rejectFriendRequest] milky requires initiator_uid")
-        const is_filtered =
-          input.is_filtered !== undefined
-            ? Boolean(input.is_filtered)
-            : input.isFiltered !== undefined
-              ? Boolean(input.isFiltered)
-              : false
-        const reason = input.reason
-        return await raw.call(runtimeBot, {
-          initiator_uid: String(initiator_uid),
-          is_filtered,
-          ...(reason !== undefined ? { reason: String(reason) } : {}),
-        })
-      }
-
-      const flag = input.flag
-      if (!flag) throw new Error("[rejectFriendRequest] requires flag")
-
-      if (protocol === "onebotv11") {
-        const raw = getRawMethod(runtimeBot, "rejectFriendRequest", api.rejectFriendRequest)
-        if (!raw) throw new Error("[rejectFriendRequest] onebotv11 API not available")
-        const remark = input.remark ?? input.reason
-        return await raw.call(runtimeBot, {
-          flag,
-          ...(remark !== undefined ? { remark: String(remark) } : {}),
-        })
-      }
-
-      // icqq
-      const raw = getRawMethod(runtimeBot, "setFriendAddRequest", api.rejectFriendRequest)
-      if (!raw) throw new Error("[rejectFriendRequest] icqq API not available")
-      const remark = input.remark ?? input.reason
-      return await raw.call(runtimeBot, flag, false, remark, input.block)
+      return protocolDispatcher.exec("rejectFriendRequest", protocol, input, ctx)
     },
 
     pickUser(user_id) {
@@ -816,154 +454,29 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       const ctx = this && typeof this === "object" ? this : null
       const runtimeBot = getRuntimeBotOrNull()
       const protocol = resolveProtocol({ ctx, bot, runtimeBot, adapterHint })
-
-      const peerId =
-        input.group_id ??
-        input.peer_id ??
-        (input.isGroup ? undefined : input.user_id) ??
-        ctx?.peer_id ??
-        ctx?.group_id ??
-        ctx?.user_id
-      const isGroup = Boolean(
-        input.isGroup ?? input.group_id ?? ctx?.group_id ?? ctx?.message_scene === "group",
-      )
-
-      const messageSeq = toInt(input.message_seq ?? input.seq ?? input.message_id)
-      const messageId =
-        input.message_id ?? (messageSeq !== undefined ? String(messageSeq) : undefined)
-
-      if (protocol === "milky") {
-        if (messageSeq === undefined)
-          throw new Error("[recallMessage] milky requires message_seq/seq")
-        if (!peerId) throw new Error("[recallMessage] milky requires peer_id/group_id/user_id")
-        if (isGroup && runtimeBot?.recallGroupMessage) {
-          return await runtimeBot.recallGroupMessage({
-            group_id: Number(peerId),
-            message_seq: messageSeq,
-          })
-        }
-        if (!isGroup && runtimeBot?.recallPrivateMessage) {
-          return await runtimeBot.recallPrivateMessage({
-            user_id: Number(peerId),
-            message_seq: messageSeq,
-          })
-        }
-      }
-
-      if (protocol === "onebotv11") {
-        const mid = toInt(messageId ?? input.message_seq ?? input.seq)
-        if (mid === undefined) throw new Error("[recallMessage] onebotv11 requires message_id")
-        if (runtimeBot?.deleteMessage) return await runtimeBot.deleteMessage({ message_id: mid })
-      }
-
-      // icqq
-      if (!peerId) throw new Error("[recallMessage] icqq requires peer_id/group_id/user_id")
-      const seq = messageSeq
-      if (seq === undefined) throw new Error("[recallMessage] icqq requires message_seq/seq")
-
-      if (isGroup && runtimeBot?.pickGroup)
-        return await runtimeBot.pickGroup(Number(peerId)).recallMsg(seq)
-      if (!isGroup && runtimeBot?.pickFriend)
-        return await runtimeBot.pickFriend(Number(peerId)).recallMsg(seq)
-      if (!isGroup && runtimeBot?.pickUser)
-        return await runtimeBot.pickUser(Number(peerId)).recallMsg(seq)
-
-      throw new Error("[recallMessage] API not available")
+      return protocolDispatcher.exec("recallMessage", protocol, {
+        group_id: input.group_id ?? ctx?.group_id,
+        user_id: input.user_id ?? ctx?.user_id,
+        peer_id: input.peer_id ?? ctx?.peer_id,
+        message_id: input.message_id,
+        message_seq: toInt(input.message_seq ?? input.seq ?? input.message_id),
+        seq: toInt(input.seq ?? input.message_seq),
+        isGroup: Boolean(input.isGroup ?? input.group_id ?? ctx?.group_id ?? ctx?.message_scene === "group"),
+      }, ctx)
     },
 
     async sendGroupMessageReaction(input = {}) {
       const ctx = this && typeof this === "object" ? this : null
       const runtimeBot = getRuntimeBotOrNull()
       const protocol = resolveProtocol({ ctx, bot, runtimeBot, adapterHint })
-
-      const groupId = toInt(input.group_id ?? input.peer_id ?? ctx?.group_id ?? ctx?.peer_id)
-      const messageId = input.message_id ?? ctx?.message_id
-      const messageSeq = toInt(input.message_seq ?? input.seq ?? ctx?.seq ?? ctx?.message_seq)
-      const reactionRaw =
-        input.reaction ?? input.emoji_id ?? input.emojiId ?? input.emoji ?? input.id ?? undefined
-
-      if (protocol === "milky") {
-        const raw =
-          runtimeBot?.__xunlu_raw_sendGroupMessageReaction ||
-          runtimeBot?.sendGroupMessageReaction ||
-          null
-        if (!raw) throw new Error("[sendGroupMessageReaction] milky API not available")
-        if (!groupId) throw new Error("[sendGroupMessageReaction] milky requires group_id")
-        if (messageSeq === undefined)
-          throw new Error("[sendGroupMessageReaction] milky requires message_seq")
-        if (reactionRaw === undefined || reactionRaw === null || reactionRaw === "")
-          throw new Error("[sendGroupMessageReaction] milky requires reaction")
-
-        const is_add =
-          input?.is_add !== undefined
-            ? Boolean(input.is_add)
-            : input?.isAdd !== undefined
-              ? Boolean(input.isAdd)
-              : true
-
-        try {
-          return await raw.call(runtimeBot, {
-            group_id: groupId,
-            message_seq: messageSeq,
-            reaction: String(reactionRaw),
-            is_add,
-          })
-        } catch (err) {
-          const msg = err?.message || String(err)
-          // LLoneBot/Milky implementations may not support this API
-          if (/retcode\s*404/i.test(msg) && /api not found/i.test(msg)) {
-            throw new Error("[sendGroupMessageReaction] milky API not available")
-          }
-          throw err
-        }
-      }
-
-      if (protocol === "onebotv11") {
-        if (!messageId) throw new Error("[sendGroupMessageReaction] onebotv11 requires message_id")
-        if (reactionRaw === undefined || reactionRaw === null || reactionRaw === "")
-          throw new Error("[sendGroupMessageReaction] onebotv11 requires reaction")
-
-        const params = {
-          message_id: messageId,
-          emoji_id: Number(reactionRaw),
-        }
-
-        const sendApi = getOnebotReactionSendApi({ ctx, runtimeBot })
-        if (sendApi) {
-          return await sendApi("set_msg_emoji_like", params)
-        }
-
-        const raw = getDirectOnebotReactionMethod(runtimeBot)
-        if (raw) {
-          return await raw(params)
-        }
-
-        throw new Error("[sendGroupMessageReaction] onebotv11 API not available")
-      }
-
-      // icqq: QQNT setReaction / OneBot set_msg_emoji_like
-      if (!groupId) throw new Error("[sendGroupMessageReaction] icqq requires group_id")
-      if (messageSeq === undefined)
-        throw new Error("[sendGroupMessageReaction] icqq requires message_seq")
-      if (reactionRaw === undefined || reactionRaw === null || reactionRaw === "")
-        throw new Error("[sendGroupMessageReaction] icqq requires reaction")
-
-      if (runtimeBot?.pickGroup) {
-        const group = runtimeBot.pickGroup(groupId)
-        if (group?.setReaction) {
-          return await group.setReaction(messageSeq, Number(reactionRaw))
-        }
-      }
-
-      const sendApi = getYunzaiSendApi(runtimeBot)
-      if (sendApi && messageId) {
-        return await sendApi("set_msg_emoji_like", {
-          message_id: messageId,
-          emoji_id: Number(reactionRaw),
-        })
-      }
-
-      throw new Error("[sendGroupMessageReaction] API not available")
+      return protocolDispatcher.exec("sendGroupMessageReaction", protocol, {
+        group_id: toInt(input.group_id ?? input.peer_id ?? ctx?.group_id ?? ctx?.peer_id),
+        message_id: input.message_id ?? ctx?.message_id,
+        message_seq: toInt(input.message_seq ?? input.seq ?? ctx?.seq ?? ctx?.message_seq),
+        reaction: input.reaction ?? input.emoji_id ?? input.emojiId ?? input.emoji ?? input.id,
+        is_add: input.is_add !== undefined ? Boolean(input.is_add) : input?.isAdd !== undefined ? Boolean(input.isAdd) : true,
+        _ctx: ctx,
+      }, ctx)
     },
 
     async getUserInfo(input = {}) {
@@ -973,77 +486,19 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
 
       const userId = toInt(input.user_id ?? input.userId ?? ctx?.user_id ?? ctx?.sender_id)
       if (userId === undefined) throw new Error("[getUserInfo] requires user_id")
-
-      try {
-        if (protocol === "milky") {
-          if (runtimeBot?.getUserProfile)
-            return await runtimeBot.getUserProfile({ user_id: userId })
-        } else if (protocol === "onebotv11") {
-          if (runtimeBot?.getFriendInfo)
-            return await runtimeBot.getFriendInfo({
-              user_id: userId,
-              no_cache: Boolean(input.no_cache),
-            })
-        } else {
-          if (runtimeBot?.getStrangerInfo) return await runtimeBot.getStrangerInfo(userId)
-          if (runtimeBot?.getFriendInfo) return await runtimeBot.getFriendInfo({ user_id: userId })
-        }
-      } catch (err) {
-        console.warn("[getUserInfo] upstream failed:", err?.message || err)
-      }
-
-      return { user_id: userId, nickname: String(userId) }
+      return protocolDispatcher.exec("getUserInfo", protocol, {
+        user_id: userId,
+        no_cache: input.no_cache,
+      }, ctx)
     },
 
     async getGroupMemberList(group_id) {
       const ctx = this && typeof this === "object" ? this : null
       const runtimeBot = getRuntimeBotOrNull()
       const protocol = resolveProtocol({ ctx, bot, runtimeBot, adapterHint })
-
-      const groupInput =
-        group_id && typeof group_id === "object" && !Array.isArray(group_id) ? group_id : null
+      const groupInput = group_id && typeof group_id === "object" && !Array.isArray(group_id) ? group_id : null
       const gid = toInt(groupInput?.group_id ?? groupInput?.groupId ?? group_id ?? ctx?.group_id)
-      if (gid === undefined) throw new Error("[getGroupMemberList] requires group_id")
-
-      let lastError = null
-
-      // icqq: prefer native getMemberMap
-      if (protocol === "icqq" && runtimeBot?.pickGroup) {
-        try {
-          const group = runtimeBot.pickGroup(gid)
-          if (group?.getMemberMap) return await group.getMemberMap()
-        } catch (err) {
-          lastError = err
-        }
-      }
-
-      const rawGetGroupMemberList = getRawMethod(
-        runtimeBot,
-        "getGroupMemberList",
-        api.getGroupMemberList,
-      )
-      if (rawGetGroupMemberList) {
-        try {
-          const res =
-            protocol === "icqq"
-              ? await rawGetGroupMemberList.call(runtimeBot, gid)
-              : await rawGetGroupMemberList.call(runtimeBot, { group_id: gid })
-          return toMemberMap(res)
-        } catch (err) {
-          lastError = err
-          // some icqq implementations use object input
-          try {
-            const res2 = await rawGetGroupMemberList.call(runtimeBot, { group_id: gid })
-            return toMemberMap(res2)
-          } catch (fallbackErr) {
-            lastError = fallbackErr
-            console.warn("[getGroupMemberList] upstream failed:", fallbackErr?.message || fallbackErr)
-          }
-        }
-      }
-
-      if (lastError) throw lastError
-      throw new Error("[getGroupMemberList] API not available")
+      return protocolDispatcher.exec("getGroupMemberList", protocol, { group_id: gid }, ctx)
     },
 
     async getGroupMemberInfo(group_id, user_id) {
@@ -1063,38 +518,9 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       )
       if (gid === undefined || uid === undefined)
         throw new Error("[getGroupMemberInfo] requires group_id/user_id")
-
-      let lastError = null
-
-      const rawGetGroupMemberInfo = getRawMethod(
-        runtimeBot,
-        "getGroupMemberInfo",
-        api.getGroupMemberInfo,
-      )
-      if (rawGetGroupMemberInfo) {
-        try {
-          const res =
-            protocol === "icqq"
-              ? await rawGetGroupMemberInfo.call(runtimeBot, gid, uid)
-              : await rawGetGroupMemberInfo.call(runtimeBot, { group_id: gid, user_id: uid })
-          return res?.member ?? res
-        } catch (err) {
-          lastError = err
-          try {
-            const res2 = await rawGetGroupMemberInfo.call(runtimeBot, {
-              group_id: gid,
-              user_id: uid,
-            })
-            return res2?.member ?? res2
-          } catch (fallbackErr) {
-            lastError = fallbackErr
-            console.warn("[getGroupMemberInfo] upstream failed:", fallbackErr?.message || fallbackErr)
-          }
-        }
-      }
-
-      if (lastError) throw lastError
-      throw new Error("[getGroupMemberInfo] API not available")
+      return protocolDispatcher.exec("getGroupMemberInfo", protocol, {
+        group_id: gid, user_id: uid,
+      }, ctx)
     },
 
     async getGroupMemberRoleFlags(group_id, user_id) {
@@ -1158,136 +584,14 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       const ctx = this && typeof this === "object" ? this : null
       const runtimeBot = getRuntimeBotOrNull()
       const protocol = resolveProtocol({ ctx, bot, runtimeBot, adapterHint })
-
-      if (protocol === "milky") {
-        const rawAccept = getRawMethod(runtimeBot, "acceptGroupRequest", api.acceptGroupRequest)
-        if (!rawAccept) throw new Error("[acceptGroupRequest] milky API not available")
-        const notification_seq = toInt(input.notification_seq ?? input.flag)
-        const group_id = toInt(input.group_id)
-        if (notification_seq === undefined || group_id === undefined)
-          throw new Error("[acceptGroupRequest] milky requires flag(notification_seq) + group_id")
-        const notification_type = mapMilkyNotificationType(input)
-        const payload = {
-          notification_seq,
-          notification_type,
-          group_id,
-          ...(input.is_filtered !== undefined ? { is_filtered: Boolean(input.is_filtered) } : {}),
-        }
-        return await rawAccept.call(runtimeBot, payload)
-      }
-
-      if (protocol === "onebotv11") {
-        const flag = input.flag
-        if (!flag) throw new Error("[acceptGroupRequest] onebotv11 requires flag")
-        const sub_type = mapOnebotGroupRequestSubType(input)
-        const requestCandidates = collectMessageBotCandidates(ctx?.bot, runtimeBot, globalThis.Bot)
-        for (const candidate of requestCandidates) {
-          const rawAccept = getRawMethod(candidate, "acceptGroupRequest", api.acceptGroupRequest)
-          if (!rawAccept) continue
-          return await rawAccept.call(candidate, { flag, sub_type, reason: input.reason })
-        }
-
-        const sendApi = getOnebotReactionSendApi({ ctx, runtimeBot }) || getYunzaiSendApi(runtimeBot)
-        if (sendApi) {
-          return await sendApi("set_group_add_request", {
-            flag,
-            sub_type,
-            approve: true,
-            reason: input.reason,
-          })
-        }
-
-        throw new Error("[acceptGroupRequest] onebotv11 API not available")
-      }
-
-      // icqq/yunzai
-      const flag = input.flag
-      const sub_type = mapOnebotGroupRequestSubType(input)
-      if (!flag) throw new Error("[acceptGroupRequest] icqq requires flag")
-      if (runtimeBot?.setGroupAddRequest)
-        return await runtimeBot.setGroupAddRequest(
-          flag,
-          true,
-          input.reason !== undefined ? String(input.reason) : "",
-          input.block,
-        )
-      if (runtimeBot?.sendApi) {
-        return await runtimeBot.sendApi("set_group_add_request", {
-          flag,
-          sub_type,
-          approve: true,
-        })
-      }
-      throw new Error("[acceptGroupRequest] API not available")
+      return protocolDispatcher.exec("acceptGroupRequest", protocol, input, ctx)
     },
 
     async rejectGroupRequest(input = {}) {
       const ctx = this && typeof this === "object" ? this : null
       const runtimeBot = getRuntimeBotOrNull()
       const protocol = resolveProtocol({ ctx, bot, runtimeBot, adapterHint })
-
-      if (protocol === "milky") {
-        const rawReject = getRawMethod(runtimeBot, "rejectGroupRequest", api.rejectGroupRequest)
-        if (!rawReject) throw new Error("[rejectGroupRequest] milky API not available")
-        const notification_seq = toInt(input.notification_seq ?? input.flag)
-        const group_id = toInt(input.group_id)
-        if (notification_seq === undefined || group_id === undefined)
-          throw new Error("[rejectGroupRequest] milky requires flag(notification_seq) + group_id")
-        const notification_type = mapMilkyNotificationType(input)
-        const payload = {
-          notification_seq,
-          notification_type,
-          group_id,
-          ...(input.is_filtered !== undefined ? { is_filtered: Boolean(input.is_filtered) } : {}),
-          ...(input.reason !== undefined ? { reason: input.reason } : {}),
-        }
-        return await rawReject.call(runtimeBot, payload)
-      }
-
-      if (protocol === "onebotv11") {
-        const flag = input.flag
-        if (!flag) throw new Error("[rejectGroupRequest] onebotv11 requires flag")
-        const sub_type = mapOnebotGroupRequestSubType(input)
-        const requestCandidates = collectMessageBotCandidates(ctx?.bot, runtimeBot, globalThis.Bot)
-        for (const candidate of requestCandidates) {
-          const rawReject = getRawMethod(candidate, "rejectGroupRequest", api.rejectGroupRequest)
-          if (!rawReject) continue
-          return await rawReject.call(candidate, { flag, sub_type, reason: input.reason })
-        }
-
-        const sendApi = getOnebotReactionSendApi({ ctx, runtimeBot }) || getYunzaiSendApi(runtimeBot)
-        if (sendApi) {
-          return await sendApi("set_group_add_request", {
-            flag,
-            sub_type,
-            approve: false,
-            reason: input.reason,
-          })
-        }
-
-        throw new Error("[rejectGroupRequest] onebotv11 API not available")
-      }
-
-      // icqq/yunzai
-      const flag = input.flag
-      const sub_type = mapOnebotGroupRequestSubType(input)
-      if (!flag) throw new Error("[rejectGroupRequest] icqq requires flag")
-      if (runtimeBot?.setGroupAddRequest)
-        return await runtimeBot.setGroupAddRequest(
-          flag,
-          false,
-          input.reason !== undefined ? String(input.reason) : "",
-          input.block,
-        )
-      if (runtimeBot?.sendApi) {
-        return await runtimeBot.sendApi("set_group_add_request", {
-          flag,
-          sub_type,
-          approve: false,
-          reason: input.reason,
-        })
-      }
-      throw new Error("[rejectGroupRequest] API not available")
+      return protocolDispatcher.exec("rejectGroupRequest", protocol, input, ctx)
     },
 
     async setGroupMemberMute(input = {}) {
@@ -1297,30 +601,12 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
 
       const group_id = toInt(input.group_id ?? ctx?.group_id)
       const user_id = toInt(input.user_id ?? ctx?.user_id)
-      const duration = Math.max(0, Math.floor(Number(input.duration ?? input.durationSeconds ?? 0)))
-
       if (group_id === undefined || user_id === undefined)
         throw new Error("[setGroupMemberMute] requires group_id/user_id")
-
-      if (protocol === "milky" || protocol === "onebotv11") {
-        const rawSetGroupMemberMute = getRawMethod(
-          runtimeBot,
-          "setGroupMemberMute",
-          api.setGroupMemberMute,
-        )
-        if (!rawSetGroupMemberMute) throw new Error("[setGroupMemberMute] API not available")
-        return await rawSetGroupMemberMute.call(runtimeBot, { group_id, user_id, duration })
-      }
-
-      // icqq/yunzai
-      if (runtimeBot?.pickGroup) {
-        const group = runtimeBot.pickGroup(group_id)
-        if (group?.muteMember) return await group.muteMember(user_id, duration)
-        if (group?.mute) return await group.mute(user_id, duration)
-        if (group?.setMute) return await group.setMute(user_id, duration)
-      }
-
-      throw new Error("[setGroupMemberMute] API not available")
+      return protocolDispatcher.exec("setGroupMemberMute", protocol, {
+        group_id, user_id,
+        duration: Math.max(0, Math.floor(Number(input.duration ?? input.durationSeconds ?? 0))),
+      }, ctx)
     },
 
     /**
@@ -1504,124 +790,27 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       const protocol = resolveProtocol({ ctx, bot, runtimeBot, adapterHint })
       const forwardId = String(input.forward_id ?? input.id ?? "").trim()
       if (!forwardId) throw new Error("[getForwardMessages] requires forward_id")
-
-      const groupId = toInt(input.group_id ?? ctx?.group_id)
-      const userId = toInt(input.user_id ?? ctx?.user_id ?? ctx?.sender_id)
-      const peerId = groupId || userId || ""
-      const messageScene =
-        input.message_scene || (groupId ? "group" : String(ctx?.message_scene || "friend"))
-
-      if (protocol === "onebotv11") {
-        if (groupId && typeof runtimeBot?.pickGroup === "function") {
-          try {
-            const g = runtimeBot.pickGroup(groupId)
-            if (typeof g?.getForwardMsg === "function") {
-              const detail = await g.getForwardMsg(forwardId)
-              if (Array.isArray(detail) && detail.length) return detail
-              if (Array.isArray(detail?.messages) && detail.messages.length) return detail.messages
-            }
-          } catch {}
-        }
-        if (userId) {
-          const pickTarget =
-            (typeof runtimeBot?.pickFriend === "function" && runtimeBot.pickFriend(userId)) ||
-            (typeof runtimeBot?.pickUser === "function" && runtimeBot.pickUser(userId))
-          if (typeof pickTarget?.getForwardMsg === "function") {
-            try {
-              const detail = await pickTarget.getForwardMsg(forwardId)
-              if (Array.isArray(detail) && detail.length) return detail
-              if (Array.isArray(detail?.messages) && detail.messages.length) return detail.messages
-            } catch {}
-          }
-        }
-      }
-
-      if (protocol === "milky" && typeof runtimeBot?.getForwardMessage === "function") {
-        try {
-          const detail = await runtimeBot.getForwardMessage({
-            forward_id: forwardId,
-            peer_id: peerId,
-            message_scene: messageScene,
-          })
-          if (Array.isArray(detail?.messages) && detail.messages.length) return detail.messages
-        } catch {}
-      }
-
-      const onebotRes = await api.callApi
-        .call(ctx ?? api, "get_forward_msg", { message_id: forwardId })
-        .catch(() => null)
-      const onebotMessages = onebotRes?.messages ?? onebotRes?.data?.messages ?? onebotRes?.data
-      if (Array.isArray(onebotMessages) && onebotMessages.length) return onebotMessages
-
-      const milkyRes = await api.callApi
-        .call(ctx ?? api, "get_forwarded_messages", { forward_id: forwardId })
-        .catch(() => null)
-      const milkyMessages = milkyRes?.messages ?? milkyRes?.data?.messages
-      if (Array.isArray(milkyMessages) && milkyMessages.length) return milkyMessages
-
-      return []
+      return protocolDispatcher.exec("getForwardMessages", protocol, {
+        forward_id: forwardId,
+        group_id: toInt(input.group_id ?? ctx?.group_id),
+        user_id: toInt(input.user_id ?? ctx?.user_id ?? ctx?.sender_id),
+        message_scene: input.message_scene || (input.group_id ?? ctx?.group_id ? "group" : String(ctx?.message_scene || "friend")),
+      }, ctx)
     },
 
     async getMessage(input = {}) {
       const ctx = this && typeof this === "object" ? this : null
       const runtimeBot = getRuntimeBotOrNull()
       const protocol = resolveProtocol({ ctx, bot, runtimeBot, adapterHint })
-
-      const messageId = input.message_id ?? input.msgId ?? input.msg_id
-      const messageSeq = toInt(input.message_seq ?? input.seq)
-
-      if (protocol === "milky") {
-        const seq = toInt(messageSeq ?? messageId)
-        const peerId = toInt(
-          input.peer_id ?? input.group_id ?? input.user_id ?? ctx?.group_id ?? ctx?.user_id,
-        )
-        const messageScene =
-          input.message_scene ||
-          (input.group_id || ctx?.group_id ? "group" : String(ctx?.message_scene || "friend"))
-        if (!seq || !peerId) return null
-
-        const res = await api.callApi
-          .call(ctx ?? api, "get_message", { message_scene: messageScene, peer_id: peerId, message_seq: seq })
-          .catch(() => null)
-        if (!res) return null
-
-        const msgObj = res?.message ?? res?.data?.message ?? (typeof res === "object" ? res : null)
-        const rawSegments = Array.isArray(msgObj?.segments) ? msgObj.segments : []
-        if (!rawSegments.length) return null
-
-        return {
-          protocol: "milky",
-          message_scene: msgObj?.message_scene ?? messageScene,
-          peer_id: msgObj?.peer_id ?? peerId,
-          message_seq: msgObj?.message_seq ?? seq,
-          seq: msgObj?.message_seq ?? seq,
-          raw_message: msgObj?.raw_message ?? "",
-          segments: rawSegments,
-          message: rawSegments,
-        }
-      }
-
-      if (protocol === "onebotv11") {
-        const msgId = messageId !== undefined && messageId !== null ? String(messageId) : ""
-        if (!msgId) return null
-
-        const res = await api.callApi
-          .call(ctx ?? api, "get_msg", { message_id: msgId })
-          .catch(() => null)
-        if (!res) return null
-
-        const rawSegments = res?.message ?? res?.data?.message
-        if (!Array.isArray(rawSegments) || !rawSegments.length) return null
-
-        return {
-          protocol: "onebotv11",
-          raw_message: res?.raw_message ?? res?.data?.raw_message ?? "",
-          segments: rawSegments,
-          message: rawSegments,
-        }
-      }
-
-      return null
+      return protocolDispatcher.exec("getMessage", protocol, {
+        message_id: input.message_id ?? input.msgId ?? input.msg_id,
+        message_seq: toInt(input.message_seq ?? input.seq),
+        group_id: toInt(input.group_id ?? ctx?.group_id),
+        user_id: toInt(input.user_id ?? ctx?.user_id),
+        peer_id: toInt(input.peer_id ?? input.group_id ?? input.user_id ?? ctx?.group_id ?? ctx?.user_id),
+        message_scene: input.message_scene ||
+          (input.group_id || ctx?.group_id ? "group" : String(ctx?.message_scene || "friend")),
+      }, ctx)
     },
 
     async getGroupChatHistory(group_id, date) {

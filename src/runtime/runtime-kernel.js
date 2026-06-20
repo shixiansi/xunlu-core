@@ -12,12 +12,34 @@ import IcqqDriver from "./drivers/icqq-driver.js"
 import YunzaiTakeoverDriver from "./drivers/yunzai-takeover-driver.js"
 import ApiOnlyDriver from "./drivers/api-only-driver.js"
 import UnsupportedStandaloneIcqqDriver from "./drivers/unsupported-standalone-icqq-driver.js"
+import { services } from "../service-container.js"
+import puppeteerInstance from "../component/puppeteer/puppeteer.js"
+import ffmpegInstance from "../component/ffmpeg/ffmpeg.js"
+import RenderInstance from "../utils/render.js"
+import schedule from "node-schedule"
+import MessageDB from "../db/MessageDB.js"
+import { protocolDispatcher } from "../protocol-dispatcher/index.js"
+import { registerMessageActions } from "../protocol-dispatcher/actions/message-actions.js"
+import { registerMemberActions } from "../protocol-dispatcher/actions/member-actions.js"
+import { registerGroupActions } from "../protocol-dispatcher/actions/group-actions.js"
+import { registerUserActions } from "../protocol-dispatcher/actions/user-actions.js"
+import { registerForwardActions } from "../protocol-dispatcher/actions/forward-actions.js"
 
 async function loadRuntimeEnvironment() {
   const { default: logjs } = await import("../component/logger/log.js")
   await logjs()
+  services.logger = global.logger
+
   const { default: startRedis } = await import("../component/redis/redis.js")
-  await startRedis()
+  const redisClient = await startRedis()
+  services.redis = global.redis || redisClient
+
+  services.puppeteer = puppeteerInstance
+  services.ffmpeg = ffmpegInstance
+  services.config = cfg
+  services.renderer = RenderInstance
+  services.scheduler = schedule
+  services.messageDB = MessageDB
 }
 
 function captureRuntimeBotGlobals() {
@@ -75,6 +97,7 @@ export class RuntimeKernel {
       if (!this.driver?.__startedByAutoFallback) {
         await this.driver.start(this)
       }
+      this.registerProtocolActions()
       this.facade =
         this.mode === "api-only"
           ? null
@@ -162,6 +185,15 @@ export class RuntimeKernel {
       cacheBust: true,
       fallbackReason: this.modeState?.fallbackReason || "",
     })
+  }
+
+  registerProtocolActions() {
+    if (this.mode === "api-only" || this.mode === "standalone-icqq-unsupported") return
+    registerMessageActions(protocolDispatcher)
+    registerMemberActions(protocolDispatcher)
+    registerGroupActions(protocolDispatcher)
+    registerUserActions(protocolDispatcher)
+    registerForwardActions(protocolDispatcher)
   }
 
   registerDefaultServices() {

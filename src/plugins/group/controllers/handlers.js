@@ -240,35 +240,34 @@ async function handleNoticeToggle(ctx, name, enable) {
   }
 }
 
+export async function onEnable(pluginDef, bot) {
+  if (!bot) return
+  const result = await reconcileGroupScopedPlugins(bot, {
+    reason: "group-plugin-on-mount-reconcile",
+  }).catch(err => {
+    console.warn("[group] group scope reconcile failed:", err?.message || err)
+    return null
+  })
+
+  if (result?.skippedDueToOwnerMismatch) {
+    console.warn(
+      `[group] skip startup group cleanup because bot owner changed: ${result.owner_self_id} -> ${result.current_self_id}`,
+    )
+    return
+  }
+
+  const cleanedCount =
+    Number(result?.cleaned?.learningChat?.missingGroupIds?.length || 0) +
+    Number(result?.cleaned?.groupNoticeRemoved?.length || 0) +
+    Number(result?.cleaned?.bilibiliRemoved?.length || 0) +
+    Number(result?.cleaned?.schedulerRemovedTaskIds?.length || 0)
+  if (cleanedCount > 0) {
+    console.warn(`[group] startup reconciled group-scoped plugin data, cleaned=${cleanedCount}`)
+  }
+}
+
 export function register(bot) {
   if (!bot || !bot.registerCommand) return
-
-  if (typeof bot.onMount === "function") {
-    bot.onMount(async () => {
-      const result = await reconcileGroupScopedPlugins(bot, {
-        reason: "group-plugin-on-mount-reconcile",
-      }).catch(err => {
-        console.warn("[group] group scope reconcile failed:", err?.message || err)
-        return null
-      })
-
-      if (result?.skippedDueToOwnerMismatch) {
-        console.warn(
-          `[group] skip startup group cleanup because bot owner changed: ${result.owner_self_id} -> ${result.current_self_id}`,
-        )
-        return
-      }
-
-      const cleanedCount =
-        Number(result?.cleaned?.learningChat?.missingGroupIds?.length || 0) +
-        Number(result?.cleaned?.groupNoticeRemoved?.length || 0) +
-        Number(result?.cleaned?.bilibiliRemoved?.length || 0) +
-        Number(result?.cleaned?.schedulerRemovedTaskIds?.length || 0)
-      if (cleanedCount > 0) {
-        console.warn(`[group] startup reconciled group-scoped plugin data, cleaned=${cleanedCount}`)
-      }
-    })
-  }
   //第一个参数是数组第一个是命令，第二个是事件，第三个是优先级（第二个和第三个都可以省略）
 
   // ===================== 荨鹿通知设置（主人） =====================

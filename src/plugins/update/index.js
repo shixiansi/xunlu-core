@@ -17,6 +17,7 @@ export default definePlugin({
   shortName: "更新",
   aliases: ["更新"],
   register: handlers.register,
+  onEnable: handlers.onEnable,
   apiRoutes(router) {
     router.use(createRouter({ name: "example" }))
   },

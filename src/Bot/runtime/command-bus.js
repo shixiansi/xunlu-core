@@ -12,15 +12,18 @@ import {
 import { applyPrefixCompatibilityToEvent, buildCommandTextCandidates } from "./prefix-compat.js"
 import { normalizeOptionalString, resolveSyntheticProtocol } from "./shared.js"
 import cfg from "../../lib/config.js"
+import { services } from "../../service-container.js"
+import { LifecycleManager } from "../../plugins/lifecycle/index.js"
 
 /**
  * CommandBus 统一管理插件注册、命令索引、合成事件和命令调用。
  *
- * 这样 BaseBot 不再直接维护“命令注册表 + 定时任务 + onMount + 使用统计”这些杂项。
+ * 这样 BaseBot 不再直接维护"命令注册表 + 定时任务 + onMount + 使用统计"这些杂项。
  */
 export class CommandBus {
   constructor(baseBot) {
     this.baseBot = baseBot
+    this.lifecycle = new LifecycleManager()
   }
 
   async loadPlugins(options = {}) {
@@ -53,7 +56,7 @@ export class CommandBus {
     this.baseBot.onMount = []
 
     await this.loadPlugins({ cacheBust })
-    await this.runMount()
+    await this.runLegacyMount()
 
     return Object.keys(this.baseBot.plugins)
   }
@@ -87,13 +90,29 @@ export class CommandBus {
       invokeCommandByText: this.invokeCommandByText.bind(this),
       findCommandByReg: this.findCommandByReg.bind(this),
       renderImg: this.baseBot.renderImg.bind(this.baseBot),
+      services,
     }
 
     applyUniversalBotApi(pluginAPI, { bot: this.baseBot, adapterHint: this.baseBot.adapter })
+    delete pluginAPI.sendApi
+    delete pluginAPI.callApi
+
+    const pluginDef = plugin.implementation
     plugin.implementation.register(pluginAPI)
+
+    if (pluginDef.onEnable || pluginDef.onLoad) {
+      this.lifecycle.load(pluginDef).catch(err => {
+        logger.error(`[Lifecycle] load plugin "${plugin.name}" failed: ${err.message}`)
+      })
+      if (pluginDef.onEnable) {
+        this.lifecycle.enable(pluginDef, pluginAPI).catch(err => {
+          logger.error(`[Lifecycle] enable plugin "${plugin.name}" failed: ${err.message}`)
+        })
+      }
+    }
   }
 
-  async runMount() {
+  async runLegacyMount() {
     for (let fnc of this.baseBot.onMount) {
       logger.info("执行初始化任务" + fnc.toString())
 

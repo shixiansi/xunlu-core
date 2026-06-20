@@ -17,6 +17,7 @@ export default definePlugin({
   shortName: "群管",
   aliases: ["群管", "群管理"],
   register: handlers.register,
+  onEnable: handlers.onEnable,
   apiRoutes(router) {
     router.use(createRouter({ name: "group" }));
   },

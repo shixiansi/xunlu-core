@@ -1,5 +1,5 @@
 import SchedulerStore, { createTaskId, normalizeScheduleExpr } from "../model/store.js"
-import SchedulerRuntime, { claimSchedulerRuntime, formatDateTime } from "../model/runtime.js"
+import SchedulerRuntime, { claimSchedulerRuntime, formatDateTime, getClaimedSchedulerRuntime } from "../model/runtime.js"
 
 function getLogger(logger) {
   return logger || globalThis.logger || console
@@ -427,6 +427,11 @@ export class SchedulerService {
       `下次触发：${formatDateTime(nextDate)}`,
     ].join("\n")
   }
+}
+
+export async function onEnable() {
+  const runtime = getClaimedSchedulerRuntime()
+  if (runtime) await runtime.reloadFromDisk()
 }
 
 export function register(botApi) {
