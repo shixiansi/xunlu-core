@@ -1,5 +1,6 @@
 import {
   getRuntimeBotOrNull,
+  getRuntimeBotFallback,
   getRawMethod,
   toInt,
   toKeyMap,
@@ -172,9 +173,18 @@ export function registerUserActions(dispatcher) {
           if (user?.sendLike) return await user.sendLike(times)
         } catch {}
       }
-      // fallback: sendApi 走 adapter
+      // fallback: sendApi 走 adapter（双参数格式）
       if (typeof runtimeBot?.sendApi === "function") {
         try { return await runtimeBot.sendApi("send_like", { user_id: uid, times }) } catch {}
+      }
+      // fallback: raw __xunlu_raw_sendApi 用 route 对象格式（icqq 原生格式）
+      if (runtimeBot?.__xunlu_raw_sendApi) {
+        try { return await runtimeBot.__xunlu_raw_sendApi({ action: "send_like", params: { user_id: uid, times } }) } catch {}
+      }
+      // fallback: 全局 Bot 的 raw sendApi
+      const fallbackBot = getRuntimeBotFallback()
+      if (fallbackBot && fallbackBot !== runtimeBot && fallbackBot?.__xunlu_raw_sendApi) {
+        try { return await fallbackBot.__xunlu_raw_sendApi({ action: "send_like", params: { user_id: uid, times } }) } catch {}
       }
       // fallback: takeover state adapter callApi 直达
       if (runtimeBot?.__xunlu_takeover_state?.adapter?.callApi) {

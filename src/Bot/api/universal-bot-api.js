@@ -106,6 +106,13 @@ async function sendMessageViaCandidate(candidate, target, message, sendTarget) {
   return { handled: false, result: null }
 }
 
+async function tryCallRawApi(rawApi, target, action, params) {
+  if (typeof rawApi !== "function") return null
+  try { return await rawApi.call(target, action, params) } catch {}
+  try { return await rawApi.call(target, { action, params }) } catch {}
+  return null
+}
+
 export function createUniversalBotApi({ bot, adapterHint } = {}) {
   const api = {
     getBot() {
@@ -121,10 +128,16 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       if (!normalizedAction) throw new Error("[sendApi] requires action")
 
       const rawSendApi = getRawMethod(runtimeBot, "sendApi", api.sendApi)
-      if (rawSendApi) return await rawSendApi.call(runtimeBot, normalizedAction, params)
+      {
+        const r = await tryCallRawApi(rawSendApi, runtimeBot, normalizedAction, params)
+        if (r !== null) return r
+      }
 
       const rawCallApi = getRawMethod(runtimeBot, "callApi", api.callApi)
-      if (rawCallApi) return await rawCallApi.call(runtimeBot, normalizedAction, params)
+      {
+        const r = await tryCallRawApi(rawCallApi, runtimeBot, normalizedAction, params)
+        if (r !== null) return r
+      }
 
       const sendApi = getYunzaiSendApi(runtimeBot)
       if (sendApi) return await sendApi(normalizedAction, params)
@@ -134,10 +147,16 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       const fallbackBot = getRuntimeBotFallback()
       if (fallbackBot && fallbackBot !== runtimeBot) {
         const fbRawSendApi = getRawMethod(fallbackBot, "sendApi", api.sendApi)
-        if (fbRawSendApi) return await fbRawSendApi.call(fallbackBot, normalizedAction, params)
+        {
+          const r = await tryCallRawApi(fbRawSendApi, fallbackBot, normalizedAction, params)
+          if (r !== null) return r
+        }
 
         const fbRawCallApi = getRawMethod(fallbackBot, "callApi", api.callApi)
-        if (fbRawCallApi) return await fbRawCallApi.call(fallbackBot, normalizedAction, params)
+        {
+          const r = await tryCallRawApi(fbRawCallApi, fallbackBot, normalizedAction, params)
+          if (r !== null) return r
+        }
 
         const fbSendApi = getYunzaiSendApi(fallbackBot)
         if (fbSendApi) return await fbSendApi(normalizedAction, params)
@@ -155,10 +174,16 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       if (!normalizedAction) throw new Error("[callApi] requires action")
 
       const rawCallApi = getRawMethod(runtimeBot, "callApi", api.callApi)
-      if (rawCallApi) return await rawCallApi.call(runtimeBot, normalizedAction, params)
+      {
+        const r = await tryCallRawApi(rawCallApi, runtimeBot, normalizedAction, params)
+        if (r !== null) return r
+      }
 
       const rawSendApi = getRawMethod(runtimeBot, "sendApi", api.sendApi)
-      if (rawSendApi) return await rawSendApi.call(runtimeBot, normalizedAction, params)
+      {
+        const r = await tryCallRawApi(rawSendApi, runtimeBot, normalizedAction, params)
+        if (r !== null) return r
+      }
 
       const sendApi = getYunzaiSendApi(runtimeBot)
       if (sendApi) return await sendApi(normalizedAction, params)
@@ -168,10 +193,16 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       const fallbackBot = getRuntimeBotFallback()
       if (fallbackBot && fallbackBot !== runtimeBot) {
         const fbRawCallApi = getRawMethod(fallbackBot, "callApi", api.callApi)
-        if (fbRawCallApi) return await fbRawCallApi.call(fallbackBot, normalizedAction, params)
+        {
+          const r = await tryCallRawApi(fbRawCallApi, fallbackBot, normalizedAction, params)
+          if (r !== null) return r
+        }
 
         const fbRawSendApi = getRawMethod(fallbackBot, "sendApi", api.sendApi)
-        if (fbRawSendApi) return await fbRawSendApi.call(fallbackBot, normalizedAction, params)
+        {
+          const r = await tryCallRawApi(fbRawSendApi, fallbackBot, normalizedAction, params)
+          if (r !== null) return r
+        }
 
         const fbSendApi = getYunzaiSendApi(fallbackBot)
         if (fbSendApi) return await fbSendApi(normalizedAction, params)
