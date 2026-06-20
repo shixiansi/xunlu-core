@@ -115,15 +115,24 @@ export class CommandBus {
     plugin.implementation.register(pluginAPI)
 
     if (pluginDef.onEnable || pluginDef.onLoad) {
-      this.lifecycle.load(pluginDef).catch(err => {
+      try {
+        await this.lifecycle.load(pluginDef)
+      } catch (err) {
         logger.error(`[Lifecycle] load plugin "${plugin.name}" failed: ${err.message}`)
-      })
+      }
+
       if (pluginDef.onEnable) {
-        this.lifecycle.enable(pluginDef, pluginAPI).catch(err => {
+        try {
+          await this.lifecycle.enable(pluginDef, pluginAPI)
+        } catch (err) {
           logger.error(`[Lifecycle] enable plugin "${plugin.name}" failed: ${err.message}`)
-        })
+        }
       }
     }
+  }
+
+  async runMount() {
+    return await this.runLegacyMount()
   }
 
   async runLegacyMount() {

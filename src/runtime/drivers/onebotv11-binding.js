@@ -190,6 +190,13 @@ export function createOneBotV11Binding() {
         getGroupChatHistory: botCore.getGroupHistoryMsg,
       })
 
+      // Save raw references before applyUniversalBotApi overwrites them
+      for (const methodName of UNIVERSAL_OVERRIDE) {
+        if (typeof runtimeBot[methodName] === "function") {
+          runtimeBot[`__xunlu_raw_${methodName}`] = runtimeBot[methodName]
+        }
+      }
+
       applyUniversalBotApi(runtimeBot, {
         bot: botCore,
         adapterHint: "onebotv11",
