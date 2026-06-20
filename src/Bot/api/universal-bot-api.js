@@ -167,6 +167,11 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
         return await takeoverState.adapter.callApi(normalizedAction, params)
       }
 
+      const logger = global.logger
+      if (logger?.mark) {
+        logger.mark(`[sendApi] no route bot=${typeof runtimeBot} hasSendApi=${typeof runtimeBot?.sendApi} universal=${runtimeBot?.sendApi?.__xunlu_universal} hasCallApi=${typeof runtimeBot?.callApi} takeoverState=${!!takeoverState} adapterCallApi=${typeof takeoverState?.adapter?.callApi}`)
+      }
+
       throw new Error("[sendApi] API not available")
     },
 
