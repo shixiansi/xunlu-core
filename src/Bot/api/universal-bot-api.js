@@ -1405,6 +1405,30 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       return await bot.makeForwardMsg(ctx, msgList, desc, msgsscr)
     },
 
+    async makeForwardMessage(ctxOrInput = {}, msgList = [], desc = "", msgsscr = false) {
+      const hasExplicitCtx =
+        ctxOrInput &&
+        typeof ctxOrInput === "object" &&
+        !Array.isArray(ctxOrInput) &&
+        (ctxOrInput.group_id !== undefined ||
+          ctxOrInput.user_id !== undefined ||
+          ctxOrInput.protocol !== undefined)
+
+      const boundCtx = this && typeof this === "object" ? this : {}
+      const ctx = hasExplicitCtx ? ctxOrInput : boundCtx
+      const messages = hasExplicitCtx ? msgList : ctxOrInput
+      const summary = hasExplicitCtx ? desc : msgList
+      const useMsgsscr = hasExplicitCtx ? msgsscr : desc
+
+      return await api.makeGroupForwardMsg.call(
+        this,
+        ctx,
+        messages,
+        summary || "",
+        Boolean(useMsgsscr),
+      )
+    },
+
     async makeGroupForwardMsgByUser(ctxOrTargetUserId, targetUserIdOrMsgList = [], msgListOrDesc = [], descMaybe = "") {
       if (!bot || typeof bot.makeForwardMsg !== "function") {
         throw new Error("[makeGroupForwardMsgByUser] requires BaseBot instance")
@@ -1472,6 +1496,132 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       })
 
       return await bot.makeForwardMsg(ctx || {}, normalizedList, desc, false)
+    },
+
+    async getForwardMessages(input = {}) {
+      const ctx = this && typeof this === "object" ? this : null
+      const runtimeBot = getRuntimeBotOrNull()
+      const protocol = resolveProtocol({ ctx, bot, runtimeBot, adapterHint })
+      const forwardId = String(input.forward_id ?? input.id ?? "").trim()
+      if (!forwardId) throw new Error("[getForwardMessages] requires forward_id")
+
+      const groupId = toInt(input.group_id ?? ctx?.group_id)
+      const userId = toInt(input.user_id ?? ctx?.user_id ?? ctx?.sender_id)
+      const peerId = groupId || userId || ""
+      const messageScene =
+        input.message_scene || (groupId ? "group" : String(ctx?.message_scene || "friend"))
+
+      if (protocol === "onebotv11") {
+        if (groupId && typeof runtimeBot?.pickGroup === "function") {
+          try {
+            const g = runtimeBot.pickGroup(groupId)
+            if (typeof g?.getForwardMsg === "function") {
+              const detail = await g.getForwardMsg(forwardId)
+              if (Array.isArray(detail) && detail.length) return detail
+              if (Array.isArray(detail?.messages) && detail.messages.length) return detail.messages
+            }
+          } catch {}
+        }
+        if (userId) {
+          const pickTarget =
+            (typeof runtimeBot?.pickFriend === "function" && runtimeBot.pickFriend(userId)) ||
+            (typeof runtimeBot?.pickUser === "function" && runtimeBot.pickUser(userId))
+          if (typeof pickTarget?.getForwardMsg === "function") {
+            try {
+              const detail = await pickTarget.getForwardMsg(forwardId)
+              if (Array.isArray(detail) && detail.length) return detail
+              if (Array.isArray(detail?.messages) && detail.messages.length) return detail.messages
+            } catch {}
+          }
+        }
+      }
+
+      if (protocol === "milky" && typeof runtimeBot?.getForwardMessage === "function") {
+        try {
+          const detail = await runtimeBot.getForwardMessage({
+            forward_id: forwardId,
+            peer_id: peerId,
+            message_scene: messageScene,
+          })
+          if (Array.isArray(detail?.messages) && detail.messages.length) return detail.messages
+        } catch {}
+      }
+
+      const onebotRes = await api.callApi
+        .call(ctx ?? api, "get_forward_msg", { message_id: forwardId })
+        .catch(() => null)
+      const onebotMessages = onebotRes?.messages ?? onebotRes?.data?.messages ?? onebotRes?.data
+      if (Array.isArray(onebotMessages) && onebotMessages.length) return onebotMessages
+
+      const milkyRes = await api.callApi
+        .call(ctx ?? api, "get_forwarded_messages", { forward_id: forwardId })
+        .catch(() => null)
+      const milkyMessages = milkyRes?.messages ?? milkyRes?.data?.messages
+      if (Array.isArray(milkyMessages) && milkyMessages.length) return milkyMessages
+
+      return []
+    },
+
+    async getMessage(input = {}) {
+      const ctx = this && typeof this === "object" ? this : null
+      const runtimeBot = getRuntimeBotOrNull()
+      const protocol = resolveProtocol({ ctx, bot, runtimeBot, adapterHint })
+
+      const messageId = input.message_id ?? input.msgId ?? input.msg_id
+      const messageSeq = toInt(input.message_seq ?? input.seq)
+
+      if (protocol === "milky") {
+        const seq = toInt(messageSeq ?? messageId)
+        const peerId = toInt(
+          input.peer_id ?? input.group_id ?? input.user_id ?? ctx?.group_id ?? ctx?.user_id,
+        )
+        const messageScene =
+          input.message_scene ||
+          (input.group_id || ctx?.group_id ? "group" : String(ctx?.message_scene || "friend"))
+        if (!seq || !peerId) return null
+
+        const res = await api.callApi
+          .call(ctx ?? api, "get_message", { message_scene: messageScene, peer_id: peerId, message_seq: seq })
+          .catch(() => null)
+        if (!res) return null
+
+        const msgObj = res?.message ?? res?.data?.message ?? (typeof res === "object" ? res : null)
+        const rawSegments = Array.isArray(msgObj?.segments) ? msgObj.segments : []
+        if (!rawSegments.length) return null
+
+        return {
+          protocol: "milky",
+          message_scene: msgObj?.message_scene ?? messageScene,
+          peer_id: msgObj?.peer_id ?? peerId,
+          message_seq: msgObj?.message_seq ?? seq,
+          seq: msgObj?.message_seq ?? seq,
+          raw_message: msgObj?.raw_message ?? "",
+          segments: rawSegments,
+          message: rawSegments,
+        }
+      }
+
+      if (protocol === "onebotv11") {
+        const msgId = messageId !== undefined && messageId !== null ? String(messageId) : ""
+        if (!msgId) return null
+
+        const res = await api.callApi
+          .call(ctx ?? api, "get_msg", { message_id: msgId })
+          .catch(() => null)
+        if (!res) return null
+
+        const rawSegments = res?.message ?? res?.data?.message
+        if (!Array.isArray(rawSegments) || !rawSegments.length) return null
+
+        return {
+          protocol: "onebotv11",
+          raw_message: res?.raw_message ?? res?.data?.raw_message ?? "",
+          segments: rawSegments,
+          message: rawSegments,
+        }
+      }
+
+      return null
     },
 
     async getGroupChatHistory(group_id, date) {

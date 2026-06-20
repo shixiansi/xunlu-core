@@ -7,6 +7,7 @@ import { getMemberInfoWithFallback } from "../../../Bot/role/index.js"
 import MessageDB from "../../../db/MessageDB.js"
 import env from "../../../lib/env.js"
 import cfg from "../../../lib/config.js"
+import { getCompatRuntimeBot } from "../../../runtime/platform-services.js"
 import { applyRkeyToUrl, getSceneRkey } from "../../../utils/rkey.js"
 import { getSystemNoticeConfig } from "../model/notice-store.js"
 
@@ -189,14 +190,10 @@ async function sendMasterRawPayload(ctx, uid, message) {
   if (ctx && typeof ctx.sendMessage === "function") {
     return await ctx.sendMessage(String(uid), message)
   }
-  if (ctx && typeof ctx.pickUser === "function") {
-    return await ctx.pickUser(uid).sendMsg(message)
-  }
-  if (typeof Bot?.sendMessage === "function") {
-    return await Bot.sendMessage(String(uid), message)
-  }
-  if (typeof Bot?.pickUser === "function") {
-    return await Bot.pickUser(uid).sendMsg(message)
+  const platformBot =
+    globalThis.xunluCore?.bot?.api || globalThis.xunluCore?.bot?.getRuntimeBot?.() || null
+  if (platformBot && typeof platformBot.sendMessage === "function") {
+    return await platformBot.sendMessage(String(uid), message)
   }
   throw new Error("master notify send API not available")
 }
@@ -576,11 +573,7 @@ async function getNoticeRkeySuffix(ctx) {
 }
 
 function getRuntimeBotSafe() {
-  try {
-    return Bot || globalThis.Bot || null
-  } catch {
-    return globalThis.Bot || null
-  }
+  return getCompatRuntimeBot()
 }
 
 function getContextApiCall(ctx) {
@@ -1020,7 +1013,13 @@ async function sendForwardRelayToMaster(ctx, uid, payload) {
     data: { forward_id: forwardId },
   })
 
-  const rkeySuffix = await getNoticeRkeySuffix(ctx)
+  const rkeySuffix =
+    (await getNoticeRkeySuffix({
+      ...(ctx || {}),
+      message_scene: "friend",
+      group_id: undefined,
+      user_id: uid,
+    })) || (await getNoticeRkeySuffix(ctx))
   const msgList = normalizeForwardApiMessages(fetched, {
     rkeySuffix,
     fallbackUserId: ctx?.user_id ?? ctx?.sender_id ?? ctx?.self_id ?? uid,
@@ -1085,130 +1084,70 @@ async function expandNoticeForwardSegments(ctx, segments, { rkeySuffix } = {}) {
 }
 
 async function fetchForwardMessagesBySegment(ctx, seg) {
-  const runtimeBot = getRuntimeBotSafe()
   const forwardId = getForwardSegmentId(seg)
   if (!forwardId) return []
 
-  const proto = String(ctx?.protocol || "").toLowerCase()
   logForwardFetchDebug("fetch:start", {
-    proto,
+    proto: ctx?.protocol,
     forwardId,
     group_id: ctx?.group_id,
     user_id: ctx?.user_id,
     seg,
   })
-  if (proto === "onebotv11") {
-    const groupForwardGetter =
-      (ctx?.group && typeof ctx.group.getForwardMsg === "function"
-        ? ctx.group.getForwardMsg.bind(ctx.group)
-        : null) ||
-      (ctx?.group_id && typeof runtimeBot?.pickGroup === "function"
-        ? runtimeBot.pickGroup(toInt(ctx.group_id) ?? ctx.group_id)?.getForwardMsg?.bind(
-            runtimeBot.pickGroup(toInt(ctx.group_id) ?? ctx.group_id),
-          )
-        : null)
 
-    if (typeof groupForwardGetter === "function") {
-      try {
-        const detail = await withTimeout(
-          Promise.resolve().then(() => groupForwardGetter(forwardId)),
-          2500,
-          null,
-        )
-        logForwardFetchDebug("fetch:group-getForwardMsg:result", {
-          forwardId,
-          detail,
-        })
-        if (Array.isArray(detail) && detail.length) return detail
-        if (Array.isArray(detail?.messages) && detail.messages.length) return detail.messages
-      } catch {}
-    }
+  const apiCtx = ctx?.api || ctx
+  if (typeof apiCtx.getForwardMessages !== "function") {
+    const runtimeBot = getRuntimeBotSafe()
+    const adapterApi =
+      (typeof runtimeBot?.callApi === "function"
+        ? runtimeBot.callApi.bind(runtimeBot)
+        : typeof runtimeBot?.sendApi === "function"
+          ? runtimeBot.sendApi.bind(runtimeBot)
+          : null)
 
-    const privateForwardGetter =
-      (ctx?.friend && typeof ctx.friend.getForwardMsg === "function"
-        ? ctx.friend.getForwardMsg.bind(ctx.friend)
-        : null) ||
-      (ctx?.user_id && typeof runtimeBot?.pickFriend === "function"
-        ? runtimeBot.pickFriend(toInt(ctx.user_id) ?? ctx.user_id)?.getForwardMsg?.bind(
-            runtimeBot.pickFriend(toInt(ctx.user_id) ?? ctx.user_id),
-          )
-        : null) ||
-      (ctx?.user_id && typeof runtimeBot?.pickUser === "function"
-        ? runtimeBot.pickUser(toInt(ctx.user_id) ?? ctx.user_id)?.getForwardMsg?.bind(
-            runtimeBot.pickUser(toInt(ctx.user_id) ?? ctx.user_id),
-          )
-        : null)
-
-    if (typeof privateForwardGetter === "function") {
-      try {
-        const detail = await withTimeout(
-          Promise.resolve().then(() => privateForwardGetter(forwardId)),
-          2500,
-          null,
-        )
-        logForwardFetchDebug("fetch:private-getForwardMsg:result", {
-          forwardId,
-          detail,
-        })
-        if (Array.isArray(detail) && detail.length) return detail
-        if (Array.isArray(detail?.messages) && detail.messages.length) return detail.messages
-      } catch {}
-    }
-  }
-
-  if (proto === "milky" && typeof runtimeBot?.getForwardMessage === "function") {
-    try {
-      const detail = await withTimeout(
-        Promise.resolve().then(() =>
-          runtimeBot.getForwardMessage({
-            forward_id: forwardId,
-            peer_id: ctx?.group_id ?? ctx?.user_id ?? "",
-            message_scene: ctx?.group_id ? "group" : String(ctx?.message_scene || "friend"),
-          }),
-        ),
+    if (typeof adapterApi === "function") {
+      const onebotRes = await withTimeout(
+        Promise.resolve().then(() => adapterApi("get_forward_msg", { message_id: forwardId })),
         2500,
         null,
-      )
-      logForwardFetchDebug("fetch:milky-runtime:result", {
-        forwardId,
-        detail,
-      })
-      if (Array.isArray(detail?.messages) && detail.messages.length) return detail.messages
-    } catch {}
+      ).catch(() => null)
+      const onebotMessages = onebotRes?.messages ?? onebotRes?.data?.messages ?? onebotRes?.data
+      if (Array.isArray(onebotMessages) && onebotMessages.length) return onebotMessages
+
+      const milkyRes = await withTimeout(
+        Promise.resolve().then(() => adapterApi("get_forwarded_messages", { forward_id: forwardId })),
+        2500,
+        null,
+      ).catch(() => null)
+      const milkyMessages = milkyRes?.messages ?? milkyRes?.data?.messages
+      if (Array.isArray(milkyMessages) && milkyMessages.length) return milkyMessages
+    }
+
+    logForwardFetchDebug("fetch:empty", {
+      proto: ctx?.protocol,
+      forwardId,
+    })
+    return []
   }
 
-  const apiCall = getContextApiCall(ctx)
-  if (typeof apiCall !== "function") return []
+  const fetched = await withTimeout(
+    Promise.resolve().then(() =>
+      apiCtx.getForwardMessages({
+        forward_id: forwardId,
+        group_id: ctx?.group_id,
+        user_id: ctx?.user_id,
+        message_scene: ctx?.message_scene,
+      }),
+    ),
+    5000,
+    [],
+  )
 
-  const onebotRes = await withTimeout(
-    Promise.resolve().then(() => apiCall("get_forward_msg", { message_id: forwardId })),
-    2500,
-    null,
-  ).catch(() => null)
-  logForwardFetchDebug("fetch:onebot-api:result", {
+  logForwardFetchDebug("fetch:api:result", {
     forwardId,
-    result: onebotRes,
+    count: Array.isArray(fetched) ? fetched.length : 0,
   })
-  const onebotMessages = onebotRes?.messages ?? onebotRes?.data?.messages ?? onebotRes?.data
-  if (Array.isArray(onebotMessages) && onebotMessages.length) return onebotMessages
-
-  const milkyRes = await withTimeout(
-    Promise.resolve().then(() => apiCall("get_forwarded_messages", { forward_id: forwardId })),
-    2500,
-    null,
-  ).catch(() => null)
-  logForwardFetchDebug("fetch:milky-api:result", {
-    forwardId,
-    result: milkyRes,
-  })
-  const milkyMessages = milkyRes?.messages ?? milkyRes?.data?.messages
-  if (Array.isArray(milkyMessages) && milkyMessages.length) return milkyMessages
-
-  logForwardFetchDebug("fetch:empty", {
-    proto,
-    forwardId,
-  })
-  return []
+  return Array.isArray(fetched) ? fetched : []
 }
 
 async function resolveForwardMessagesFromRecord(ctx, record) {
@@ -1240,8 +1179,8 @@ async function resolveForwardMessagesFromRecord(ctx, record) {
   }
 }
 
-export async function buildNoticeForwardMsgList(ctx, { sender, message, time } = {}) {
-  const rkeySuffix = await getNoticeRkeySuffix(ctx)
+export async function buildNoticeForwardMsgList(ctx, { sender, message, time, rkeySuffix = "" } = {}) {
+  const resolvedRkeySuffix = String(rkeySuffix || "").trim() || (await getNoticeRkeySuffix(ctx))
   logForwardFetchDebug("build:start", {
     protocol: ctx?.protocol,
     sender,
@@ -1251,7 +1190,7 @@ export async function buildNoticeForwardMsgList(ctx, { sender, message, time } =
 
   if (Array.isArray(message?.forward_messages) && message.forward_messages.length) {
     const direct = normalizeForwardApiMessages(message.forward_messages, {
-      rkeySuffix,
+      rkeySuffix: resolvedRkeySuffix,
       fallbackUserId: ctx?.user_id ?? ctx?.sender_id ?? ctx?.self_id,
     })
     logForwardFetchDebug("build:direct-forward-messages", {
@@ -1262,7 +1201,7 @@ export async function buildNoticeForwardMsgList(ctx, { sender, message, time } =
   }
 
   for (const candidate of collectNoticeMessageSegmentCandidates(message)) {
-    const expanded = await expandNoticeForwardSegments(ctx, candidate, { rkeySuffix })
+    const expanded = await expandNoticeForwardSegments(ctx, candidate, { rkeySuffix: resolvedRkeySuffix })
     logForwardFetchDebug("build:candidate-expanded", {
       candidate,
       expanded,
@@ -1273,14 +1212,14 @@ export async function buildNoticeForwardMsgList(ctx, { sender, message, time } =
   const rawSegments = normalizeNoticeMessageSegments(message)
   if (!rawSegments.length) return []
 
-  const expanded = await expandNoticeForwardSegments(ctx, rawSegments, { rkeySuffix })
+  const expanded = await expandNoticeForwardSegments(ctx, rawSegments, { rkeySuffix: resolvedRkeySuffix })
   logForwardFetchDebug("build:raw-expanded", {
     rawSegments,
     expanded,
   })
   if (expanded.length) return expanded
 
-  const content = toForwardSafeSegments(rawSegments, { rkeySuffix })
+  const content = toForwardSafeSegments(rawSegments, { rkeySuffix: resolvedRkeySuffix })
   const senderId = toInt(sender?.userId) ?? toInt(ctx?.user_id) ?? toInt(ctx?.self_id) ?? 0
   const senderName = String(sender?.name || sender?.nickname || senderId || "用户").trim()
   const fallback = [
@@ -1312,11 +1251,11 @@ async function buildNoticeForwardPayload(ctx, { title, sender, message, time } =
   }
 
   try {
+    if (ctx && typeof ctx.makeForwardMessage === "function") {
+      return await ctx.makeForwardMessage(ctx, msgList, title || "")
+    }
     if (ctx && typeof ctx.makeGroupForwardMsg === "function") {
       return await ctx.makeGroupForwardMsg(ctx, msgList, title || "")
-    }
-    if (typeof Bot?.makeGroupForwardMsg === "function") {
-      return await Bot.makeGroupForwardMsg(msgList, ctx?.group_id)
     }
   } catch (err) {
     console.warn("[group] build notice forward failed:", err?.message || err)
@@ -1395,6 +1334,13 @@ export async function createMessageAwareNotice(
         sender: resolvedUsers[0],
         message: segments,
         time,
+        rkeySuffix:
+          (await getNoticeRkeySuffix({
+            ...(ctx || {}),
+            message_scene: "friend",
+            group_id: undefined,
+            user_id: resolvedUsers[0]?.userId ?? ctx?.user_id,
+          })) || "",
       }))
     if (forward) payloads.push(forward)
   }
@@ -1487,63 +1433,90 @@ function hasResolvableMediaSegments(input) {
 }
 
 export async function fetchRecalledMessageViaApi(ctx, ref = {}) {
-  const apiCall = getContextApiCall(ctx)
-  if (typeof apiCall !== "function") return null
+  const apiCtx = ctx?.api || ctx
+  if (typeof apiCtx.getMessage !== "function") {
+    const apiCall = getContextApiCall(ctx)
+    if (typeof apiCall !== "function") return null
 
-  const proto = String(ctx?.protocol || "").toLowerCase()
-  if (proto === "milky") {
-    const seq = toInt(ref.seq ?? ref.msgId)
-    const peer_id = toInt(ctx?.group_id ?? ctx?.user_id)
-    const message_scene = ctx?.group_id ? "group" : String(ctx?.message_scene || "friend")
-    if (!seq || !peer_id) return null
+    const proto = String(ctx?.protocol || "").toLowerCase()
+    if (proto === "milky") {
+      const seq = toInt(ref.seq ?? ref.msgId)
+      const peer_id = toInt(ctx?.group_id ?? ctx?.user_id)
+      const message_scene = ctx?.group_id ? "group" : String(ctx?.message_scene || "friend")
+      if (!seq || !peer_id) return null
 
-    const res = await withTimeout(
-      Promise.resolve().then(() => apiCall("get_message", { message_scene, peer_id, message_seq: seq })),
-      2500,
-      null,
-    ).catch(() => null)
+      const res = await withTimeout(
+        Promise.resolve().then(() => apiCall("get_message", { message_scene, peer_id, message_seq: seq })),
+        2500,
+        null,
+      ).catch(() => null)
 
-    const msgObj = res?.message ?? res?.data?.message ?? (res && typeof res === "object" ? res : null)
-    const rawSegments = Array.isArray(msgObj?.segments) ? msgObj.segments : []
-    if (!rawSegments.length) return null
+      const msgObj = res?.message ?? res?.data?.message ?? (res && typeof res === "object" ? res : null)
+      const rawSegments = Array.isArray(msgObj?.segments) ? msgObj.segments : []
+      if (!rawSegments.length) return null
 
+      return {
+        ...(msgObj && typeof msgObj === "object" ? msgObj : {}),
+        protocol: "milky",
+        message_scene: msgObj?.message_scene ?? message_scene,
+        peer_id: msgObj?.peer_id ?? peer_id,
+        message_seq: msgObj?.message_seq ?? seq,
+        seq: msgObj?.message_seq ?? seq,
+        raw_message: msgObj?.raw_message ?? "",
+        segments: rawSegments,
+        universal_message: normalizeNoticeMessageSegments(rawSegments),
+        message: rawSegments,
+      }
+    }
+
+    if (proto === "onebotv11") {
+      const msgId = ref.msgId !== undefined && ref.msgId !== null ? String(ref.msgId) : ""
+      if (!msgId) return null
+
+      const res = await withTimeout(
+        Promise.resolve().then(() => apiCall("get_msg", { message_id: msgId })),
+        2500,
+        null,
+      ).catch(() => null)
+
+      const rawSegments = res?.message ?? res?.data?.message
+      if (!Array.isArray(rawSegments) || !rawSegments.length) return null
+
+        return {
+          ...(res && typeof res === "object" ? res : {}),
+          protocol: "onebotv11",
+          raw_message: res?.raw_message ?? res?.data?.raw_message ?? "",
+          segments: rawSegments,
+          message: rawSegments,
+        }
+    }
+
+    return null
+  }
+
+  const msg = await withTimeout(
+    Promise.resolve().then(() =>
+      apiCtx.getMessage({
+        message_id: ref.msgId ?? ref.msg_id,
+        message_seq: ref.seq,
+        group_id: ctx?.group_id,
+        user_id: ctx?.user_id,
+      }),
+    ),
+    5000,
+    null,
+  )
+  if (!msg) return null
+
+  if (msg.protocol === "milky") {
+    const rawSegments = Array.isArray(msg.segments) ? msg.segments : []
     return {
-      ...(msgObj && typeof msgObj === "object" ? msgObj : {}),
-      protocol: "milky",
-      message_scene: msgObj?.message_scene ?? message_scene,
-      peer_id: msgObj?.peer_id ?? peer_id,
-      message_seq: msgObj?.message_seq ?? seq,
-      seq: msgObj?.message_seq ?? seq,
-      raw_message: msgObj?.raw_message ?? "",
-      segments: rawSegments,
+      ...msg,
       universal_message: normalizeNoticeMessageSegments(rawSegments),
-      message: rawSegments,
     }
   }
 
-  if (proto === "onebotv11") {
-    const msgId = ref.msgId !== undefined && ref.msgId !== null ? String(ref.msgId) : ""
-    if (!msgId) return null
-
-    const res = await withTimeout(
-      Promise.resolve().then(() => apiCall("get_msg", { message_id: msgId })),
-      2500,
-      null,
-    ).catch(() => null)
-
-    const rawSegments = res?.message ?? res?.data?.message
-    if (!Array.isArray(rawSegments) || !rawSegments.length) return null
-
-      return {
-        ...(res && typeof res === "object" ? res : {}),
-        protocol: "onebotv11",
-        raw_message: res?.raw_message ?? res?.data?.raw_message ?? "",
-        segments: rawSegments,
-        message: rawSegments,
-      }
-  }
-
-  return null
+  return msg
 }
 
 async function findRecalledMessageFromDbFallback(ctx, { groupId, senderId, ref } = {}) {
