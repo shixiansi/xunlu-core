@@ -161,28 +161,11 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
         if (fbSendApi) return await fbSendApi(normalizedAction, params)
       }
 
-      // takeover 模式直通: runtimeBot 上有 __xunlu_takeover_state.adapter.callApi
+      // takeover 模式直通
       const takeoverState = runtimeBot?.__xunlu_takeover_state
       if (takeoverState?.adapter?.callApi) {
-        try {
-          return await takeoverState.adapter.callApi(normalizedAction, params)
-        } catch (err) {
-          console.warn("[xunlu-core][sendApi] takeover fallback threw:", err?.message || err)
-        }
+        return await takeoverState.adapter.callApi(normalizedAction, params)
       }
-
-      const hasSendApi = typeof runtimeBot?.sendApi
-      const takeoverKeys = takeoverState ? Object.keys(takeoverState).slice(0, 8) : null
-      console.warn("[xunlu-core][sendApi] no route, bot:", {
-        type: runtimeBot?.constructor?.name,
-        hasSendApi,
-        sendApiUniversal: runtimeBot?.sendApi?.__xunlu_universal,
-        hasCallApi: typeof runtimeBot?.callApi,
-        hasTakeoverState: !!takeoverState,
-        takeoverKeys,
-        hasAdapter: !!takeoverState?.adapter,
-        adapterType: takeoverState?.adapter?.constructor?.name,
-      })
 
       throw new Error("[sendApi] API not available")
     },
@@ -887,13 +870,15 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
   return api
 }
 
-export function applyUniversalBotApi(target, { bot, adapterHint, override = [] } = {}) {
+export function applyUniversalBotApi(target, { bot, adapterHint, override = [], exclude = [] } = {}) {
   if (!target || typeof target !== "object") return target
 
   const api = createUniversalBotApi({ bot, adapterHint })
   const overrideSet = new Set(Array.isArray(override) ? override : [])
+  const excludeSet = new Set(Array.isArray(exclude) ? exclude : [])
 
   for (const [key, value] of Object.entries(api)) {
+    if (excludeSet.has(key)) continue
     if (!overrideSet.has(key) && typeof target[key] === "function") continue
 
     // 若覆盖已有实现，则缓存原实现，避免通用封装递归调用自身

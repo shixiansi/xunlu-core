@@ -41,6 +41,7 @@ export default async function attachApisMiddleware(ctx, next) {
     bot: ctx.baseBot,
     adapterHint: ctx.baseBot?.adapter,
     override: universalOverride,
+    exclude: ["sendApi", "callApi"],
   })
   await next()
 }
