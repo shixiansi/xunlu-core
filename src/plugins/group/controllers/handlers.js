@@ -874,9 +874,8 @@ export function register(bot) {
       const user_id = toInt(m[1])
       const msg = String(m[2] || "").trim()
       if (!user_id || !msg) return await ctx.reply("用法：#发好友 QQ号 消息")
-      if (typeof ctx.sendMessage === "function") await ctx.sendMessage(String(user_id), msg)
-      else if (typeof ctx.pickUser === "function") await ctx.pickUser(user_id).sendMsg(msg)
-      else throw new Error("send API not available")
+      if (typeof ctx.sendMessage !== "function") throw new Error("send API not available")
+      await ctx.sendMessage(String(user_id), msg)
       return await ctx.reply(`已发送：${user_id}`)
     },
   )
@@ -1062,13 +1061,7 @@ export function register(bot) {
       if (duration <= 0) return await ctx.reply("用法：#禁言 @用户 60秒（支持 秒/分/小时/天）")
 
       try {
-        // 从 ctx.bot.adapter 获取底层 adapter 实例，使用 callApi 调用 OneBot API
-        const adapter = ctx?.bot?.adapter
-        if (typeof adapter?.callApi === "function") {
-          await adapter.callApi("set_group_ban", { group_id: ctx.group_id, user_id: target, duration })
-        } else {
-          throw new Error("No available API method (callApi not found)")
-        }
+        await ctx.api.setGroupMemberMute({ group_id: ctx.group_id, user_id: target, duration })
         return await ctx.reply(`已禁言：${target}（${duration} 秒）`)
       } catch (err) {
         console.error("[group] setGroupMemberMute failed:", err?.message || err)
@@ -1092,13 +1085,7 @@ export function register(bot) {
       if (!target) return await ctx.reply("用法：#解禁 @用户")
 
       try {
-        // 从 ctx.bot.adapter 获取底层 adapter 实例，使用 callApi 调用 OneBot API
-        const adapter = ctx?.bot?.adapter
-        if (typeof adapter?.callApi === "function") {
-          await adapter.callApi("set_group_ban", { group_id: ctx.group_id, user_id: target, duration: 0 })
-        } else {
-          throw new Error("No available API method (callApi not found)")
-        }
+        await ctx.api.setGroupMemberMute({ group_id: ctx.group_id, user_id: target, duration: 0 })
         return await ctx.reply(`已解禁：${target}`)
       } catch (err) {
         console.error("[group] setGroupMemberMute (unmute) failed:", err?.message || err)
@@ -1114,13 +1101,7 @@ export function register(bot) {
       if (!(await checkUserAdminOrMaster(ctx))) return await ctx.reply("需要管理员权限")
       if (!(await checkBotAdmin(ctx))) return await ctx.reply("Bot 需要管理员权限")
       try {
-        // 从 ctx.bot.adapter 获取底层 adapter 实例，使用 callApi 调用 OneBot API
-        const adapter = ctx?.bot?.adapter
-        if (typeof adapter?.callApi === "function") {
-          await adapter.callApi("set_group_whole_ban", { group_id: ctx.group_id, enable: true })
-        } else {
-          throw new Error("No available API method (callApi not found)")
-        }
+        await ctx.api.setGroupWholeMute({ group_id: ctx.group_id, enable: true })
         return await ctx.reply("已尝试开启全体禁言")
       } catch (err) {
         console.error("[group] setGroupWholeMute (enable) failed:", err?.message || err)
@@ -1136,13 +1117,7 @@ export function register(bot) {
       if (!(await checkUserAdminOrMaster(ctx))) return await ctx.reply("需要管理员权限")
       if (!(await checkBotAdmin(ctx))) return await ctx.reply("Bot 需要管理员权限")
       try {
-        // 从 ctx.bot.adapter 获取底层 adapter 实例，使用 callApi 调用 OneBot API
-        const adapter = ctx?.bot?.adapter
-        if (typeof adapter?.callApi === "function") {
-          await adapter.callApi("set_group_whole_ban", { group_id: ctx.group_id, enable: false })
-        } else {
-          throw new Error("No available API method (callApi not found)")
-        }
+        await ctx.api.setGroupWholeMute({ group_id: ctx.group_id, enable: false })
         return await ctx.reply("已尝试解除全体禁言")
       } catch (err) {
         console.error("[group] setGroupWholeMute (disable) failed:", err?.message || err)
@@ -1166,13 +1141,7 @@ export function register(bot) {
       if (!target) return await ctx.reply("用法：#踢黑 @用户")
 
       try {
-        // 从 ctx.bot.adapter 获取底层 adapter 实例，使用 callApi 调用 OneBot API
-        const adapter = ctx?.bot?.adapter
-        if (typeof adapter?.callApi === "function") {
-          await adapter.callApi("set_group_kick", { group_id: ctx.group_id, user_id: target, reject_add_request: true })
-        } else {
-          throw new Error("No available API method (callApi not found)")
-        }
+        await ctx.api.kickGroupMember({ group_id: ctx.group_id, user_id: target, reject_add_request: true })
         return await ctx.reply(`已尝试踢黑：${target}`)
       } catch (err) {
         console.error("[group] kickGroupMember (ban) failed:", err?.message || err)
@@ -1196,13 +1165,7 @@ export function register(bot) {
       if (!target) return await ctx.reply("用法：#踢 @用户")
 
       try {
-        // 从 ctx.bot.adapter 获取底层 adapter 实例，使用 callApi 调用 OneBot API
-        const adapter = ctx?.bot?.adapter
-        if (typeof adapter?.callApi === "function") {
-          await adapter.callApi("set_group_kick", { group_id: ctx.group_id, user_id: target, reject_add_request: false })
-        } else {
-          throw new Error("No available API method (callApi not found)")
-        }
+        await ctx.api.kickGroupMember({ group_id: ctx.group_id, user_id: target, reject_add_request: false })
         return await ctx.reply(`已尝试踢出：${target}`)
       } catch (err) {
         console.error("[group] kickGroupMember failed:", err?.message || err)
@@ -1505,7 +1468,6 @@ export const __test = {
     delete groupPass[String(id)]
   },
 }
-
 
 
 
