@@ -162,9 +162,27 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       }
 
       // takeover 模式直通: runtimeBot 上有 __xunlu_takeover_state.adapter.callApi
-      if (runtimeBot?.__xunlu_takeover_state?.adapter?.callApi) {
-        return await runtimeBot.__xunlu_takeover_state.adapter.callApi(normalizedAction, params)
+      const takeoverState = runtimeBot?.__xunlu_takeover_state
+      if (takeoverState?.adapter?.callApi) {
+        try {
+          return await takeoverState.adapter.callApi(normalizedAction, params)
+        } catch (err) {
+          console.warn("[xunlu-core][sendApi] takeover fallback threw:", err?.message || err)
+        }
       }
+
+      const hasSendApi = typeof runtimeBot?.sendApi
+      const takeoverKeys = takeoverState ? Object.keys(takeoverState).slice(0, 8) : null
+      console.warn("[xunlu-core][sendApi] no route, bot:", {
+        type: runtimeBot?.constructor?.name,
+        hasSendApi,
+        sendApiUniversal: runtimeBot?.sendApi?.__xunlu_universal,
+        hasCallApi: typeof runtimeBot?.callApi,
+        hasTakeoverState: !!takeoverState,
+        takeoverKeys,
+        hasAdapter: !!takeoverState?.adapter,
+        adapterType: takeoverState?.adapter?.constructor?.name,
+      })
 
       throw new Error("[sendApi] API not available")
     },
