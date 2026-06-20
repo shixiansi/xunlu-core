@@ -167,6 +167,9 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
         return await takeoverAdapter.callApi(normalizedAction, params)
       }
 
+      const lg = global.logger
+      if (lg?.mark) lg.mark(`[sendApi] takeoverAdapter=${typeof takeoverAdapter} adapterCallApi=${typeof takeoverAdapter?.callApi}`)
+
       throw new Error("[sendApi] API not available")
     },
 

@@ -60,6 +60,7 @@ export async function startYunzaiTakeover({ bot, ignoreSelf } = {}) {
   else throw new Error(`[takeover] unsupported protocol=${protocol}`)
 
   runtimeBot.__xunlu_takeover_started = { protocol, loginInfo, adapterName }
+  globalThis.__xunlu_takeover_adapter = adapter
   return runtimeBot.__xunlu_takeover_started
 }
 
