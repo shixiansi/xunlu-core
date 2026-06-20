@@ -31,6 +31,64 @@ function ensureFile(filePath, content = "fixture") {
   return filePath
 }
 
+test("RuntimePaths detects various Yunzai fork package names as QQBot-YunZai env", () => {
+  const yunzaiNames = [
+    "miao-yunzai",
+    "Miao-Yunzai",
+    "trss-yunzai",
+    "TRSS-Yunzai",
+    "Miao-Yunzai-Dev",
+    "yunzai",
+    "Yunzai-Bot",
+    "my-yunzai-bot",
+  ]
+
+  for (const name of yunzaiNames) {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "xunlu-env-test-"))
+    try {
+      ensureFile(
+        path.join(tempRoot, "package.json"),
+        JSON.stringify({ name }, null, 2),
+      )
+      const runtimePaths = new RuntimePaths({ cwd: tempRoot })
+      assert.equal(
+        runtimePaths.currentEnv,
+        "QQBot-YunZai",
+        `package name "${name}" should be detected as QQBot-YunZai`,
+      )
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true })
+    }
+  }
+})
+
+test("RuntimePaths detects non-Yunzai package names as xunlu-core env", () => {
+  const nonYunzaiNames = [
+    "xunlu-core",
+    "my-app",
+    "some-other-bot",
+    "node-qq-bot",
+  ]
+
+  for (const name of nonYunzaiNames) {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "xunlu-env-test-"))
+    try {
+      ensureFile(
+        path.join(tempRoot, "package.json"),
+        JSON.stringify({ name }, null, 2),
+      )
+      const runtimePaths = new RuntimePaths({ cwd: tempRoot })
+      assert.equal(
+        runtimePaths.currentEnv,
+        "xunlu-core",
+        `package name "${name}" should be detected as xunlu-core`,
+      )
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true })
+    }
+  }
+})
+
 test("RuntimePaths migrates legacy plugin runtime files into unified runtime directories", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "xunlu-runtime-layout-"))
 

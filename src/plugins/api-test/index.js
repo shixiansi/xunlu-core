@@ -1,11 +1,26 @@
 import definePlugin from "../define-plugin.js"
 import { resolveProtocol, getRuntimeBotOrNull, toInt } from "../../Bot/api/universal-bot-api-utils.js"
+import env from "../../lib/env.js"
+
+function detectYunzaiName() {
+  try {
+    const name = env.package?.name
+    if (!name || /yunzai/i.test(name) === false) return ""
+    if (/miao/i.test(name)) return "Miao-Yunzai"
+    if (/trss/i.test(name)) return "TRSS-Yunzai"
+    return name
+  } catch {
+    return ""
+  }
+}
 
 function detectEnv(ctx) {
   const parts = []
   // platform
   const isYunzai = Boolean(typeof Bot !== "undefined" && Bot) || Boolean(globalThis.Bot)
-  parts.push(isYunzai ? "平台: Yunzai" : "平台: Standalone")
+  const yunzaiName = detectYunzaiName()
+  if (isYunzai && yunzaiName) parts.push(`平台: Yunzai (${yunzaiName})`)
+  else parts.push(isYunzai ? "平台: Yunzai" : "平台: Standalone")
   // protocol
   const protocol = resolveProtocol({ ctx, bot: ctx?.bot, runtimeBot: getRuntimeBotOrNull() })
   parts.push(`协议: ${protocol}`)
