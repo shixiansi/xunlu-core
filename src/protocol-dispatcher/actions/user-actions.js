@@ -176,6 +176,12 @@ export function registerUserActions(dispatcher) {
       if (typeof runtimeBot?.sendApi === "function") {
         try { return await runtimeBot.sendApi("send_like", { user_id: uid, times }) } catch {}
       }
+      // fallback: takeover state adapter callApi 直达
+      if (runtimeBot?.__xunlu_takeover_state?.adapter?.callApi) {
+        try {
+          return await runtimeBot.__xunlu_takeover_state.adapter.callApi("send_like", { user_id: uid, times })
+        } catch {}
+      }
       throw new Error("[sendProfileLike] onebotv11 API not available")
     },
     icqq: async (params, ctx) => {
