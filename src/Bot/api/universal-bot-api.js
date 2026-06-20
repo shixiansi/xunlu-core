@@ -142,22 +142,21 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       const sendApi = getYunzaiSendApi(runtimeBot)
       if (sendApi) return await sendApi(normalizedAction, params)
 
-      // fallback: takeover 模式下 __xunlu_runtime_bot 是 adapter，
-      // 而 globalThis.Bot 是 Yunzai 原始 bot 的 compat 代理，可能带有 sendApi
+      // fallback: 绕过 getRawMethod 的 selfFn/__xunlu_universal 守卫，
+      // 直接尝试 fallback Bot 上的原始 sendApi/callApi/yunzaiSendApi
       const fallbackBot = getRuntimeBotFallback()
-      if (fallbackBot && fallbackBot !== runtimeBot) {
-        const fbRawSendApi = getRawMethod(fallbackBot, "sendApi", api.sendApi)
+      if (fallbackBot) {
+        // 先走 getRawMethod 不带 selfFn（避免 universal wrapper 自检）
         {
-          const r = await tryCallRawApi(fbRawSendApi, fallbackBot, normalizedAction, params)
+          const raw = getRawMethod(fallbackBot, "sendApi")
+          const r = await tryCallRawApi(raw, fallbackBot, normalizedAction, params)
           if (r !== null) return r
         }
-
-        const fbRawCallApi = getRawMethod(fallbackBot, "callApi", api.callApi)
         {
-          const r = await tryCallRawApi(fbRawCallApi, fallbackBot, normalizedAction, params)
+          const raw = getRawMethod(fallbackBot, "callApi")
+          const r = await tryCallRawApi(raw, fallbackBot, normalizedAction, params)
           if (r !== null) return r
         }
-
         const fbSendApi = getYunzaiSendApi(fallbackBot)
         if (fbSendApi) return await fbSendApi(normalizedAction, params)
       }
