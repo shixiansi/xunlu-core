@@ -19,9 +19,21 @@ export function registerMemberActions(dispatcher) {
       const runtimeBot = getRuntimeBotOrNull()
       const gid = toInt(params.group_id ?? ctx?.group_id)
       if (gid === undefined) throw new Error("[getGroupMemberList] requires group_id")
+      let lastError = null
+      // try onebotv11 style first
       const raw = getRawMethod(runtimeBot, "getGroupMemberList")
-      if (raw) return toMemberMap(await raw.call(runtimeBot, { group_id: gid }))
-      throw new Error("[getGroupMemberList] onebotv11 API not available")
+      if (raw) {
+        try { return toMemberMap(await raw.call(runtimeBot, { group_id: gid })) } catch (err) { lastError = err }
+        try { return toMemberMap(await raw.call(runtimeBot, gid)) } catch (err) { lastError = err }
+      }
+      // fallback: icqq style
+      if (runtimeBot?.pickGroup) {
+        try {
+          const group = runtimeBot.pickGroup(gid)
+          if (group?.getMemberMap) return await group.getMemberMap()
+        } catch (err) { lastError = err }
+      }
+      throw lastError || new Error("[getGroupMemberList] API not available")
     },
     icqq: async (params, ctx) => {
       const runtimeBot = getRuntimeBotOrNull()

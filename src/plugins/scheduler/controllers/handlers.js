@@ -2,7 +2,7 @@ import SchedulerStore, { createTaskId, normalizeScheduleExpr } from "../model/st
 import SchedulerRuntime, { claimSchedulerRuntime, formatDateTime, getClaimedSchedulerRuntime } from "../model/runtime.js"
 
 function getLogger(logger) {
-  return logger || globalThis.logger || console
+  return logger || globalThis.xunluCore?.services?.logger || console
 }
 
 function normalizeString(value) {

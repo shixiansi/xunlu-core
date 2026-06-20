@@ -5,7 +5,7 @@ import { UniversalMessageSegment } from "../../../Bot/message/index.js"
 const GLOBAL_RUNTIME_KEY = "__xunlu_scheduler_runtime__"
 
 function getLogger(logger) {
-  return logger || globalThis.logger || console
+  return logger || globalThis.xunluCore?.services?.logger || console
 }
 
 function normalizeString(value) {

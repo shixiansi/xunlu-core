@@ -49,7 +49,7 @@ export function getDynamicTypeKey(label = "") {
 export function createBilibiliSubscriptionStore({
   filemage,
   cachePaths,
-  getLogger = () => globalThis.logger,
+  getLogger = () => globalThis.xunluCore?.services?.logger || console,
 } = {}) {
   if (!filemage || typeof filemage.getFileDataToJson !== "function") {
     throw new TypeError("filemage with getFileDataToJson is required")

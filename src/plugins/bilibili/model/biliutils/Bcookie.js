@@ -1,12 +1,14 @@
 import fetch from "node-fetch"
 import Bapi from "../Bapi.js"
 import { getBiliTicket } from "./bili_ticket.cjs"
+import { getPlatformRedis } from "../../../../runtime/platform-services.js"
+
 async function getCookie() {
   let Buvid = await getBuvid()
   let bili_ticket = "bili_ticket=" + (await getBiliTicket(""))?.data?.ticket
 
   let b_nut = await getB_nt()
-  const jsonData = await redis.get("bilibili_cookie")
+  const jsonData = await getPlatformRedis()?.get?.("bilibili_cookie")
 
   const { SESSDATA, DedeUserID } = jsonData ? JSON.parse(jsonData) : {}
   return [

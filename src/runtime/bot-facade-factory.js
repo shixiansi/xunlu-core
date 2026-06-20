@@ -15,6 +15,12 @@ export function createBotFacade({ driver } = {}) {
   return {
     runtimeBot,
     botCore,
+    installPlatformFacade(runtime) {
+      const api = botCore || null
+      return runtime
+        ? runtime
+        : { runtimeBot, botCore, api }
+    },
     createBindEvent(extra = {}) {
       const bindEvent = botCore?.bindEvent && typeof botCore.bindEvent === "object" ? botCore.bindEvent : {}
       return {

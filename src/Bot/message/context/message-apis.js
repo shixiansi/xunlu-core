@@ -1,5 +1,6 @@
 import { UniversalMessage } from "../universal-message.js"
 import { getMessageRefFromCtx, getReplyRefFromSegments } from "./derived-fields.js"
+import { createUniversalBotApi } from "../../api/universal-bot-api.js"
 
 function toSafeNumber(value) {
   const num = Number(value)
@@ -109,6 +110,39 @@ function attachStandardMessageApis(ctx) {
       if (!ref) return null
       return await ctx.getMessage(ref)
     }
+  }
+
+  const api = createUniversalBotApi()
+  const methodNames = [
+    "sendMessage",
+    "recallMessage",
+    "makeForwardMessage",
+    "getGroupMemberList",
+    "getGroupMemberInfo",
+    "setGroupMemberMute",
+    "getGroupChatHistory",
+    "makeGroupForwardMsg",
+    "makeGroupForwardMsgByUser",
+  ]
+
+  for (const name of methodNames) {
+    if (typeof ctx[name] !== "function") {
+      ctx[name] = api[name]
+    }
+  }
+
+  if (typeof ctx.getForwardMessage !== "function") {
+    ctx.getForwardMessage = async function getForwardMessage(input = {}) {
+      const payload = input && typeof input === "object" ? input : { message_id: input }
+      if (typeof this.callApi === "function") {
+        return await this.callApi("get_forward_msg", payload)
+      }
+      throw new Error("[ctx.getForwardMessage] API not available")
+    }
+  }
+
+  if (typeof ctx.makeForwardMessage !== "function") {
+    ctx.makeForwardMessage = api.makeForwardMessage
   }
 
   return ctx

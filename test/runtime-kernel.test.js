@@ -7,6 +7,7 @@ import RuntimeKernel from "../src/runtime/runtime-kernel.js"
 import ServiceRegistry from "../src/runtime/service-registry.js"
 import ApiOnlyDriver from "../src/runtime/drivers/api-only-driver.js"
 import UnsupportedStandaloneIcqqDriver from "../src/runtime/drivers/unsupported-standalone-icqq-driver.js"
+import { createPlatformFacade } from "../src/runtime/platform-services.js"
 import { installTestRuntime } from "./helpers/test-runtime.js"
 
 installTestRuntime(test)
@@ -15,6 +16,7 @@ test("resolveRuntimeMode prefers yunzai icqq when bot is online", async () => {
   const mode = await resolveRuntimeMode({
     env: { CurEnv: "QQBot-YunZai" },
     botConfig: { adapter: "auto" },
+    yunzaiConfig: { skip_login: false, ignore_self: true },
     globalBot: {
       isOnline() {
         return true
@@ -233,7 +235,89 @@ test("RuntimeKernel registers only api service in api-only mode", () => {
   })
 
   kernel.registerDefaultServices()
-  assert.deepEqual(kernel.services.list(), ["api"])
+  assert.deepEqual(kernel.services.list(), ["logger", "redis", "ffmpeg", "puppeteer", "api"])
+})
+
+test("RuntimeKernel installs global xunluCore facade after startup", async () => {
+  const previousFacade = globalThis.xunluCore
+
+  try {
+    const kernel = new RuntimeKernel({
+      modeState: {
+        mode: "standalone-milky",
+        adapter: "milky",
+      },
+      context: {
+        ensureRuntimeLayout() {},
+      },
+      async loadRuntimeEnvironment() {},
+      coreServiceFactories: {
+        logger: () => ({
+          logger: { info() {}, warn() {}, error() {} },
+          async start() {
+            globalThis.logger = { info() {}, warn() {}, error() {} }
+          },
+          health() {
+            return { ok: true }
+          },
+        }),
+        redis: () => ({
+          client: { get() {}, set() {}, del() {} },
+          async start() {
+            globalThis.redis = { get() {}, set() {}, del() {} }
+          },
+          health() {
+            return { ok: true }
+          },
+        }),
+        ffmpeg: () => ({
+          ffmpeg: { VideoComposite() {} },
+          async start() {},
+          health() {
+            return { ok: true }
+          },
+        }),
+        puppeteer: () => ({
+          puppeteer: { launch() {} },
+          async start() {},
+          health() {
+            return { ok: true }
+          },
+        }),
+      },
+    })
+
+    kernel.createDriver = async () => ({
+      async start() {},
+      async stop() {},
+      getRuntimeBot() {
+        return { uin: 10000, nickname: "runtime-bot" }
+      },
+      getBotCore() {
+        return { bindEvent: {} }
+      },
+      getLoadedPlugins() {
+        return []
+      },
+      getStatus() {
+        return { protocol: "milky" }
+      },
+    })
+
+    await kernel.start()
+
+    assert.ok(globalThis.xunluCore)
+    assert.equal(typeof globalThis.xunluCore.bot.getRuntimeBot, "function")
+    assert.ok(globalThis.xunluCore.services.redis)
+    assert.ok(globalThis.xunluCore.services.ffmpeg)
+    assert.ok(globalThis.xunluCore.services.puppeteer)
+
+    await kernel.stop()
+    assert.equal(globalThis.xunluCore, undefined)
+  } finally {
+    if (previousFacade !== undefined) globalThis.xunluCore = previousFacade
+    else delete globalThis.xunluCore
+  }
 })
 
 test("RuntimeKernel rolls back started services and driver when startup fails", async () => {
@@ -322,5 +406,64 @@ test("RuntimeKernel rolls back started services and driver when startup fails", 
     else delete globalThis.Bot
     if (hadRuntimeBot) globalThis.__xunlu_runtime_bot = originalRuntimeBot
     else delete globalThis.__xunlu_runtime_bot
+  }
+})
+
+test("RuntimeKernel restores previous xunluCore facade after startup rollback", async () => {
+  const previousFacade = createPlatformFacade({
+    api: { id: "previous-api" },
+    services: {
+      logger: { info() {} },
+      redis: { get() {} },
+      ffmpeg: { VideoComposite() {} },
+      puppeteer: { launch() {} },
+    },
+  })
+
+  const hadFacade = Object.prototype.hasOwnProperty.call(globalThis, "xunluCore")
+  const originalFacade = globalThis.xunluCore
+
+  try {
+    globalThis.xunluCore = previousFacade
+
+    const kernel = new RuntimeKernel({
+      modeState: {
+        mode: "standalone-milky",
+        adapter: "milky",
+      },
+      context: {
+        ensureRuntimeLayout() {},
+      },
+      async loadRuntimeEnvironment() {},
+    })
+
+    kernel.registerDefaultServices = () => {
+      kernel.services.register("logger", {
+        logger: { info() {}, warn() {}, error() {} },
+        async start() {},
+      })
+      kernel.services.register("redis", {
+        client: { get() {}, set() {}, del() {} },
+        async start() {},
+      })
+      kernel.services.register("ffmpeg", {
+        ffmpeg: { VideoComposite() {} },
+        async start() {},
+      })
+      kernel.services.register("puppeteer", {
+        puppeteer: { launch() {} },
+        async start() {},
+      })
+    }
+
+    kernel.createDriver = async () => {
+      throw new Error("driver create failed")
+    }
+
+    await assert.rejects(() => kernel.start(), /driver create failed/)
+    assert.equal(globalThis.xunluCore, previousFacade)
+  } finally {
+    if (hadFacade) globalThis.xunluCore = originalFacade
+    else delete globalThis.xunluCore
   }
 })

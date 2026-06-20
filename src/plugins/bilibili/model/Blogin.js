@@ -3,6 +3,7 @@ import qrcode from "qrcode"
 import fs from "fs"
 import path from "path"
 import { getRuntimePaths } from "../../../runtime/runtime-context.js"
+import { getPlatformRedis } from "../../../runtime/platform-services.js"
 
 class BiliBiliQRLogin {
   constructor() {
@@ -61,7 +62,7 @@ class BiliBiliQRLogin {
       switch (res.data.code) {
         case 0: // 登录成功
           this.cleanupQRFile()
-          await redis.set(
+          await getPlatformRedis()?.set?.(
             "bilibili_cookie",
             JSON.stringify(this.parseCookies(response.headers.raw()["set-cookie"])),
           )

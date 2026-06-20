@@ -38,7 +38,7 @@ function ensureTempDir() {
 }
 
 function getLogger() {
-  return globalThis.logger || console
+  return globalThis.xunluCore?.services?.logger || console
 }
 
 function normalizePixivProxyUrl(url = "") {

@@ -43,13 +43,14 @@ function extractReplyMessageSeq(replied) {
 }
 
 function extractSelfId(ctx) {
+  const runtimeBot = globalThis.xunluCore?.bot?.getRuntimeBot?.() || globalThis.__xunlu_runtime_bot
   return toInt(
     ctx?.self_id ??
       ctx?.bot?.self_id ??
       ctx?.bot?.uin ??
-      globalThis.Bot?.self_id ??
-      globalThis.Bot?.uin ??
-      globalThis.Bot?.user_id,
+      runtimeBot?.self_id ??
+      runtimeBot?.uin ??
+      runtimeBot?.user_id,
   )
 }
 

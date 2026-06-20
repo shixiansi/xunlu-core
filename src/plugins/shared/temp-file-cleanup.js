@@ -1,4 +1,5 @@
 import fs from "node:fs"
+import path from "node:path"
 
 const DEFAULT_CLEANUP_DELAYS_MS = [15_000, 30_000, 60_000, 180_000]
 
@@ -38,7 +39,7 @@ function scheduleCleanupAttempt(paths, delaysMs, attemptIndex, label) {
     }
 
     for (const item of failed) {
-      globalThis.logger?.warn?.(
+      globalThis.xunluCore?.services?.logger?.warn?.(
         `[temp-cleanup] ${label} cleanup failed: ${item.filePath}, ${item.err?.message || item.err}`,
       )
     }
@@ -57,6 +58,20 @@ export function scheduleTempFileCleanup(paths = [], options = {}) {
 
   scheduleCleanupAttempt(normalizedPaths, delaysMs, 0, label)
   return normalizedPaths.length
+}
+
+export function cleanupDirContents(dirs = []) {
+  for (const dir of dirs) {
+    try {
+      if (!fs.existsSync(dir)) continue
+      for (const entry of fs.readdirSync(dir)) {
+        const fullPath = path.join(dir, entry)
+        try {
+          fs.rmSync(fullPath, { recursive: true, force: true })
+        } catch {}
+      }
+    } catch {}
+  }
 }
 
 export function __resetTempFileCleanupForTests() {}

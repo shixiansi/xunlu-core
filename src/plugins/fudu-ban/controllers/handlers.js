@@ -15,6 +15,7 @@ import {
   getRuntimeBotGroupMessageStreak,
   getRuntimeLastGroupMessage,
 } from "../../../Bot/state/index.js"
+import { getCompatRuntimeBot } from "../../../runtime/platform-services.js"
 
 const NORMAL_MAX_STRIKES = 3
 const BOT_REPEAT_MAX_STRIKES = 4
@@ -67,7 +68,8 @@ function getRuntimeBotPrevMessages(groupId) {
 }
 
 function getBotSelfId(ctx) {
-  const raw = ctx?.self_id ?? globalThis.Bot?.uin ?? globalThis.Bot?.user_id ?? globalThis.Bot?.self_id ?? 0
+  const runtimeBot = getCompatRuntimeBot()
+  const raw = ctx?.self_id ?? runtimeBot?.uin ?? runtimeBot?.user_id ?? runtimeBot?.self_id ?? 0
   const n = Number(raw)
   return Number.isFinite(n) && n > 0 ? n : 0
 }

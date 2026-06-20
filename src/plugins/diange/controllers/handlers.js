@@ -134,56 +134,13 @@ async function renderSongListImage(ctx, keyword = "", songs = [], prompt = "") {
 }
 
 async function sendMusicCard(ctx, song = {}) {
-  if (String(ctx?.protocol || "").toLowerCase() === "milky") {
-    return false
-  }
-
   const payload = musicService.buildMusicCard(song)
   if (!payload) return false
   try {
-    if (ctx?.protocol === "milky") {
-      const action = ctx?.isGroup ? "send_group_message" : "send_private_message"
-      const params = ctx?.isGroup
-        ? { group_id: ctx.group_id, message: payload }
-        : { user_id: ctx.user_id, message: payload }
-      const res = await ctx.sendApi(action, params)
-      return Boolean(res !== false)
-    }
-
-    if (ctx?.protocol === "onebotv11") {
-      const action = ctx?.isGroup ? "send_group_msg" : "send_private_msg"
-      const params = ctx?.isGroup
-        ? { group_id: ctx.group_id, message: payload }
-        : { user_id: ctx.user_id, message: payload }
-      const res = await ctx.sendApi(action, params)
-      return Boolean(res !== false)
-    }
-
-    if (ctx?.protocol === "icqq") {
-      if (ctx?.isGroup && typeof globalThis.Bot?.pickGroup === "function") {
-        const peer = globalThis.Bot.pickGroup(Number(ctx.group_id))
-        if (peer?.sendMsg) {
-          const res = await peer.sendMsg(payload)
-          return Boolean(res !== false)
-        }
-      }
-      if (typeof globalThis.Bot?.pickFriend === "function") {
-        const peer = globalThis.Bot.pickFriend(Number(ctx.user_id))
-        if (peer?.sendMsg) {
-          const res = await peer.sendMsg(payload)
-          return Boolean(res !== false)
-        }
-      }
-      if (typeof globalThis.Bot?.pickUser === "function") {
-        const peer = globalThis.Bot.pickUser(Number(ctx.user_id))
-        if (peer?.sendMsg) {
-          const res = await peer.sendMsg(payload)
-          return Boolean(res !== false)
-        }
-      }
-    }
-
-    return false
+    if (typeof ctx?.sendMessage !== "function") return false
+    const target = ctx?.isGroup ? { group_id: ctx.group_id } : String(ctx.user_id)
+    const res = await ctx.sendMessage(target, payload)
+    return Boolean(res !== false)
   } catch (err) {
     logger.warn?.(`[Diange] 音乐卡片发送失败，改走语音：${err?.message || err}`)
     return false

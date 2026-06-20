@@ -126,12 +126,13 @@ async function resolveBotSelfId(runtimeLike) {
     console.warn("[group-cleanup] getLoginInfo failed:", err?.message || err)
   }
 
-  const bot = globalThis.Bot
+  const bot = globalThis.xunluCore?.bot?.getRuntimeBot?.() || globalThis.__xunlu_runtime_bot
   return normalizeId(bot?.uin ?? bot?.user_id ?? bot?.self_id)
 }
 
 export async function resolveRuntimeGroupIds(runtimeLike) {
-  const candidates = [runtimeLike, globalThis.Bot].filter(Boolean)
+  const runtimeBot = globalThis.xunluCore?.bot?.getRuntimeBot?.() || globalThis.__xunlu_runtime_bot
+  const candidates = [runtimeLike, runtimeBot].filter(Boolean)
 
   for (const candidate of candidates) {
     if (typeof candidate?.getGroupList !== "function") continue

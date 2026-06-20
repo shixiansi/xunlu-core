@@ -1,6 +1,7 @@
 import { createRequire } from "module"
 import lodash from "lodash"
 import env from "../../../lib/env.js"
+import { getPlatformLogger, getPlatformRedis } from "../../../runtime/platform-services.js"
 const require = createRequire(import.meta.url)
 const { exec, execFile, execFileSync } = require("child_process")
 
@@ -15,6 +16,10 @@ const PLUGIN_CONFIG = {
 }
 
 const pluginPath = env.CurEnv == "xunlu-core" ? "./" : `./plugins/${PLUGIN_CONFIG.pluginDir}/`
+
+function getPlatformBotApi() {
+  return globalThis.xunluCore?.bot?.api || globalThis.xunluCore?.bot?.getRuntimeBot?.() || null
+}
 
 function getGitCwd(plugin = "") {
   return plugin ? pluginPath : undefined
@@ -55,7 +60,10 @@ async function runGitUpdate(isForce = false) {
 async function initRestartStatus() {
   console.log("执行更新了")
 
-  let restart = await redis.get(PLUGIN_CONFIG.key)
+  const redisClient = getPlatformRedis()
+  const botApi = getPlatformBotApi()
+  const logger = getPlatformLogger()
+  let restart = await redisClient?.get?.(PLUGIN_CONFIG.key)
   console.log(restart)
 
   if (restart && process.argv[1].includes("pm2")) {
@@ -66,11 +74,11 @@ async function initRestartStatus() {
 
     try {
       if (restart.isGroup) {
-        await Bot.pickGroup(restart.id).sendMsg(msg)
+        await botApi?.sendMessage?.({ group_id: restart.id }, msg)
       } else {
-        await Bot.pickUser(restart.id).sendMsg(msg)
+        await botApi?.sendMessage?.(String(restart.id), msg)
       }
-      await redis.del(PLUGIN_CONFIG.key)
+      await redisClient?.del?.(PLUGIN_CONFIG.key)
     } catch (error) {
       logger.error(`[荨鹿更新] 重启成功通知失败：${error.stack}`)
     }
@@ -82,6 +90,7 @@ async function initRestartStatus() {
  * @param {Object} ctx 命令上下文
  */
 async function checkGit(ctx) {
+  const logger = getPlatformLogger()
   try {
     let ret = execGitSync(["--version"])
     if (!ret || !ret.includes("git version")) {
@@ -113,6 +122,7 @@ async function execSyncCmd(cmd) {
  * @param {string} plugin 插件目录
  */
 async function getCommitId(plugin = "") {
+  const logger = getPlatformLogger()
   try {
     let commitId = execGitSync(["rev-parse", "--short", "HEAD"], { cwd: getGitCwd(plugin) })
     return lodash.trim(commitId)
@@ -127,6 +137,7 @@ async function getCommitId(plugin = "") {
  * @param {string} plugin 插件目录
  */
 async function getUpdateTime(plugin = "") {
+  const logger = getPlatformLogger()
   try {
     let time = execGitSync(
       ["log", "-1", "--oneline", "--pretty=format:%cd", "--date=format:%m-%d %H:%M"],
@@ -188,6 +199,7 @@ async function handleGitError(ctx, err, stdout) {
  * @param {string} oldCommitId 更新前的CommitId（新增参数）
  */
 async function getUpdateLog(ctx, plugin = "", oldCommitId = "") {
+  const logger = getPlatformLogger()
   plugin = plugin || PLUGIN_CONFIG.pluginDir
   // 修复：去掉--oneline，避免和--pretty冲突
   let logAll
@@ -266,6 +278,8 @@ async function checkPnpm() {
  * @param {Object} ctx 命令上下文
  */
 async function restartApp(ctx) {
+  const redisClient = getPlatformRedis()
+  const logger = getPlatformLogger()
   await ctx.reply("开始执行重启，请稍等...")
   logger.mark(`${ctx.logFnc} 开始执行重启，请稍等...`)
 
@@ -278,7 +292,7 @@ async function restartApp(ctx) {
   let npm = await checkPnpm()
 
   try {
-    await redis.set(PLUGIN_CONFIG.key, data, { EX: 120 })
+    await redisClient?.set?.(PLUGIN_CONFIG.key, data, { EX: 120 })
     let cm = `${npm} start`
 
     if (process.argv[1].includes("pm2")) {
@@ -294,7 +308,7 @@ async function restartApp(ctx) {
       console.log(stderr)
 
       if (error) {
-        redis.del(PLUGIN_CONFIG.key)
+        redisClient?.del?.(PLUGIN_CONFIG.key)
         ctx.reply(`操作失败！\n${error.stack}`)
         logger.error(`[荨鹿更新] 重启失败\n${error.stack}`)
       } else if (stdout) {
@@ -305,7 +319,7 @@ async function restartApp(ctx) {
       }
     })
   } catch (error) {
-    await redis.del(PLUGIN_CONFIG.key)
+    await redisClient?.del?.(PLUGIN_CONFIG.key)
     let e = error.stack ?? error
     await ctx.reply(`操作失败！\n${e}`)
   }
@@ -404,6 +418,7 @@ export async function onEnable(pluginDef) {
 
 export function register(bot) {
   if (!bot || !bot.registerCommand) return
+  const logger = getPlatformLogger()
 
   // 注册「荨鹿更新」命令
   bot.registerCommand(["^荨鹿更新$"], async ctx => {
@@ -429,6 +444,7 @@ export function register(bot) {
  * @param {Object} event 事件对象
  */
 export function onBotEvent(event) {
+  const logger = getPlatformLogger()
   // 可根据需要处理机器人事件（如启动、消息等）
   // 示例：监听机器人启动事件
   if (event.type === "bot_ready") {

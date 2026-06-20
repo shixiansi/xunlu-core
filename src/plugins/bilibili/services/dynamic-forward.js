@@ -9,8 +9,12 @@ export function isNativeForwardPayload(payload) {
 
 export async function buildDynamicForwardNodes(ctx, msgList = [], options = {}) {
   const list = Array.isArray(msgList) ? msgList : [msgList]
-  const runtimeBot = options.runtimeBot ?? globalThis.Bot ?? {}
-  const logger = options.logger ?? globalThis.logger
+  const runtimeBot =
+    options.runtimeBot ??
+    globalThis.xunluCore?.bot?.getRuntimeBot?.() ??
+    globalThis.__xunlu_runtime_bot ??
+    {}
+  const logger = options.logger ?? globalThis.xunluCore?.services?.logger ?? console
   const defaultId = Number(ctx?.user_id ?? runtimeBot?.uin ?? runtimeBot?.user_id ?? 0)
   let nickname = String(runtimeBot?.nickname || "Bilibili动态").trim() || "Bilibili动态"
 
@@ -46,7 +50,10 @@ export async function makeDynamicImageForward(baseBot, ctx, groupId, msgList = [
     isGroup: true,
     group_id: Number.isFinite(targetGroupId) ? targetGroupId : groupId,
   }
-  const runtimeBot = options.runtimeBot ?? globalThis.Bot
+  const runtimeBot =
+    options.runtimeBot ??
+    globalThis.xunluCore?.bot?.getRuntimeBot?.() ??
+    globalThis.__xunlu_runtime_bot
   const normalizedList = await buildDynamicForwardNodes(forwardCtx, msgList, {
     ...options,
     runtimeBot,
@@ -57,13 +64,13 @@ export async function makeDynamicImageForward(baseBot, ctx, groupId, msgList = [
     if (isNativeForwardPayload(forwardMsg)) return forwardMsg
   }
 
-  if (baseBot && typeof baseBot.makeForwardMsg === "function") {
-    const forwardMsg = await baseBot.makeForwardMsg(forwardCtx, normalizedList, desc)
+  if (ctx && typeof ctx.makeGroupForwardMsg === "function") {
+    const forwardMsg = await ctx.makeGroupForwardMsg(forwardCtx, normalizedList, desc)
     if (isNativeForwardPayload(forwardMsg)) return forwardMsg
   }
 
-  if (ctx && typeof ctx.makeGroupForwardMsg === "function") {
-    const forwardMsg = await ctx.makeGroupForwardMsg(forwardCtx, normalizedList, desc)
+  if (baseBot && typeof baseBot.makeForwardMsg === "function") {
+    const forwardMsg = await baseBot.makeForwardMsg(forwardCtx, normalizedList, desc)
     if (isNativeForwardPayload(forwardMsg)) return forwardMsg
   }
 

@@ -45,8 +45,13 @@ export function registerGroupActions(dispatcher) {
       if (gid === undefined) throw new Error("[getGroupInfo] requires group_id")
       const raw = getRawMethod(runtimeBot, "getGroupInfo")
       if (!raw) throw new Error("[getGroupInfo] API not available")
-      const res = await raw.call(runtimeBot, { group_id: gid, no_cache: Boolean(params.no_cache) })
-      return res?.group ?? res
+      try {
+        const res = await raw.call(runtimeBot, { group_id: gid, no_cache: Boolean(params.no_cache) })
+        return res?.group ?? res
+      } catch {
+        // fallback: icqq style positional args
+        return await raw.call(runtimeBot, gid, Boolean(params.no_cache))
+      }
     },
     icqq: async (params, ctx) => {
       const runtimeBot = getRuntimeBotOrNull()

@@ -12,7 +12,9 @@ import {
   pickPreferredVideoPlan,
 } from "../services/video-planner.js"
 import { isDuplicateParseRequest, __resetParseDedupeForTests } from "../../shared/parse-dedupe.js"
-import { scheduleTempFileCleanup } from "../../shared/temp-file-cleanup.js"
+import { cleanupDirContents, scheduleTempFileCleanup } from "../../shared/temp-file-cleanup.js"
+import { getBrowserProfileRoot, getTempVideoDir } from "../services/douyin-runtime.js"
+import { getCompatRuntimeBot } from "../../../runtime/platform-services.js"
 
 const ACTIVE_SESSION_KEY = "global"
 const QR_POLL_INTERVAL_MS = 5000
@@ -28,7 +30,8 @@ function clearQrSession(key = ACTIVE_SESSION_KEY) {
 }
 
 function getBotForwardUserId(ctx) {
-  const id = Number(ctx?.self_id ?? globalThis.Bot?.uin ?? globalThis.Bot?.user_id ?? 0)
+  const runtimeBot = getCompatRuntimeBot()
+  const id = Number(ctx?.self_id ?? runtimeBot?.uin ?? runtimeBot?.user_id ?? 0)
   return Number.isFinite(id) && id > 0 ? Math.floor(id) : 10000
 }
 
@@ -422,6 +425,12 @@ async function handleDouyinParse(ctx) {
 
 export function register(bot) {
   if (!bot?.registerCommand) return
+
+  cleanupDirContents([
+    getTempVideoDir(),
+    getBrowserProfileRoot(),
+  ])
+
   renderImg = typeof bot?.renderImg === "function" ? bot.renderImg : null
 
   bot.registerCommand(["^[#＃]抖音扫码$", 1000], async ctx => await handleQrLoginCommand(ctx))

@@ -6,9 +6,9 @@ import Bili from "../model/Bilili.js"
 import Filemage from "../../../utils/Filemage.js"
 import moment from "moment"
 import Download from "../../../utils/download.js"
-import ffmpeg from "../../../component/ffmpeg/ffmpeg.js"
+import { getPlatformFfmpeg } from "../../../runtime/platform-services.js"
 import { isDuplicateParseRequest } from "../../shared/parse-dedupe.js"
-import { scheduleTempFileCleanup } from "../../shared/temp-file-cleanup.js"
+import { cleanupDirContents, scheduleTempFileCleanup } from "../../shared/temp-file-cleanup.js"
 import { createBilibiliCachePaths } from "../services/cache-paths.js"
 import {
   formatCompactCount as computew,
@@ -51,6 +51,7 @@ import {
   normalizeVideoSizeError,
   pickEstimatedSendableStream,
 } from "../services/video-planner.js"
+import { getCompatRuntimeBot } from "../../../runtime/platform-services.js"
 
 const filemage = new Filemage()
 const download = new Download()
@@ -68,8 +69,9 @@ const {
 })
 
 async function composeVideoFile(videoPath, audioPath, resultPath) {
+  const ffmpegApi = getPlatformFfmpeg()
   return await new Promise((resolve, reject) => {
-    ffmpeg.VideoComposite(
+    ffmpegApi.VideoComposite(
       videoPath,
       audioPath,
       resultPath,
@@ -84,11 +86,12 @@ function cleanupTempFiles(paths = [], label = "cache") {
 }
 
 function isMilkyRuntime(baseBot, ctx) {
+  const runtimeBot = getCompatRuntimeBot()
   const protocol = String(
     ctx?.protocol ??
       baseBot?.adapter ??
-      globalThis.Bot?.adapterType ??
-      globalThis.Bot?.protocol ??
+      runtimeBot?.adapterType ??
+      runtimeBot?.protocol ??
       "",
   )
     .trim()
@@ -197,7 +200,7 @@ async function handleBilibiliLiveUrl(ctx, inputUrl) {
   try {
     await sendBilibiliLiveClip(ctx, roomInfo, {
       bili: Bili,
-      ffmpeg,
+      ffmpeg: getPlatformFfmpeg(),
       cachePaths: bilibiliCachePaths,
       cleanupTempFiles,
     })
@@ -254,6 +257,11 @@ async function prepareDynamicForwardImages(baseBot, ctx, dynamicId, msgList = []
 
 export function register(bot) {
   if (!bot || !bot.registerCommand) return
+
+  cleanupDirContents([
+    bilibiliCachePaths.videoPath,
+    bilibiliCachePaths.toAbsolutePath(bilibiliCachePaths.dynamicForwardDir),
+  ])
 
   bot.registerCommand(
     "^#订阅(UP|up|)(直播|文字|图文|视频|转发|抽奖|专栏|)(动态|)(uid:|UID:|)",

@@ -5,9 +5,9 @@ import { createRequire } from "node:module"
 
 import { load } from "cheerio"
 import fetch from "node-fetch"
-import puppeteer from "puppeteer"
 
 import Download from "../../../utils/download.js"
+import { getPlatformPuppeteer } from "../../../runtime/platform-services.js"
 import {
   clearDouyinAuth,
   getDouyinDataDir,
@@ -2072,7 +2072,7 @@ class DouyinService {
   }
 
   async fetchRenderedAwemePage(url, auth = null) {
-    const browser = await puppeteer.launch(buildLaunchOptions())
+    const browser = await getPlatformPuppeteer().launch(buildLaunchOptions())
 
     const page = await browser.newPage()
     try {

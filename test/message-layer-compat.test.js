@@ -69,6 +69,11 @@ test("message layer wrappers keep coerce and derived ctx fields compatible", asy
   const replied = await ctx.getReplyMessage()
   assert.equal(replied.protocol, "onebotv11")
   assert.equal(replied.message[0].type, UniversalSegmentType.TEXT)
+  assert.equal(typeof ctx.sendMessage, "function")
+  assert.equal(typeof ctx.recallMessage, "function")
+  assert.equal(typeof ctx.getForwardMessage, "function")
+  assert.equal(typeof ctx.makeForwardMessage, "function")
+  assert.equal(typeof ctx.makeGroupForwardMsg, "function")
 })
 
 test("legacy segment compatibility still produces universal media segments", () => {

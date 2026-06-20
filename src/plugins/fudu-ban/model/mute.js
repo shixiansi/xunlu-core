@@ -10,13 +10,8 @@ function safeId(value) {
   return toInt(value) ?? value
 }
 
-function getGlobalBot() {
-  try {
-    // eslint-disable-next-line no-undef
-    return Bot || globalThis.Bot || null
-  } catch {
-    return globalThis.Bot || null
-  }
+function getPlatformBot() {
+  return globalThis.xunluCore?.bot?.getRuntimeBot?.() || globalThis.__xunlu_runtime_bot || null
 }
 
 export async function setGroupMemberMute(ctx, { groupId, userId, durationSeconds }) {
@@ -31,13 +26,13 @@ export async function setGroupMemberMute(ctx, { groupId, userId, durationSeconds
     return await ctx.setGroupMemberMute(payload)
   }
 
-  // 2) global Bot for milky/onebot adapters
-  const bot = getGlobalBot()
+  // 2) runtime bot fallback for milky/onebot adapters
+  const bot = getPlatformBot()
   if (bot && typeof bot.setGroupMemberMute === "function") {
     return await bot.setGroupMemberMute(payload)
   }
 
-  // 3) icqq/yunzai style: Bot.pickGroup(groupId).muteMember(userId, duration)
+  // 3) icqq/yunzai style: runtimeBot.pickGroup(groupId).muteMember(userId, duration)
   if (bot && typeof bot.pickGroup === "function") {
     const group = bot.pickGroup(gid)
     if (group && typeof group.muteMember === "function") {
@@ -53,4 +48,3 @@ export async function setGroupMemberMute(ctx, { groupId, userId, durationSeconds
 
   return { ok: false, error: "setGroupMemberMute API not found" }
 }
-

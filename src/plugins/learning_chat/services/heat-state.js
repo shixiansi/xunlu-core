@@ -1,6 +1,7 @@
 import MessageDB from "../../../db/MessageDB.js"
 import { BaseModel } from "../../../db/base/BaseModel.js"
 import { Op } from "sequelize"
+import { getCompatRuntimeBot } from "../../../runtime/platform-services.js"
 
 const heatByGroup = new Map()
 let groupIdDiscoveryCache = { ts: 0, ids: [] }
@@ -19,7 +20,8 @@ function toNumber(value, fallback) {
 }
 
 export function getBotSelfId() {
-  const id = Number(globalThis.Bot?.uin ?? globalThis.Bot?.user_id ?? globalThis.Bot?.self_id ?? 0)
+  const runtimeBot = getCompatRuntimeBot()
+  const id = Number(runtimeBot?.uin ?? runtimeBot?.user_id ?? runtimeBot?.self_id ?? 0)
   return Number.isFinite(id) && id > 0 ? id : 0
 }
 

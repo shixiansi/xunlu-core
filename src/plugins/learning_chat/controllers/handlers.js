@@ -41,6 +41,7 @@ import {
   buildProactiveTimingPlan,
   pickProactiveBatchSize,
 } from "../services/proactive-planner.js"
+import { getCompatRuntimeBot } from "../../../runtime/platform-services.js"
 import {
   buildProactiveCommandPlan,
   buildProactiveCommandStatePatch,
@@ -180,7 +181,8 @@ async function resolveIsGroupAdmin(ctx) {
 }
 
 function isReplyFromSelf(ctx, replied) {
-  const selfId = Number(ctx?.self_id ?? globalThis.Bot?.uin ?? globalThis.Bot?.user_id ?? 0)
+  const runtimeBot = getCompatRuntimeBot()
+  const selfId = Number(ctx?.self_id ?? runtimeBot?.uin ?? runtimeBot?.user_id ?? 0)
   if (!selfId) return false
 
   const senderRaw =
@@ -634,7 +636,7 @@ export async function runProactiveCommandTick(ctxLike, botApi) {
         UniversalMessageSegment.text(` 自动帮你执行常用指令：${rawCommand}`),
       ]
 
-      const send = ctxLike?.sendMessage || globalThis.Bot?.sendMessage
+      const send = ctxLike?.sendMessage || globalThis.xunluCore?.bot?.api?.sendMessage
       if (typeof send !== "function") continue
 
       await send({ group_id: Number(gid) || gid }, mentionMsg).catch(() => null)
@@ -846,7 +848,7 @@ export async function proactiveTick(ctxLike, botApi = null) {
       // 处理 QQNT 图片 rkey（避免历史图片直链过期）
 
       const ok = await sendLearningSegments(gid, rawSegments, {
-        send: ctxLike?.sendMessage || globalThis.Bot?.sendMessage,
+        send: ctxLike?.sendMessage || globalThis.xunluCore?.bot?.api?.sendMessage,
         protocol: ctxLike?.protocol || runtimeProtocolHint,
         runtimeProtocolHint,
         afterSend: markBotSpoke,
@@ -977,7 +979,7 @@ export async function reconcileLearningChatGroups(runtimeLike, options = {}) {
         : null
 
   if (!(activeGroupIds instanceof Set)) {
-    const candidates = [runtimeLike, globalThis.Bot].filter(Boolean)
+    const candidates = [runtimeLike, getCompatRuntimeBot()].filter(Boolean)
 
     for (const candidate of candidates) {
       if (typeof candidate?.getGroupList !== "function") continue

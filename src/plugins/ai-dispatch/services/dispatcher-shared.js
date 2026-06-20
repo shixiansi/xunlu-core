@@ -1,5 +1,5 @@
 export function getDispatchLogger() {
-  return globalThis.logger || console
+  return globalThis.xunluCore?.services?.logger || console
 }
 
 export function isPlainObject(value) {

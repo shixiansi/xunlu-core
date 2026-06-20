@@ -3,6 +3,7 @@ import {
   classifyMediaReference,
 } from "../../../Bot/message/index.js"
 import { applyRkeyToUrl, getSceneRkey } from "../../../utils/rkey.js"
+import { getCompatRuntimeBot } from "../../../runtime/platform-services.js"
 
 function isOnebotLikeProtocol(protocol) {
   const text = String(protocol || "").trim().toLowerCase()
@@ -136,7 +137,9 @@ export async function prepareOutboundLearningSegments(
   const list = Array.isArray(segments) ? segments : []
   if (!list.length) return list
 
-  const protocolName = String(protocol || runtimeProtocolHint || globalThis.Bot?.adapterType || "")
+  const protocolName = String(
+    protocol || runtimeProtocolHint || getCompatRuntimeBot()?.adapterType || "",
+  )
     .trim()
     .toLowerCase()
 
@@ -387,7 +390,7 @@ export async function sendLearningSegments(
     afterSend = null,
   } = {},
 ) {
-  const sendFn = send || globalThis.Bot?.sendMessage
+  const sendFn = send || globalThis.xunluCore?.bot?.api?.sendMessage || getCompatRuntimeBot()?.sendMessage
   if (typeof sendFn !== "function") return false
 
   const outbound = await prepareOutboundLearningSegments(segments, {

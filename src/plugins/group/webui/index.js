@@ -40,7 +40,7 @@ function normalizeGroupItems(raw) {
 function normalizeBotIds() {
   const store = loadNoticeStore()
   const ids = new Set(Object.keys(store?.bots || {}).map(normalizeId).filter(Boolean))
-  const runtimeBot = globalThis.Bot
+  const runtimeBot = globalThis.xunluCore?.bot?.getRuntimeBot?.() || globalThis.__xunlu_runtime_bot
 
   for (const value of [runtimeBot?.uin, runtimeBot?.self_id, runtimeBot?.user_id]) {
     const id = normalizeId(value)
@@ -64,7 +64,7 @@ async function listGroupScopes() {
     })
   }
 
-  const runtimeBot = globalThis.Bot
+  const runtimeBot = globalThis.xunluCore?.bot?.getRuntimeBot?.() || globalThis.__xunlu_runtime_bot
   if (runtimeBot?.gl instanceof Map) {
     for (const [groupId, info] of runtimeBot.gl.entries()) {
       const id = normalizeId(groupId)

@@ -9,6 +9,7 @@ import MessagePipeline from "./runtime/message-pipeline.js"
 import ReplyService from "./runtime/reply-service.js"
 import RoleResolver from "./runtime/role-resolver.js"
 import SessionManager from "./runtime/session-manager.js"
+import { createPlatformFacade } from "../runtime/platform-services.js"
 
 /**
  * BaseBot 现在只保留“兼容门面”的职责。
@@ -54,6 +55,9 @@ export default class BaseBot {
     this.sessionManager = new SessionManager(this)
     this.commandBus = new CommandBus(this)
     this.forwardService = new ForwardService(this)
+    this.platform = createPlatformFacade({
+      api: this,
+    })
   }
 
   async loadBotPlugins(options = {}) {

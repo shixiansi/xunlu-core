@@ -1,4 +1,5 @@
 import definePlugin from "../define-plugin.js"
+import { getPlatformRedis } from "../../runtime/platform-services.js"
 
 const CAP_CACHE_TTL_SEC = 86400
 const memoryCapCache = new Map()
@@ -46,7 +47,7 @@ async function readCapCache(selfId) {
   const mem = memoryCapCache.get(key)
   if (mem && mem.expireAt > nowMs()) return mem.value
 
-  const client = globalThis.redis
+  const client = getPlatformRedis()
   if (!client || typeof client.get !== "function") return null
 
   try {
@@ -70,7 +71,7 @@ async function writeCapCache(selfId, cap) {
   const payload = JSON.stringify({ ...normalized, updatedAt: nowMs() })
   memoryCapCache.set(key, { value: normalizeCap(safeJsonParse(payload)) || normalized, expireAt: nowMs() + CAP_CACHE_TTL_SEC * 1000 })
 
-  const client = globalThis.redis
+  const client = getPlatformRedis()
   if (!client || typeof client.set !== "function") return
   try {
     await client.set(key, payload, { EX: CAP_CACHE_TTL_SEC })

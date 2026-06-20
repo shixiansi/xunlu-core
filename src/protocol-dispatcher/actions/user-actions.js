@@ -16,8 +16,11 @@ export function registerUserActions(dispatcher) {
     onebotv11: async () => {
       const runtimeBot = getRuntimeBotOrNull()
       const raw = getRawMethod(runtimeBot, "getLoginInfo")
-      if (!raw) throw new Error("[getLoginInfo] API not available")
-      return await raw.call(runtimeBot)
+      if (raw) return await raw.call(runtimeBot)
+      // fallback: icqq style
+      const user_id = toInt(runtimeBot?.uin) ?? 0
+      const nickname = runtimeBot?.nickname ? String(runtimeBot.nickname) : ""
+      return { user_id, nickname }
     },
     icqq: async () => {
       const runtimeBot = getRuntimeBotOrNull()
@@ -66,9 +69,13 @@ export function registerUserActions(dispatcher) {
       const uid = toInt(params.user_id ?? params.userId ?? ctx?.user_id ?? ctx?.sender_id)
       if (uid === undefined) throw new Error("[getFriendInfo] requires user_id")
       const raw = getRawMethod(runtimeBot, "getFriendInfo")
-      if (!raw) throw new Error("[getFriendInfo] API not available")
-      const res = await raw.call(runtimeBot, { user_id: uid, no_cache: Boolean(params.no_cache) })
-      return res?.friend ?? res
+      if (raw) {
+        try { return await raw.call(runtimeBot, { user_id: uid, no_cache: Boolean(params.no_cache) }) } catch {}
+      }
+      // fallback: icqq style
+      const rawGetStranger = runtimeBot?.__xunlu_raw_getStrangerInfo || runtimeBot?.getStrangerInfo
+      if (rawGetStranger) return await rawGetStranger.call(runtimeBot, uid)
+      throw new Error("[getFriendInfo] API not available")
     },
     icqq: async (params, ctx) => {
       const runtimeBot = getRuntimeBotOrNull()
@@ -133,9 +140,22 @@ export function registerUserActions(dispatcher) {
       const uid = toInt(params.user_id ?? params.userId ?? ctx?.user_id)
       if (uid === undefined) throw new Error("[sendProfileLike] requires user_id")
       const raw = getRawMethod(runtimeBot, "sendProfileLike")
-      if (!raw) throw new Error("[sendProfileLike] onebotv11 API not available")
-      const times = params.times ?? 1
-      return await raw.call(runtimeBot, { user_id: uid, times: Number(times) })
+      if (raw) {
+        const times = params.times ?? 1
+        return await raw.call(runtimeBot, { user_id: uid, times: Number(times) })
+      }
+      // fallback: thumbUp (旧兼容写法)
+      if (runtimeBot?.pickFriend) {
+        const friend = runtimeBot.pickFriend(uid)
+        if (friend?.thumbUp) return await friend.thumbUp(Number(params.times ?? 1))
+      }
+      if (runtimeBot?.thumbUp) return await runtimeBot.thumbUp(uid, Number(params.times ?? 1))
+      // fallback: icqq pickUser sendLike
+      if (runtimeBot?.pickUser) {
+        const user = runtimeBot.pickUser(uid)
+        if (user?.sendLike) return await user.sendLike(Number(params.times ?? 1))
+      }
+      throw new Error("[sendProfileLike] onebotv11 API not available")
     },
     icqq: async (params, ctx) => {
       const runtimeBot = getRuntimeBotOrNull()

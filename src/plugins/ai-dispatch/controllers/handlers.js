@@ -21,7 +21,7 @@ import {
 } from "../services/siliconflow.js"
 
 function getLogger() {
-  return globalThis.logger || console
+  return globalThis.xunluCore?.services?.logger || console
 }
 
 function safeListCommands(ctx) {

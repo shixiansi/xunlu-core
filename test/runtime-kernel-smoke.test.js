@@ -16,6 +16,40 @@ test("api-only runtime kernel really starts api service with loaded plugins", as
       host: "127.0.0.1",
       port: 0,
     },
+    coreServiceFactories: {
+      logger: () => ({
+        logger: { info() {}, warn() {}, error() {} },
+        async start() {
+          globalThis.logger = { info() {}, warn() {}, error() {} }
+        },
+        health() {
+          return { ok: true }
+        },
+      }),
+      redis: () => ({
+        client: { get() {}, set() {}, del() {} },
+        async start() {
+          globalThis.redis = { get() {}, set() {}, del() {} }
+        },
+        health() {
+          return { ok: true }
+        },
+      }),
+      ffmpeg: () => ({
+        ffmpeg: { VideoComposite() {} },
+        async start() {},
+        health() {
+          return { ok: true }
+        },
+      }),
+      puppeteer: () => ({
+        puppeteer: { launch() {} },
+        async start() {},
+        health() {
+          return { ok: true }
+        },
+      }),
+    },
   })
 
   try {
@@ -28,7 +62,7 @@ test("api-only runtime kernel really starts api service with loaded plugins", as
 
     const status = kernel.getStatus()
     assert.equal(status.mode, "api-only")
-    assert.deepEqual(status.services, ["api"])
+    assert.deepEqual(status.services, ["logger", "redis", "ffmpeg", "puppeteer", "api"])
     assert.ok(status.pluginCount > 0)
 
     const reloaded = await kernel.reloadPlugins({ cacheBust: true })
@@ -68,7 +102,31 @@ test("standalone icqq runtime kernel fails fast with unsupported mode", async ()
   })
   assert.equal(mode.mode, "standalone-icqq-unsupported")
 
-  const kernel = await createRuntimeKernel({ modeState: mode })
+  const kernel = await createRuntimeKernel({
+    modeState: mode,
+    coreServiceFactories: {
+      logger: () => ({
+        logger: { info() {}, warn() {}, error() {} },
+        async start() {
+          globalThis.logger = { info() {}, warn() {}, error() {} }
+        },
+      }),
+      redis: () => ({
+        client: { get() {}, set() {}, del() {} },
+        async start() {
+          globalThis.redis = { get() {}, set() {}, del() {} }
+        },
+      }),
+      ffmpeg: () => ({
+        ffmpeg: { VideoComposite() {} },
+        async start() {},
+      }),
+      puppeteer: () => ({
+        puppeteer: { launch() {} },
+        async start() {},
+      }),
+    },
+  })
   await assert.rejects(async () => await kernel.start(), /icqq only works in yunzai plugin mode or takeover mode/i)
 })
 
@@ -82,6 +140,42 @@ test("runtime kernel start/stop order stays stable for fake milky and onebot dri
       modeState: {
         mode,
         adapter,
+      },
+      coreServiceFactories: {
+        logger: () => ({
+          logger: { info() {}, warn() {}, error() {} },
+          async start() {
+            calls.push(`service:start:logger:${adapter}`)
+          },
+          async stop() {
+            calls.push(`service:stop:logger:${adapter}`)
+          },
+        }),
+        redis: () => ({
+          client: { get() {}, set() {}, del() {} },
+          async start() {
+            calls.push(`service:start:redis:${adapter}`)
+          },
+          async stop() {
+            calls.push(`service:stop:redis:${adapter}`)
+          },
+        }),
+        ffmpeg: () => ({
+          async start() {
+            calls.push(`service:start:ffmpeg:${adapter}`)
+          },
+          async stop() {
+            calls.push(`service:stop:ffmpeg:${adapter}`)
+          },
+        }),
+        puppeteer: () => ({
+          async start() {
+            calls.push(`service:start:puppeteer:${adapter}`)
+          },
+          async stop() {
+            calls.push(`service:stop:puppeteer:${adapter}`)
+          },
+        }),
       },
     })
 
@@ -110,6 +204,7 @@ test("runtime kernel start/stop order stays stable for fake milky and onebot dri
     })
 
     kernel.registerDefaultServices = function registerSpyServices() {
+      RuntimeKernel.prototype.registerDefaultServices.call(this)
       this.services.register("control", {
         async start() {
           calls.push(`service:start:control:${adapter}`)
@@ -132,11 +227,19 @@ test("runtime kernel start/stop order stays stable for fake milky and onebot dri
     await kernel.stop()
 
     assert.deepEqual(calls, [
+      `service:start:logger:${adapter}`,
+      `service:start:redis:${adapter}`,
+      `service:start:ffmpeg:${adapter}`,
+      `service:start:puppeteer:${adapter}`,
       `driver:start:${adapter}`,
       `service:start:control:${adapter}`,
       `service:start:webui:${adapter}`,
       `service:stop:webui:${adapter}`,
       `service:stop:control:${adapter}`,
+      `service:stop:puppeteer:${adapter}`,
+      `service:stop:ffmpeg:${adapter}`,
+      `service:stop:redis:${adapter}`,
+      `service:stop:logger:${adapter}`,
       `driver:stop:${adapter}`,
     ])
   }

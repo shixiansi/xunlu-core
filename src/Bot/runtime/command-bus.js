@@ -14,6 +14,7 @@ import { normalizeOptionalString, resolveSyntheticProtocol } from "./shared.js"
 import cfg from "../../lib/config.js"
 import { services } from "../../service-container.js"
 import { LifecycleManager } from "../../plugins/lifecycle/index.js"
+import { createPlatformFacade } from "../../runtime/platform-services.js"
 
 /**
  * CommandBus 统一管理插件注册、命令索引、合成事件和命令调用。
@@ -96,6 +97,19 @@ export class CommandBus {
     applyUniversalBotApi(pluginAPI, { bot: this.baseBot, adapterHint: this.baseBot.adapter })
     delete pluginAPI.sendApi
     delete pluginAPI.callApi
+
+    pluginAPI.platform = createPlatformFacade({
+      runtime: {
+        getRuntimeBot() {
+          return globalThis.xunluCore?.bot?.getRuntimeBot?.() || globalThis.__xunlu_runtime_bot || globalThis.Bot || null
+        },
+        modeState: {
+          adapter: this.baseBot.adapter,
+        },
+      },
+      api: pluginAPI,
+      services: globalThis.xunluCore?.services || this.baseBot.platform?.services || {},
+    })
 
     const pluginDef = plugin.implementation
     plugin.implementation.register(pluginAPI)
