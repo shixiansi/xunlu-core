@@ -1,6 +1,7 @@
 import {
   getRuntimeBotOrNull,
   getRawMethod,
+  getRuntimeBotFallback,
   toInt,
   toKeyMap,
 } from "../../Bot/api/universal-bot-api-utils.js"
@@ -34,32 +35,68 @@ export function registerGroupActions(dispatcher) {
       const runtimeBot = getRuntimeBotOrNull()
       const gid = toInt(params.group_id ?? params.groupId ?? ctx?.group_id)
       if (gid === undefined) throw new Error("[getGroupInfo] requires group_id")
+      let lastError = null
       const raw = getRawMethod(runtimeBot, "getGroupInfo")
-      if (!raw) throw new Error("[getGroupInfo] API not available")
-      const res = await raw.call(runtimeBot, { group_id: gid, no_cache: Boolean(params.no_cache) })
-      return res?.group ?? res
+      if (raw) {
+        try {
+          const res = await raw.call(runtimeBot, { group_id: gid, no_cache: Boolean(params.no_cache) })
+          return res?.group ?? res
+        } catch (err) { lastError = err }
+      }
+      // fallback: direct getGroupInfo on fallback bot
+      const fallbackBot = getRuntimeBotFallback()
+      if (fallbackBot && fallbackBot !== runtimeBot && typeof fallbackBot.getGroupInfo === "function") {
+        try {
+          const res = await fallbackBot.getGroupInfo(gid, Boolean(params.no_cache))
+          return res?.group ?? res
+        } catch (err) { lastError = err }
+      }
+      throw lastError || new Error("[getGroupInfo] API not available")
     },
     onebotv11: async (params, ctx) => {
       const runtimeBot = getRuntimeBotOrNull()
       const gid = toInt(params.group_id ?? params.groupId ?? ctx?.group_id)
       if (gid === undefined) throw new Error("[getGroupInfo] requires group_id")
+      let lastError = null
       const raw = getRawMethod(runtimeBot, "getGroupInfo")
-      if (!raw) throw new Error("[getGroupInfo] API not available")
-      try {
-        const res = await raw.call(runtimeBot, { group_id: gid, no_cache: Boolean(params.no_cache) })
-        return res?.group ?? res
-      } catch {
-        // fallback: icqq style positional args
-        return await raw.call(runtimeBot, gid, Boolean(params.no_cache))
+      if (raw) {
+        try {
+          const res = await raw.call(runtimeBot, { group_id: gid, no_cache: Boolean(params.no_cache) })
+          return res?.group ?? res
+        } catch (err) { lastError = err }
+        try {
+          // fallback: icqq style positional args
+          return await raw.call(runtimeBot, gid, Boolean(params.no_cache))
+        } catch (err) { lastError = err }
       }
+      // fallback: pickGroup → getInfo() on group facade (takeover compat)
+      if (runtimeBot?.pickGroup) {
+        try {
+          const group = runtimeBot.pickGroup(gid)
+          if (typeof group?.getInfo === "function") return await group.getInfo(Boolean(params.no_cache))
+        } catch (err) { lastError = err }
+      }
+      throw lastError || new Error("[getGroupInfo] API not available")
     },
     icqq: async (params, ctx) => {
       const runtimeBot = getRuntimeBotOrNull()
       const gid = toInt(params.group_id ?? params.groupId ?? ctx?.group_id)
       if (gid === undefined) throw new Error("[getGroupInfo] requires group_id")
+      let lastError = null
       const raw = getRawMethod(runtimeBot, "getGroupInfo")
-      if (!raw) throw new Error("[getGroupInfo] API not available")
-      return await raw.call(runtimeBot, gid, Boolean(params.no_cache))
+      if (raw) {
+        try {
+          return await raw.call(runtimeBot, gid, Boolean(params.no_cache))
+        } catch (err) { lastError = err }
+      }
+      // fallback: direct getGroupInfo on fallback bot
+      const fallbackBot = getRuntimeBotFallback()
+      if (fallbackBot && fallbackBot !== runtimeBot && typeof fallbackBot.getGroupInfo === "function") {
+        try {
+          return await fallbackBot.getGroupInfo(gid, Boolean(params.no_cache))
+        } catch (err) { lastError = err }
+      }
+      throw lastError || new Error("[getGroupInfo] API not available")
     },
   })
 

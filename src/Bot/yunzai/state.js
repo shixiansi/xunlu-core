@@ -76,6 +76,15 @@ function createTakeoverState({ bot, protocol, adapter, ignoreSelf = true }) {
           return new Map()
         }
       },
+      async getInfo(noCache = false) {
+        try {
+          const res = await adapter.getGroupInfo?.call(adapter, { group_id: gid, no_cache: noCache })
+          return res?.group ?? res
+        } catch (err) {
+          logWarn("[xunlu-core][takeover] getInfo failed:", err?.message || err)
+          return null
+        }
+      },
       ...createIdPrimitive(gid),
     }
 
