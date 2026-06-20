@@ -148,50 +148,100 @@ export function registerUserActions(dispatcher) {
     },
     onebotv11: async (params, ctx) => {
       const runtimeBot = getRuntimeBotOrNull()
+      const fallbackBot = getRuntimeBotFallback()
       const uid = toInt(params.user_id ?? params.userId ?? ctx?.user_id)
       if (uid === undefined) throw new Error("[sendProfileLike] requires user_id")
       const times = Number(params.times ?? 1)
-      const raw = getRawMethod(runtimeBot, "sendProfileLike")
-      if (raw) {
-        try { return await raw.call(runtimeBot, { user_id: uid, times }) } catch {}
+      const rtT = typeof runtimeBot
+      const fbT = typeof fallbackBot
+      console.error("[sendProfileLike] entry", { uid, times, runtimeBot: rtT, fallbackBot: fbT, same: runtimeBot === fallbackBot })
+      console.error("[sendProfileLike] rt.methods:", { sendApi: typeof runtimeBot?.sendApi, callApi: typeof runtimeBot?.callApi, thumbUp: typeof runtimeBot?.thumbUp, pickFriend: typeof runtimeBot?.pickFriend })
+      if (fallbackBot) {
+        console.error("[sendProfileLike] fb.methods:", { sendApi: typeof fallbackBot.sendApi, callApi: typeof fallbackBot.callApi, thumbUp: typeof fallbackBot.thumbUp, pickFriend: typeof fallbackBot.pickFriend, pickUser: typeof fallbackBot.pickUser, raw_sendApi: typeof fallbackBot.__xunlu_raw_sendApi })
       }
-      // fallback: pickFriend.thumbUp
+
+      let lastErr = null
+      const extractMsg = e => e?.error?.message || e?.wording || e?.message || ''
+      const toErr = e => { const msg = extractMsg(e); return msg ? new Error(msg) : (e instanceof Error ? e : new Error(String(e))) }
+      const logErr = (label, e) => { lastErr = toErr(e); console.error("[sendProfileLike] " + label + " failed:", lastErr.message) }
+
+      // 1) raw sendProfileLike
+      if (typeof runtimeBot?.sendProfileLike === "function") {
+        const raw = runtimeBot.__xunlu_raw_sendProfileLike ?? runtimeBot.sendProfileLike
+        if (raw !== runtimeBot.sendProfileLike?.__xunlu_universal) {
+          try { return await raw.call(runtimeBot, { user_id: uid, times }) } catch (e) { logErr("raw.sendProfileLike", e) }
+        } else {
+          try { return await runtimeBot.sendProfileLike({ user_id: uid, times }) } catch (e) { logErr("raw.sendProfileLike(call)", e) }
+        }
+      }
+
+      // 2) runtimeBot icqq (standalone)
       if (runtimeBot?.pickFriend) {
         try {
           const friend = runtimeBot.pickFriend(uid)
-          if (friend?.thumbUp) return await friend.thumbUp(times)
-        } catch {}
+          if (friend?.thumbUp) { const r = await friend.thumbUp(times); if (r !== undefined) return r }
+        } catch (e) { logErr("rt.pickFriend.thumbUp", e) }
       }
-      // fallback: runtimeBot.thumbUp
       if (runtimeBot?.thumbUp) {
-        try { return await runtimeBot.thumbUp(uid, times) } catch {}
+        try { const r = await runtimeBot.thumbUp(uid, times); if (r !== undefined) return r } catch (e) { logErr("rt.thumbUp", e) }
       }
-      // fallback: pickUser.sendLike
       if (runtimeBot?.pickUser) {
         try {
           const user = runtimeBot.pickUser(uid)
-          if (user?.sendLike) return await user.sendLike(times)
-        } catch {}
+          if (user?.sendLike) { const r = await user.sendLike(times); if (r !== undefined) return r }
+        } catch (e) { logErr("rt.pickUser.sendLike", e) }
       }
-      // fallback: sendApi 走 adapter（双参数格式）
-      if (typeof runtimeBot?.sendApi === "function") {
-        try { return await runtimeBot.sendApi("send_like", { user_id: uid, times }) } catch {}
+
+      // 3) fallbackBot icqq (takeover mode)
+      if (fallbackBot && fallbackBot !== runtimeBot) {
+        if (typeof fallbackBot.thumbUp === "function") {
+          try { const r = await fallbackBot.thumbUp(uid, times); if (r !== undefined) return r } catch (e) { logErr("fb.thumbUp", e) }
+        }
+        if (typeof fallbackBot.pickFriend === "function") {
+          try {
+            const friend = fallbackBot.pickFriend(uid)
+            if (friend && typeof friend.thumbUp === "function") { const r = await friend.thumbUp(times); if (r !== undefined) return r }
+          } catch (e) { logErr("fb.pickFriend.thumbUp", e) }
+        }
+        if (typeof fallbackBot.pickUser === "function") {
+          try {
+            const user = fallbackBot.pickUser(uid)
+            if (user && typeof user.sendLike === "function") { const r = await user.sendLike(times); if (r !== undefined) return r }
+          } catch (e) { logErr("fb.pickUser.sendLike", e) }
+        }
       }
-      // fallback: raw __xunlu_raw_sendApi 用 route 对象格式（icqq 原生格式）
-      if (runtimeBot?.__xunlu_raw_sendApi) {
-        try { return await runtimeBot.__xunlu_raw_sendApi({ action: "send_like", params: { user_id: uid, times } }) } catch {}
+
+      // 4) native sendApi / callApi (try raw backups first, then native, skip universal)
+      const trySend = async (label, fn, ...args) => {
+        if (typeof fn !== "function") { console.error("[sendProfileLike] " + label + ": fn not available"); return }
+        if (fn.__xunlu_universal) {
+          const raw = runtimeBot?.__xunlu_raw_sendApi ?? runtimeBot?.__xunlu_raw_callApi
+          if (typeof raw === "function" && !raw.__xunlu_universal) {
+            try { const r = await raw(...args); if (r !== undefined) return r } catch (e) { logErr(label + "(raw)", e); return }
+          }
+          console.error("[sendProfileLike] " + label + ": universal wrapper, no raw backup")
+          return
+        }
+        try { const r = await fn(...args); if (r !== undefined) return r } catch (e) { logErr(label + "(native)", e) }
       }
-      // fallback: 全局 Bot 的 raw sendApi
-      const fallbackBot = getRuntimeBotFallback()
+      let r
+      r = await trySend("sendApi(two-arg)", runtimeBot?.sendApi, "send_like", { user_id: uid, times }); if (r !== undefined) return r
+      r = await trySend("sendApi(route)", runtimeBot?.sendApi, { action: "send_like", params: { user_id: uid, times } }); if (r !== undefined) return r
+      r = await trySend("callApi(two-arg)", runtimeBot?.callApi, "send_like", { user_id: uid, times }); if (r !== undefined) return r
+      r = await trySend("callApi(route)", runtimeBot?.callApi, { action: "send_like", params: { user_id: uid, times } }); if (r !== undefined) return r
+
+      // 5) fallbackBot raw sendApi
       if (fallbackBot && fallbackBot !== runtimeBot && fallbackBot?.__xunlu_raw_sendApi) {
-        try { return await fallbackBot.__xunlu_raw_sendApi({ action: "send_like", params: { user_id: uid, times } }) } catch {}
+        try { const r = await fallbackBot.__xunlu_raw_sendApi({ action: "send_like", params: { user_id: uid, times } }); if (r !== undefined) return r } catch (e) { logErr("fb.raw_sendApi(route)", e) }
       }
-      // fallback: takeover state adapter callApi 直达
+
+      // 6) takeover state adapter callApi
       if (runtimeBot?.__xunlu_takeover_state?.adapter?.callApi) {
-        try {
-          return await runtimeBot.__xunlu_takeover_state.adapter.callApi("send_like", { user_id: uid, times })
-        } catch {}
+        try { const r = await runtimeBot.__xunlu_takeover_state.adapter.callApi("send_like", { user_id: uid, times }); if (r !== undefined) return r } catch (e) { logErr("takeover.adapter.callApi", e) }
       }
+
+      if (lastErr) { console.error("[sendProfileLike] all fallbacks failed, throwing lastErr:", lastErr.message); throw lastErr }
+      console.error("[sendProfileLike] no fallback available, throwing generic")
       throw new Error("[sendProfileLike] onebotv11 API not available")
     },
     icqq: async (params, ctx) => {
