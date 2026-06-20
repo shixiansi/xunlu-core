@@ -73,7 +73,14 @@ export function registerMemberActions(dispatcher) {
       const uid = toInt(params.user_id ?? ctx?.user_id ?? ctx?.sender_id)
       if (gid === undefined || uid === undefined) throw new Error("[getGroupMemberInfo] requires group_id/user_id")
       const raw = getRawMethod(runtimeBot, "getGroupMemberInfo")
-      if (raw) return await raw.call(runtimeBot, { group_id: gid, user_id: uid, no_cache: Boolean(params.no_cache) })
+      if (raw) {
+        try { return await raw.call(runtimeBot, { group_id: gid, user_id: uid, no_cache: Boolean(params.no_cache) }) } catch {}
+      }
+      // fallback: icqq style
+      if (runtimeBot?.pickGroup) {
+        const group = runtimeBot.pickGroup(gid)
+        if (group?.pickMember) return group.pickMember(uid)
+      }
       throw new Error("[getGroupMemberInfo] onebotv11 API not available")
     },
     icqq: async (params, ctx) => {
@@ -110,8 +117,15 @@ export function registerMemberActions(dispatcher) {
       const uid = toInt(params.user_id ?? ctx?.user_id ?? ctx?.sender_id)
       if (gid === undefined || uid === undefined) throw new Error("[setGroupMemberCard] requires group_id/user_id")
       const raw = getRawMethod(runtimeBot, "setGroupMemberCard")
-      if (!raw) throw new Error("[setGroupMemberCard] onebotv11 API not available")
-      return await raw.call(runtimeBot, { group_id: gid, user_id: uid, card: String(params.card) })
+      if (raw) {
+        try { return await raw.call(runtimeBot, { group_id: gid, user_id: uid, card: String(params.card) }) } catch {}
+      }
+      // fallback: icqq style
+      if (runtimeBot?.pickGroup) {
+        const group = runtimeBot.pickGroup(gid)
+        if (group?.setCard) return await group.setCard(uid, String(params.card))
+      }
+      throw new Error("[setGroupMemberCard] onebotv11 API not available")
     },
     icqq: async (params, ctx) => {
       const runtimeBot = getRuntimeBotOrNull()
@@ -142,8 +156,15 @@ export function registerMemberActions(dispatcher) {
       const enable = params.enable ?? params.is_set ?? params.isSet
       if (gid === undefined || uid === undefined) throw new Error("[setGroupMemberAdmin] requires group_id/user_id")
       const raw = getRawMethod(runtimeBot, "setGroupMemberAdmin")
-      if (!raw) throw new Error("[setGroupMemberAdmin] onebotv11 API not available")
-      return await raw.call(runtimeBot, { group_id: gid, user_id: uid, enable: Boolean(enable) })
+      if (raw) {
+        try { return await raw.call(runtimeBot, { group_id: gid, user_id: uid, enable: Boolean(enable) }) } catch {}
+      }
+      // fallback: icqq style
+      if (runtimeBot?.pickGroup) {
+        const group = runtimeBot.pickGroup(gid)
+        if (group?.setAdmin) return await group.setAdmin(uid, Boolean(enable))
+      }
+      throw new Error("[setGroupMemberAdmin] onebotv11 API not available")
     },
     icqq: async (params, ctx) => {
       const runtimeBot = getRuntimeBotOrNull()
@@ -173,8 +194,15 @@ export function registerMemberActions(dispatcher) {
       const uid = toInt(params.user_id ?? ctx?.user_id ?? ctx?.sender_id)
       if (gid === undefined || uid === undefined) throw new Error("[setGroupMemberSpecialTitle] requires group_id/user_id")
       const raw = getRawMethod(runtimeBot, "setGroupMemberSpecialTitle")
-      if (!raw) throw new Error("[setGroupMemberSpecialTitle] onebotv11 API not available")
-      return await raw.call(runtimeBot, { group_id: gid, user_id: uid, special_title: String(params.special_title), ...(params.duration !== undefined ? { duration: Number(params.duration) } : {}) })
+      if (raw) {
+        try { return await raw.call(runtimeBot, { group_id: gid, user_id: uid, special_title: String(params.special_title), ...(params.duration !== undefined ? { duration: Number(params.duration) } : {}) }) } catch {}
+      }
+      // fallback: icqq style
+      if (runtimeBot?.pickGroup) {
+        const group = runtimeBot.pickGroup(gid)
+        if (group?.setSpecialTitle) return await group.setSpecialTitle(uid, String(params.special_title), params.duration ?? 0)
+      }
+      throw new Error("[setGroupMemberSpecialTitle] onebotv11 API not available")
     },
     icqq: async (params, ctx) => {
       const runtimeBot = getRuntimeBotOrNull()
@@ -205,8 +233,15 @@ export function registerMemberActions(dispatcher) {
       const duration = params.duration ?? params.mute_duration ?? 600
       if (gid === undefined || uid === undefined) throw new Error("[setGroupMemberMute] requires group_id/user_id")
       const raw = getRawMethod(runtimeBot, "setGroupMemberMute")
-      if (!raw) throw new Error("[setGroupMemberMute] onebotv11 API not available")
-      return await raw.call(runtimeBot, { group_id: gid, user_id: uid, duration: Number(duration) })
+      if (raw) {
+        try { return await raw.call(runtimeBot, { group_id: gid, user_id: uid, duration: Number(duration) }) } catch {}
+      }
+      // fallback: icqq style
+      if (runtimeBot?.pickGroup) {
+        const group = runtimeBot.pickGroup(gid)
+        if (group?.muteMember) return await group.muteMember(uid, Number(duration))
+      }
+      throw new Error("[setGroupMemberMute] onebotv11 API not available")
     },
     icqq: async (params, ctx) => {
       const runtimeBot = getRuntimeBotOrNull()
@@ -241,8 +276,15 @@ export function registerMemberActions(dispatcher) {
       const rejectAdd = params.reject_add_request ?? params.rejectAddRequest
       if (gid === undefined || uid === undefined) throw new Error("[kickGroupMember] requires group_id/user_id")
       const raw = getRawMethod(runtimeBot, "kickGroupMember")
-      if (!raw) throw new Error("[kickGroupMember] onebotv11 API not available")
-      return await raw.call(runtimeBot, { group_id: gid, user_id: uid, ...(rejectAdd !== undefined ? { reject_add_request: Boolean(rejectAdd) } : {}) })
+      if (raw) {
+        try { return await raw.call(runtimeBot, { group_id: gid, user_id: uid, ...(rejectAdd !== undefined ? { reject_add_request: Boolean(rejectAdd) } : {}) }) } catch {}
+      }
+      // fallback: icqq style
+      if (runtimeBot?.pickGroup) {
+        const group = runtimeBot.pickGroup(gid)
+        if (group?.kickMember) return await group.kickMember(uid, Boolean(rejectAdd))
+      }
+      throw new Error("[kickGroupMember] onebotv11 API not available")
     },
     icqq: async (params, ctx) => {
       const runtimeBot = getRuntimeBotOrNull()

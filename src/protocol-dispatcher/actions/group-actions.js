@@ -77,8 +77,15 @@ export function registerGroupActions(dispatcher) {
       const gid = toInt(params.group_id ?? params.groupId ?? ctx?.group_id)
       if (gid === undefined) throw new Error("[setGroupName] requires group_id")
       const raw = getRawMethod(runtimeBot, "setGroupName")
-      if (!raw) throw new Error("[setGroupName] API not available")
-      return await raw.call(runtimeBot, { group_id: gid, group_name: String(params.group_name ?? params.groupName) })
+      if (raw) {
+        try { return await raw.call(runtimeBot, { group_id: gid, group_name: String(params.group_name ?? params.groupName) }) } catch {}
+      }
+      // fallback: icqq style
+      if (runtimeBot?.pickGroup) {
+        const group = runtimeBot.pickGroup(gid)
+        if (group?.setName) return await group.setName(String(params.group_name ?? params.groupName))
+      }
+      throw new Error("[setGroupName] API not available")
     },
     icqq: async (params, ctx) => {
       const runtimeBot = getRuntimeBotOrNull()
@@ -106,8 +113,15 @@ export function registerGroupActions(dispatcher) {
       const enable = params.enable ?? params.is_mute ?? params.isMute
       if (gid === undefined) throw new Error("[setGroupWholeMute] requires group_id")
       const raw = getRawMethod(runtimeBot, "setGroupWholeMute")
-      if (!raw) throw new Error("[setGroupWholeMute] API not available")
-      return await raw.call(runtimeBot, { group_id: gid, enable: Boolean(enable) })
+      if (raw) {
+        try { return await raw.call(runtimeBot, { group_id: gid, enable: Boolean(enable) }) } catch {}
+      }
+      // fallback: icqq style
+      if (runtimeBot?.pickGroup) {
+        const group = runtimeBot.pickGroup(gid)
+        if (group?.muteAll) return await group.muteAll(Boolean(enable))
+      }
+      throw new Error("[setGroupWholeMute] API not available")
     },
     icqq: async (params, ctx) => {
       const runtimeBot = getRuntimeBotOrNull()
