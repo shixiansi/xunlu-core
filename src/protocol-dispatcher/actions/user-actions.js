@@ -72,9 +72,11 @@ export function registerUserActions(dispatcher) {
       if (raw) {
         try { return await raw.call(runtimeBot, { user_id: uid, no_cache: Boolean(params.no_cache) }) } catch {}
       }
-      // fallback: icqq style
-      const rawGetStranger = runtimeBot?.__xunlu_raw_getStrangerInfo || runtimeBot?.getStrangerInfo
-      if (rawGetStranger) return await rawGetStranger.call(runtimeBot, uid)
+      // fallback: use pickUser directly (icqq getStrangerInfo 内部在 takeover 下会因 proxy 而崩溃)
+      if (runtimeBot?.pickUser) {
+        const user = runtimeBot.pickUser(uid)
+        if (user && typeof user === "object") return user
+      }
       throw new Error("[getFriendInfo] API not available")
     },
     icqq: async (params, ctx) => {
@@ -82,8 +84,16 @@ export function registerUserActions(dispatcher) {
       const uid = toInt(params.user_id ?? params.userId ?? ctx?.user_id ?? ctx?.sender_id)
       if (uid === undefined) throw new Error("[getFriendInfo] requires user_id")
 
+      // pickUser 优先于 getStrangerInfo（后者在 takeover 下因 proxy 而崩溃）
+      if (runtimeBot?.pickUser) {
+        const user = runtimeBot.pickUser(uid)
+        if (user && typeof user === "object") return user
+      }
+
       const rawGetStranger = runtimeBot?.__xunlu_raw_getStrangerInfo || runtimeBot?.getStrangerInfo
-      if (rawGetStranger) return await rawGetStranger.call(runtimeBot, uid)
+      if (rawGetStranger) {
+        try { return await rawGetStranger.call(runtimeBot, uid) } catch {}
+      }
 
       const raw = getRawMethod(runtimeBot, "getFriendInfo")
       if (!raw) throw new Error("[getFriendInfo] icqq API not available")
@@ -139,21 +149,32 @@ export function registerUserActions(dispatcher) {
       const runtimeBot = getRuntimeBotOrNull()
       const uid = toInt(params.user_id ?? params.userId ?? ctx?.user_id)
       if (uid === undefined) throw new Error("[sendProfileLike] requires user_id")
+      const times = Number(params.times ?? 1)
       const raw = getRawMethod(runtimeBot, "sendProfileLike")
       if (raw) {
-        const times = params.times ?? 1
-        return await raw.call(runtimeBot, { user_id: uid, times: Number(times) })
+        try { return await raw.call(runtimeBot, { user_id: uid, times }) } catch {}
       }
-      // fallback: thumbUp (旧兼容写法)
+      // fallback: pickFriend.thumbUp
       if (runtimeBot?.pickFriend) {
-        const friend = runtimeBot.pickFriend(uid)
-        if (friend?.thumbUp) return await friend.thumbUp(Number(params.times ?? 1))
+        try {
+          const friend = runtimeBot.pickFriend(uid)
+          if (friend?.thumbUp) return await friend.thumbUp(times)
+        } catch {}
       }
-      if (runtimeBot?.thumbUp) return await runtimeBot.thumbUp(uid, Number(params.times ?? 1))
-      // fallback: icqq pickUser sendLike
+      // fallback: runtimeBot.thumbUp
+      if (runtimeBot?.thumbUp) {
+        try { return await runtimeBot.thumbUp(uid, times) } catch {}
+      }
+      // fallback: pickUser.sendLike
       if (runtimeBot?.pickUser) {
-        const user = runtimeBot.pickUser(uid)
-        if (user?.sendLike) return await user.sendLike(Number(params.times ?? 1))
+        try {
+          const user = runtimeBot.pickUser(uid)
+          if (user?.sendLike) return await user.sendLike(times)
+        } catch {}
+      }
+      // fallback: sendApi 走 adapter
+      if (typeof runtimeBot?.sendApi === "function") {
+        try { return await runtimeBot.sendApi("send_like", { user_id: uid, times }) } catch {}
       }
       throw new Error("[sendProfileLike] onebotv11 API not available")
     },
