@@ -6,10 +6,6 @@ import { getRuntimeContext } from "./runtime-context.js"
 import ControlServiceModule from "./services/control-service.js"
 import WebuiServiceModule from "./services/webui-service.js"
 import ApiServiceModule from "./services/api-service.js"
-import LoggerServiceModule from "./services/logger-service.js"
-import RedisServiceModule from "./services/redis-service.js"
-import FfmpegServiceModule from "./services/ffmpeg-service.js"
-import PuppeteerServiceModule from "./services/puppeteer-service.js"
 import MilkyDriver from "./drivers/milky-driver.js"
 import OneBotV11Driver from "./drivers/onebotv11-driver.js"
 import IcqqDriver from "./drivers/icqq-driver.js"
@@ -17,7 +13,6 @@ import YunzaiTakeoverDriver from "./drivers/yunzai-takeover-driver.js"
 import ApiOnlyDriver from "./drivers/api-only-driver.js"
 import UnsupportedStandaloneIcqqDriver from "./drivers/unsupported-standalone-icqq-driver.js"
 import { services } from "../service-container.js"
-import { installGlobalPlatformFacade } from "./platform-services.js"
 import puppeteerInstance from "../component/puppeteer/puppeteer.js"
 import ffmpegInstance from "../component/ffmpeg/ffmpeg.js"
 import RenderInstance from "../utils/render.js"
@@ -89,7 +84,6 @@ export class RuntimeKernel {
     this.services = new ServiceRegistry()
     this.started = false
     this.loadRuntimeEnvironment = options.loadRuntimeEnvironment || loadRuntimeEnvironment
-    this.coreServiceFactories = options.coreServiceFactories || null
   }
 
   static async create(options = {}) {
@@ -103,8 +97,6 @@ export class RuntimeKernel {
 
     try {
       this.context.ensureRuntimeLayout()
-      this.registerDefaultServices()
-      await this.startCoreServices()
       await this.loadRuntimeEnvironment()
       this.driver = await this.createDriver()
       if (!this.driver?.__startedByAutoFallback) {
@@ -117,29 +109,14 @@ export class RuntimeKernel {
           : createBotFacade({
             driver: this.driver,
           })
-      installGlobalPlatformFacade({
-        runtime: this,
-        api: this.getBotCore?.() || null,
-        services: this.getPlatformServices(),
-      })
-      await this.startRuntimeServices()
+      this.registerDefaultServices()
+      await this.services.startAll(this)
       this.started = true
       return this
     } catch (err) {
       await this.rollbackFailedStart(globals)
       throw err
     }
-  }
-
-  async startCoreServices() {
-    await this.services.startAll(this, ["logger", "redis", "ffmpeg", "puppeteer"])
-  }
-
-  async startRuntimeServices() {
-    const names = this.services
-      .list()
-      .filter(name => !["logger", "redis", "ffmpeg", "puppeteer"].includes(name))
-    await this.services.startAll(this, names)
   }
 
   async rollbackFailedStart(globals) {
@@ -226,16 +203,6 @@ export class RuntimeKernel {
 
   registerDefaultServices() {
     const botCfg = cfg.getConfig("bot") || {}
-    const coreFactories = this.coreServiceFactories || {
-      logger: () => new LoggerServiceModule(),
-      redis: () => new RedisServiceModule(),
-      ffmpeg: () => new FfmpegServiceModule(),
-      puppeteer: () => new PuppeteerServiceModule(),
-    }
-    this.services.register("logger", coreFactories.logger())
-    this.services.register("redis", coreFactories.redis())
-    this.services.register("ffmpeg", coreFactories.ffmpeg())
-    this.services.register("puppeteer", coreFactories.puppeteer())
 
     if (this.mode === "api-only") {
       this.services.register("api", new ApiServiceModule())
@@ -266,15 +233,6 @@ export class RuntimeKernel {
 
   getRuntimeContext() {
     return this.context
-  }
-
-  getPlatformServices() {
-    return {
-      logger: this.services.get("logger")?.logger || null,
-      redis: this.services.get("redis")?.client || null,
-      ffmpeg: this.services.get("ffmpeg")?.ffmpeg || null,
-      puppeteer: this.services.get("puppeteer")?.puppeteer || null,
-    }
   }
 
   async reloadPlugins(options = {}) {
@@ -316,7 +274,6 @@ export class RuntimeKernel {
   async stop() {
     await this.services.stopAll()
     await this.driver?.stop?.()
-    delete globalThis.xunluCore
     this.started = false
     return true
   }

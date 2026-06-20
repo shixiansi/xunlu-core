@@ -4,12 +4,6 @@ import {
   stopControlServer,
 } from "../../lib/controlServer.js"
 
-/**
- * Control Server 服务模块。
- *
- * 对 Runtime Kernel 来说，它只依赖 runtime 暴露的统一能力：
- * `getStatus / reloadPlugins / simulateIncoming / stop`。
- */
 export class ControlServiceModule {
   async start(runtime) {
     return startControlServer({
