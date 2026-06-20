@@ -161,15 +161,10 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
         if (fbSendApi) return await fbSendApi(normalizedAction, params)
       }
 
-      // takeover 模式直通
-      const takeoverState = runtimeBot?.__xunlu_takeover_state
-      if (takeoverState?.adapter?.callApi) {
-        return await takeoverState.adapter.callApi(normalizedAction, params)
-      }
-
-      const logger = global.logger
-      if (logger?.mark) {
-        logger.mark(`[sendApi] no route bot=${typeof runtimeBot} hasSendApi=${typeof runtimeBot?.sendApi} universal=${runtimeBot?.sendApi?.__xunlu_universal} hasCallApi=${typeof runtimeBot?.callApi} takeoverState=${!!takeoverState} adapterCallApi=${typeof takeoverState?.adapter?.callApi}`)
+      // takeover 模式直通: 直接走全局 adapter 引用
+      const takeoverAdapter = globalThis.__xunlu_takeover_adapter
+      if (takeoverAdapter?.callApi) {
+        return await takeoverAdapter.callApi(normalizedAction, params)
       }
 
       throw new Error("[sendApi] API not available")
@@ -216,8 +211,9 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       }
 
       // takeover 模式直通
-      if (runtimeBot?.__xunlu_takeover_state?.adapter?.callApi) {
-        return await runtimeBot.__xunlu_takeover_state.adapter.callApi(normalizedAction, params)
+      const takeoverAdapter = globalThis.__xunlu_takeover_adapter
+      if (takeoverAdapter?.callApi) {
+        return await takeoverAdapter.callApi(normalizedAction, params)
       }
 
       throw new Error("[callApi] API not available")

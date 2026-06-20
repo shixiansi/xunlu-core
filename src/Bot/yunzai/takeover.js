@@ -49,6 +49,7 @@ export async function startYunzaiTakeover({ bot, ignoreSelf } = {}) {
 
   patchYunzaiBot(runtimeBot, state, { loginInfo })
   globalThis.__xunlu_runtime_bot = adapter
+  globalThis.__xunlu_takeover_adapter = adapter
   globalThis.Bot = installTakeoverBotCompatProxy(runtimeBot)
   await fillBotListsBestEffort(runtimeBot, state)
 
