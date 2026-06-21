@@ -10,6 +10,20 @@ import {
   setCurrentGroupPrefixEnabled,
 } from "../model/prefix-config.js"
 
+async function resolveCommandKey(userInput) {
+  const input = String(userInput || "").trim()
+  if (!input) return null
+
+  if (input.includes(":")) {
+    const [pluginPart, cmdPart] = input.split(":", 2)
+    const folderName = await resolvePluginFolderName(pluginPart)
+    return folderName ? `${folderName}:${cmdPart}` : null
+  }
+
+  // 未带插件名时直接返回原值（匹配所有插件的同名 key 或正则）
+  return input
+}
+
 async function resolvePluginFolderName(userInput) {
   const input = String(userInput || "").trim()
   if (!input) return null
@@ -179,12 +193,17 @@ export function register(bot) {
   })
 
   // 禁用命令命令
-  bot.registerCommand(["^(?:#|＃)?禁用命令\\s+(.+)$", { key: "disable-cmd", example: ["禁用命令 bilibili-plugin:video", "禁用命令 bilibili-plugin:^#订阅"], desc: "禁用指定命令（支持 插件名:key 或 插件名:正则，仅主人可用，重载插件后生效）" }], async ctx => {
+  bot.registerCommand(["^(?:#|＃)?禁用命令\\s+(.+)$", { key: "disable-cmd", example: ["禁用命令 bilibili:video", "禁用命令 bilibili-plugin:video"], desc: "禁用指定命令（插件名支持别名，仅主人可用，重载插件后生效）" }], async ctx => {
     if (!ctx.isMaster) return false
 
-    const commandKey = String(ctx?.msg || "").replace(/^(?:#|＃)?禁用命令\s+/, "").trim()
+    const rawInput = String(ctx?.msg || "").replace(/^(?:#|＃)?禁用命令\s+/, "").trim()
+    if (!rawInput) {
+      return await ctx.reply("用法：禁用命令 <插件名>:<命令key>\n如 #禁用命令 bilibili:video")
+    }
+
+    const commandKey = await resolveCommandKey(rawInput)
     if (!commandKey) {
-      return await ctx.reply("用法：禁用命令 <插件名>:<命令key> 或 <插件名>:<命令正则>\n如 #禁用命令 bilibili-plugin:video")
+      return await ctx.reply(`无法解析命令：${rawInput}\n格式：插件名:命令key\n如 #禁用命令 bilibili:video`)
     }
 
     const botCfg = cfg.getConfig("bot") || {}
@@ -204,12 +223,17 @@ export function register(bot) {
   })
 
   // 启用命令命令
-  bot.registerCommand(["^(?:#|＃)?启用命令\\s+(.+)$", { key: "enable-cmd", example: "启用命令 bilibili-plugin:video", desc: "启用指定命令（支持 key 或正则，仅主人可用，重载插件后生效）" }], async ctx => {
+  bot.registerCommand(["^(?:#|＃)?启用命令\\s+(.+)$", { key: "enable-cmd", example: "启用命令 bilibili:video", desc: "启用指定命令（插件名支持别名，仅主人可用，重载插件后生效）" }], async ctx => {
     if (!ctx.isMaster) return false
 
-    const commandKey = String(ctx?.msg || "").replace(/^(?:#|＃)?启用命令\s+/, "").trim()
+    const rawInput = String(ctx?.msg || "").replace(/^(?:#|＃)?启用命令\s+/, "").trim()
+    if (!rawInput) {
+      return await ctx.reply("用法：启用命令 <插件名>:<命令key>")
+    }
+
+    const commandKey = await resolveCommandKey(rawInput)
     if (!commandKey) {
-      return await ctx.reply("用法：启用命令 <插件名>:<命令正则> 或 <命令正则>")
+      return await ctx.reply(`无法解析命令：${rawInput}`)
     }
 
     const botCfg = cfg.getConfig("bot") || {}
