@@ -563,8 +563,6 @@ export class CommandBus {
           return
         }
       }
-        }
-      }
 
       this.baseBot.plugins[`${pname}-${reg == "" ? idx : reg}`] = {
         id: `${pname}-${idx}`,
