@@ -3,29 +3,29 @@
 
 /* ===== Variables ===== */
 :root {
-  --bg-primary: #0f1119;
-  --bg-card: #171a24;
-  --bg-card-hover: #1e2230;
-  --bg-input: #1a1d2b;
+  --bg-primary: #f5f6fa;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f8f9fc;
+  --bg-input: #f1f3f8;
   --accent: #4da8da;
-  --accent-dim: rgba(77,168,218,0.12);
-  --accent-hover: #5db8e6;
-  --text: #e8edf5;
-  --text-secondary: #9aa4b8;
-  --text-muted: #6b728e;
-  --border: #282e3e;
-  --border-hover: #3a4052;
-  --green: #34d399;
-  --green-bg: rgba(52,211,153,0.12);
-  --red: #e0556a;
-  --red-bg: rgba(224,85,106,0.12);
-  --amber: #fbbf24;
+  --accent-dim: rgba(77,168,218,0.1);
+  --accent-hover: #3d98ca;
+  --text: #1a1d28;
+  --text-secondary: #6b7280;
+  --text-muted: #9ca3af;
+  --border: #e5e7eb;
+  --border-hover: #d1d5db;
+  --green: #10b981;
+  --green-bg: rgba(16,185,129,0.1);
+  --red: #ef4444;
+  --red-bg: rgba(239,68,68,0.1);
+  --amber: #f59e0b;
   --radius: 12px;
   --radius-sm: 8px;
   --radius-xs: 6px;
   --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   --transition: 0.2s cubic-bezier(0.4,0,0.2,1);
-  --shadow: 0 4px 12px rgba(0,0,0,0.3);
+  --shadow: 0 2px 8px rgba(0,0,0,0.06);
 }
 
 /* ===== Reset ===== */
@@ -51,8 +51,8 @@ button, .btn {
   font-family: var(--font); font-size: 13px; font-weight: 500;
   cursor: pointer; transition: var(--transition); white-space: nowrap;
 }
-.btn-primary { background: var(--accent); color: #0f1119; font-weight: 600; }
-.btn-primary:hover { background: var(--accent-hover); transform: translateY(-1px); box-shadow: 0 6px 16px rgba(77,168,218,0.3); }
+.btn-primary { background: var(--accent); color: #fff; font-weight: 600; }
+.btn-primary:hover { background: var(--accent-hover); transform: translateY(-1px); box-shadow: 0 6px 16px rgba(77,168,218,0.35); }
 .btn-secondary { background: var(--bg-card); color: var(--text); border: 1px solid var(--border); }
 .btn-secondary:hover { background: var(--bg-card-hover); border-color: var(--border-hover); }
 .btn-ghost { background: transparent; color: var(--text-muted); padding: 6px 12px; }
@@ -98,7 +98,7 @@ body.shell-page { display: flex; min-height: 100vh; }
 .brand .brand-icon {
   width: 38px; height: 38px; background: var(--accent); border-radius: var(--radius-sm);
   display: flex; align-items: center; justify-content: center;
-  font-size: 18px; font-weight: 800; color: #0f1119; flex-shrink: 0;
+  font-size: 18px; font-weight: 800; color: #fff; flex-shrink: 0;
 }
 .brand .brand-text h1 { font-size: 16px; font-weight: 700; letter-spacing: -0.3px; }
 .brand .brand-text .sub { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
@@ -235,7 +235,7 @@ body.shell-page { display: flex; min-height: 100vh; }
 /* ===== Switch ===== */
 .switch { position: relative; display: inline-block; width: 40px; height: 22px; }
 .switch input { opacity: 0; width: 0; height: 0; }
-.switch .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background: #3a3e4e; border-radius: 22px; transition: var(--transition); }
+.switch .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background: #d1d5db; border-radius: 22px; transition: var(--transition); }
 .switch .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px; background: #fff; border-radius: 50%; transition: var(--transition); }
 .switch input:checked + .slider { background: var(--accent); }
 .switch input:checked + .slider:before { transform: translateX(18px); }
