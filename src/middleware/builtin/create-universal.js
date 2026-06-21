@@ -35,6 +35,16 @@ function looksLikeUniversalSegments(segments) {
   return Array.isArray(segments) && segments.length > 0 && segments.every(seg => looksLikeUniversalSegment(seg))
 }
 
+function addIcqqCompatProps(segments) {
+  for (const seg of segments) {
+    if (seg.data && typeof seg.data === "object") {
+      for (const [k, v] of Object.entries(seg.data)) {
+        if (!(k in seg)) seg[k] = v
+      }
+    }
+  }
+}
+
 export default async function createUniversalMiddleware(ctx, next) {
   const rawLooksUniversal = looksLikeUniversalSegments(ctx.rawSegments)
   if (!ctx.universalMessage && Array.isArray(ctx.rawSegments) && ctx.protocol && !rawLooksUniversal) {
@@ -46,12 +56,14 @@ export default async function createUniversalMiddleware(ctx, next) {
   if (ctx.universalMessage) {
     if (Array.isArray(ctx.message) && ctx.message !== ctx.universalMessage.segments) ctx.originalMessage = ctx.message
     ctx.message = ctx.universalMessage.segments
+    addIcqqCompatProps(ctx.message)
   } else if (Array.isArray(ctx.message) && ctx.protocol) {
     if (!looksLikeUniversalSegments(ctx.message)) {
       try {
         ctx.universalMessage = UniversalMessage.from(ctx.protocol, ctx.message)
         if (ctx.message !== ctx.universalMessage.segments) ctx.originalMessage = ctx.message
         ctx.message = ctx.universalMessage.segments
+        addIcqqCompatProps(ctx.message)
       } catch {}
     }
   }
