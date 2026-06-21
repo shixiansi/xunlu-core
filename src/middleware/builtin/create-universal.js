@@ -54,16 +54,14 @@ export default async function createUniversalMiddleware(ctx, next) {
   }
 
   if (ctx.universalMessage) {
-    if (Array.isArray(ctx.message) && ctx.message !== ctx.universalMessage.segments) ctx.originalMessage = ctx.message
-    ctx.message = ctx.universalMessage.segments
-    addIcqqCompatProps(ctx.message)
+    ctx.universalSegments = ctx.universalMessage.segments
+    addIcqqCompatProps(ctx.universalSegments)
   } else if (Array.isArray(ctx.message) && ctx.protocol) {
     if (!looksLikeUniversalSegments(ctx.message)) {
       try {
         ctx.universalMessage = UniversalMessage.from(ctx.protocol, ctx.message)
-        if (ctx.message !== ctx.universalMessage.segments) ctx.originalMessage = ctx.message
-        ctx.message = ctx.universalMessage.segments
-        addIcqqCompatProps(ctx.message)
+        ctx.universalSegments = ctx.universalMessage.segments
+        addIcqqCompatProps(ctx.universalSegments)
       } catch {}
     }
   }

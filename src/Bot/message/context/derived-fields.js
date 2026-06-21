@@ -55,9 +55,10 @@ function getMessageRefFromCtx(ctx) {
 
 function applyDerivedFieldsFromUniversalSegments(ctx) {
   if (!ctx || typeof ctx !== "object") return ctx
-  if (!Array.isArray(ctx.message)) return ctx
+  const segments = ctx.universalSegments ?? ctx.message
+  if (!Array.isArray(segments)) return ctx
 
-  const text = ctx.message
+  const text = segments
     .filter(seg => normalizeDerivedSegmentType(seg?.type) === UniversalSegmentType.TEXT)
     .map(seg => getSegmentText(seg))
     .join("")
@@ -75,7 +76,7 @@ function applyDerivedFieldsFromUniversalSegments(ctx) {
   if (!hasExistingMsg) ctx.msg = msgText
   ctx.url = msgText.match(URL_REGEXP)?.[0] || ""
 
-  ctx.img = ctx.message
+  ctx.img = segments
     .filter(seg => normalizeDerivedSegmentType(seg?.type) === UniversalSegmentType.IMAGE)
     .map(seg => {
       if (seg?.data?.url) return seg.data.url
@@ -90,7 +91,7 @@ function applyDerivedFieldsFromUniversalSegments(ctx) {
   ctx.at = ""
   ctx.atAll = false
 
-  for (const seg of ctx.message) {
+  for (const seg of segments) {
     const type = normalizeDerivedSegmentType(seg?.type)
     if (type === UniversalSegmentType.MENTION_ALL) {
       ctx.atAll = true
