@@ -357,7 +357,7 @@ function getServerHostIp() {
     tokens.set(token, Date.now() + 1800000) // 30分钟过期
 
     const url = `http://${host}:${port}/webui?token=${token}`
-    const masterQQ = ctx?.self_id || ctx?.bot?.uin
+    const masterQQ = ctx?.user_id || ctx?.sender?.user_id
 
     try {
       if (masterQQ && typeof ctx?.bot?.pickFriend === "function") {
