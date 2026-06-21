@@ -19,6 +19,7 @@ const LEGACY_RUNTIME_MIGRATIONS = [
   {
     legacySegments: ["src", "plugins", "bilibili", "resources", "html", "bilibili", "bg"],
     targetSegments: ["data", "bilibili", "bg"],
+    onlyIfTargetEmpty: true,
   },
   {
     legacySegments: ["src", "plugins", "qun-daily", "data"],
@@ -43,6 +44,15 @@ function hasAnyEntry(dirPath) {
     return fs.readdirSync(dirPath).length > 0
   } catch {
     return false
+  }
+}
+
+function targetDirEmpty(dirPath) {
+  try {
+    if (!fs.existsSync(dirPath)) return true
+    return fs.readdirSync(dirPath).length === 0
+  } catch {
+    return true
   }
 }
 
@@ -105,6 +115,7 @@ export class RuntimePaths {
       const sourcePath = path.join(this.rootDir, ...migration.legacySegments)
       const targetPath = path.join(this.rootDir, ...migration.targetSegments)
       if (!fs.existsSync(sourcePath) || !hasAnyEntry(sourcePath)) continue
+      if (migration.onlyIfTargetEmpty && !targetDirEmpty(targetPath)) continue
       copyMissingTree(sourcePath, targetPath)
     }
 
