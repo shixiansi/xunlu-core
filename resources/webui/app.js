@@ -269,6 +269,7 @@ function renderField(field, values, scopeKey) {
   }
 
   if (field.type === "textarea" || field.type === "array" || field.type === "json") {
+    const disabledAttr = field.readonly || field.disabled ? "disabled" : ""
     return `
       <label class="${classes.join(" ")}">
         <span>${escapeHtml(field.label || field.path)}</span>
@@ -278,6 +279,7 @@ function renderField(field, values, scopeKey) {
           data-path="${escapeHtml(field.path)}"
           data-type="${escapeHtml(field.type)}"
           ${field.allowEmpty ? 'data-allow-empty="1"' : ""}
+          ${disabledAttr}
           placeholder="${escapeHtml(field.placeholder || "")}"
         >${escapeHtml(normalized)}</textarea>
         ${field.description ? `<small>${escapeHtml(field.description)}</small>` : ""}
@@ -286,6 +288,7 @@ function renderField(field, values, scopeKey) {
   }
 
   if (field.type === "select") {
+    const disabledAttr = field.readonly || field.disabled ? "disabled" : ""
     const options = Array.isArray(field.options) ? field.options : []
     const optionHtml = options
       .map(option => {
@@ -300,12 +303,14 @@ function renderField(field, values, scopeKey) {
           data-scope-key="${escapeHtml(scopeKey)}"
           data-path="${escapeHtml(field.path)}"
           data-type="${escapeHtml(field.type)}"
+          ${disabledAttr}
         >${optionHtml}</select>
         ${field.description ? `<small>${escapeHtml(field.description)}</small>` : ""}
       </label>
     `
   }
 
+  const disabledAttr = field.readonly || field.disabled ? "readonly" : ""
   return `
     <label class="${classes.join(" ")}">
       <span>${escapeHtml(field.label || field.path)}</span>
@@ -316,6 +321,7 @@ function renderField(field, values, scopeKey) {
         data-path="${escapeHtml(field.path)}"
         data-type="${escapeHtml(field.type || "text")}"
         ${field.allowEmpty ? 'data-allow-empty="1"' : ""}
+        ${disabledAttr}
         ${field.min !== undefined ? `min="${escapeHtml(field.min)}"` : ""}
         ${field.max !== undefined ? `max="${escapeHtml(field.max)}"` : ""}
         ${field.step !== undefined ? `step="${escapeHtml(field.step)}"` : ""}
