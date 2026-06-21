@@ -85,6 +85,9 @@
                   <div class="cmd-top">
                     <div class="cmd-example"><code>{{c.example}}</code></div>
                     <div class="cmd-flags">
+                      {{if c.key}}
+                      <div class="cmd-badge cmd-badge-key">禁用:{{c.key}}</div>
+                      {{/if}}
                       <div class="cmd-badge cmd-badge-{{c.modeClass}}">{{c.triggerLabel}}</div>
                       {{if c.eventCategory}}
                       <div class="cmd-badge cmd-badge-event">{{c.eventCategory}}</div>
