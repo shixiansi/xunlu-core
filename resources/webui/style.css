@@ -287,8 +287,8 @@ body.shell-page{display:flex;min-height:100vh}
 .pc-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .pc-search-wrapper{position:relative;flex:1;min-width:180px;max-width:360px}
 .pc-search-wrapper i{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:13px;pointer-events:none;z-index:1}
-.pc-search-wrapper input{width:100%;padding:8px 12px 8px 32px;background:var(--bg-input);border:1px solid var(--border);border-radius:20px;font-size:13px;font-family:var(--font);outline:none;transition:var(--transition);box-sizing:border-box}
-.pc-search-wrapper input:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(22,119,255,0.1)}
+.pc-field .pc-search-wrapper input{width:100%;padding:8px 12px 8px 32px;background:var(--bg-input);border:1px solid var(--border);border-radius:20px;font-size:13px;font-family:var(--font);outline:none;transition:var(--transition);box-sizing:border-box}
+.pc-field .pc-search-wrapper input:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(22,119,255,0.1)}
 .pc-dropdown-zone{position:relative}
 .pc-tags{display:flex;flex-wrap:wrap;gap:6px;min-height:28px}
 .pc-tags .tag{display:inline-flex;align-items:center;gap:4px;padding:5px 12px;border-radius:20px;font-size:13px;font-weight:500;background:var(--primary-bg);color:var(--primary)}
