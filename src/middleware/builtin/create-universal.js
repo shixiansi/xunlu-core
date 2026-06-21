@@ -44,11 +44,13 @@ export default async function createUniversalMiddleware(ctx, next) {
   }
 
   if (ctx.universalMessage) {
+    if (Array.isArray(ctx.message) && ctx.message !== ctx.universalMessage.segments) ctx.originalMessage = ctx.message
     ctx.message = ctx.universalMessage.segments
   } else if (Array.isArray(ctx.message) && ctx.protocol) {
     if (!looksLikeUniversalSegments(ctx.message)) {
       try {
         ctx.universalMessage = UniversalMessage.from(ctx.protocol, ctx.message)
+        if (ctx.message !== ctx.universalMessage.segments) ctx.originalMessage = ctx.message
         ctx.message = ctx.universalMessage.segments
       } catch {}
     }
