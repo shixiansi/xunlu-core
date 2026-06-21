@@ -179,6 +179,12 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
         return await takeoverAdapter.callApi(normalizedAction, params)
       }
 
+      const lg = global.logger
+      if (lg?.mark) {
+        const nativeBotKey = ctx ? Object.keys(ctx).find(k => ctx[k]?.adapter?.callApi) : null
+        lg.mark(`[sendApi] diag nativeBotKey=${nativeBotKey} targetBotAdapter=${typeof ctx?.[nativeBotKey]?.adapter} targetBotAdapterCallApi=${typeof ctx?.[nativeBotKey]?.adapter?.callApi} ctxKeys=${Object.keys(ctx || {}).length} runtimeBotSendApi=${typeof runtimeBot?.sendApi} runtimeBotUU=${runtimeBot?.sendApi?.__xunlu_universal} takeoverAdapter=${typeof takeoverAdapter}`)
+      }
+
       throw new Error("[sendApi] API not available")
     },
 
