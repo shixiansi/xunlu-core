@@ -107,7 +107,7 @@ async function handleScanMessage(ctx) {
 export function register(bot) {
   if (!bot || typeof bot.registerCommand !== "function") return
 
-  bot.registerCommand(["", 1000], async ctx => {
+  bot.registerCommand(["", 1000, { key: "scan-phish" }], async ctx => {
     if (!ctx?.msg && !ctx?.raw_message && !Array.isArray(ctx?.message)) return false
     return await handleScanMessage(ctx)
   })
@@ -116,6 +116,7 @@ export function register(bot) {
     [
       "^[#＃]恶意网址检测\\s+(.+)$",
       {
+        key: "detect-url",
         example: ["#恶意网址检测 https://example.com/"],
         desc: "手动检测一段链接文本是否命中恶意网址规则",
       },
@@ -141,6 +142,7 @@ export function register(bot) {
     [
       "^[#＃]恶意源码检测[\\s\\S]+$",
       {
+        key: "detect-source",
         example: ["#恶意源码检测 <!DOCTYPE html>..."],
         desc: "手动检测 HTML/JS 源码片段中的风险特征",
       },
@@ -157,6 +159,7 @@ export function register(bot) {
     [
       "^[#＃]恶意网址添加\\s+(.+)$",
       {
+        key: "add-blacklist",
         example: ["#恶意网址添加 example.com", "#恶意网址添加 https://abc.example.com/path"],
         desc: "添加恶意域名黑名单",
       },
@@ -174,6 +177,7 @@ export function register(bot) {
     [
       "^[#＃]恶意网址删除\\s+(.+)$",
       {
+        key: "remove-blacklist",
         example: ["#恶意网址删除 example.com"],
         desc: "移除恶意域名黑名单",
       },
@@ -191,6 +195,7 @@ export function register(bot) {
     [
       "^[#＃]恶意网址列表$",
       {
+        key: "list-blacklist",
         example: ["#恶意网址列表"],
         desc: "查看当前恶意域名黑名单",
       },

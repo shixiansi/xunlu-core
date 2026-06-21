@@ -1057,7 +1057,7 @@ export function register(bot) {
     [
       "^(开启学习|学说话|快学|关闭学习|别学|闭嘴)$",
       1000,
-      { example: "@bot 开启学习", desc: "开启/关闭本群学习" },
+      { key: "toggle-learning", example: "@bot 开启学习", desc: "开启/关闭本群学习" },
     ],
     async ctx => {
       if (!ctx?.isGroup || !ctx?.atBot) return false
@@ -1069,7 +1069,7 @@ export function register(bot) {
     [
       "^(不可以|达咩|不能说这)$",
       1000,
-      { example: "@bot 不可以（回复机器人消息）", desc: "禁用某句已学会的回复" },
+      { key: "ban-reply", example: "@bot 不可以（回复机器人消息）", desc: "禁用某句已学会的回复" },
     ],
     async ctx => {
       if (!ctx?.isGroup || !ctx?.atBot) return false
@@ -1081,7 +1081,7 @@ export function register(bot) {
     [
       "^(开启主动发言|关闭主动发言|开启主动指令|关闭主动指令)$",
       1000,
-      { example: "@bot 开启主动发言", desc: "开启/关闭本群主动发言或主动指令（主人）" },
+      { key: "toggle-proactive", example: "@bot 开启主动发言", desc: "开启/关闭本群主动发言或主动指令（主人）" },
     ],
     async ctx => {
       if (!ctx?.isGroup || !ctx?.atBot) return false
@@ -1093,7 +1093,7 @@ export function register(bot) {
     [
       "^(|#)查看主动发言群聊$",
       1000,
-      { example: ["#查看主动发言群聊"], desc: "查看已开启主动发言的群聊（主人）" },
+      { key: "list-proactive", example: ["#查看主动发言群聊"], desc: "查看已开启主动发言的群聊（主人）" },
     ],
     async ctx => {
       return await cmdListProactiveGroups(ctx)
@@ -1104,7 +1104,7 @@ export function register(bot) {
     [
       "^(拉黑学习|学习拉黑)$",
       1000,
-      { example: "@bot 拉黑学习 @A @B", desc: "将被@成员加入本群学习黑名单（支持多重@）" },
+      { key: "block-user", example: "@bot 拉黑学习 @A @B", desc: "将被@成员加入本群学习黑名单（支持多重@）" },
     ],
     async ctx => {
       if (!ctx?.isGroup || !ctx?.atBot) return false
@@ -1113,7 +1113,7 @@ export function register(bot) {
   )
 
   // main handler: learn/reply/repeat/heat (run late)
-  bot.registerCommand(["", 9999], async ctx => {
+  bot.registerCommand(["", 9999, { key: "learn-reply" }], async ctx => {
     try {
       if (!ctx?.isGroup || !ctx?.group_id) return false
 

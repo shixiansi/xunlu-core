@@ -224,32 +224,32 @@ export class SchedulerService {
     if (!this.botApi || typeof this.botApi.registerCommand !== "function") return
 
     this.botApi.registerCommand(
-      ["^#定时列表$", 850, { example: "#定时列表", desc: "查看当前可管理的定时任务" }],
+      ["^#定时列表$", 850, { key: "list", example: "#定时列表", desc: "查看当前可管理的定时任务" }],
       async ctx => await this.handleList(ctx),
     )
 
     this.botApi.registerCommand(
-      ["^#定时查看(?:\\s+\\S+)?$", 850, { example: "#定时查看 sch_a1b2c3d4", desc: "查看指定定时任务详情" }],
+      ["^#定时查看(?:\\s+\\S+)?$", 850, { key: "view", example: "#定时查看 sch_a1b2c3d4", desc: "查看指定定时任务详情" }],
       async ctx => await this.handleView(ctx),
     )
 
     this.botApi.registerCommand(
-      ["^#定时删除(?:\\s+\\S+)?$", 850, { example: "#定时删除 sch_a1b2c3d4", desc: "删除指定定时任务" }],
+      ["^#定时删除(?:\\s+\\S+)?$", 850, { key: "delete", example: "#定时删除 sch_a1b2c3d4", desc: "删除指定定时任务" }],
       async ctx => await this.handleDelete(ctx),
     )
 
     this.botApi.registerCommand(
-      ["^#定时启用(?:\\s+\\S+)?$", 850, { example: "#定时启用 sch_a1b2c3d4", desc: "启用指定定时任务" }],
+      ["^#定时启用(?:\\s+\\S+)?$", 850, { key: "enable", example: "#定时启用 sch_a1b2c3d4", desc: "启用指定定时任务" }],
       async ctx => await this.handleToggle(ctx, true),
     )
 
     this.botApi.registerCommand(
-      ["^#定时禁用(?:\\s+\\S+)?$", 850, { example: "#定时禁用 sch_a1b2c3d4", desc: "禁用指定定时任务" }],
+      ["^#定时禁用(?:\\s+\\S+)?$", 850, { key: "disable", example: "#定时禁用 sch_a1b2c3d4", desc: "禁用指定定时任务" }],
       async ctx => await this.handleToggle(ctx, false),
     )
 
     this.botApi.registerCommand(
-      ["^#定时重载$", 850, { example: "#定时重载", desc: "从 YAML 重新加载定时任务配置" }],
+      ["^#定时重载$", 850, { key: "reload", example: "#定时重载", desc: "从 YAML 重新加载定时任务配置" }],
       async ctx => await this.handleReload(ctx),
     )
 
@@ -258,6 +258,7 @@ export class SchedulerService {
         "^#定时发送(?:\\s+.+)?$",
         850,
         {
+          key: "create-message",
           example: "#定时发送 每天 08:00 | 早上好",
           desc: "创建定时发送消息任务，可选 --group/--user/--at",
         },
@@ -270,6 +271,7 @@ export class SchedulerService {
         "^#定时指令(?:\\s+.+)?$",
         850,
         {
+          key: "create-command",
           example: "#定时指令 每天 08:00 | #帮助",
           desc: "创建定时触发指令任务，可选 --group/--user",
         },

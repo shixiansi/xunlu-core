@@ -8,7 +8,7 @@ let selectedChatlist = []
 let file = new Filemage("./src/plugins/ai/resources/CharacterDesign/")
 export function register(bot) {
   if (!bot || !bot.registerCommand) return
-  bot.registerCommand(["", 10000], async ctx => {
+  bot.registerCommand(["", 10000, { key: "ai-chat" }], async ctx => {
     const hasReply = Array.isArray(ctx.message) && ctx.message.some(seg => seg?.type === "reply")
     if (hasReply || ctx?.source) {
       const replied = await ctx.getReplyMessage?.()

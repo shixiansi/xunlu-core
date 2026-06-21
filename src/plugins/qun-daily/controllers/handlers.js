@@ -442,6 +442,7 @@ export function register(bot) {
     [
       "^(?:[#＃])?(水群统计|关键词统计|词频统计|指令统计)推送(开启|关闭)$",
       {
+        key: "toggle-push",
         example: [
           "#水群统计推送开启",
           "#关键词统计推送开启",
@@ -463,7 +464,7 @@ export function register(bot) {
   bot.registerCommand(
     [
       "^水群统计(?:\\s*(今日|今天|1天|3天|7天|30天))?$",
-      { example: ["水群统计", "水群统计 7天"], desc: "查看群消息活跃榜、表情榜与潜水榜" },
+      { key: "stats", example: ["水群统计", "水群统计 7天"], desc: "查看群消息活跃榜、表情榜与潜水榜" },
     ],
     async ctx => {
       const days = parseDaysFromText(
@@ -477,7 +478,7 @@ export function register(bot) {
   bot.registerCommand(
     [
       "^词频统计(?:\\s*(今日|今天|1天|3天|7天|30天))?$",
-      { example: ["词频统计", "词频统计 30天"], desc: "查看群聊高频词排行" },
+      { key: "word-freq", example: ["词频统计", "词频统计 30天"], desc: "查看群聊高频词排行" },
     ],
     async ctx => {
       const days = parseDaysFromText(
@@ -491,7 +492,7 @@ export function register(bot) {
   bot.registerCommand(
     [
       "^指令统计(?:\\s*(今日|今天|1天|3天|7天|30天))?$",
-      { example: ["指令统计", "指令统计 7天", "指令统计 @某人"], desc: "查看群成员指令使用统计" },
+      { key: "command-stats", example: ["指令统计", "指令统计 7天", "指令统计 @某人"], desc: "查看群成员指令使用统计" },
     ],
     async ctx => {
       const days = parseDaysFromText(

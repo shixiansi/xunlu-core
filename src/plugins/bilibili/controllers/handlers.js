@@ -270,7 +270,7 @@ export function register(bot) {
   ])
 
   bot.registerCommand(
-    "^#订阅(UP|up|)(直播|文字|图文|视频|转发|抽奖|专栏|)(动态|)(uid:|UID:|)",
+    { reg: "^#订阅(UP|up|)(直播|文字|图文|视频|转发|抽奖|专栏|)(动态|)(uid:|UID:|)", key: "subscribe" },
     async ctx => {
       if (!(await ensureGroupCommand(ctx))) return true
 
@@ -344,7 +344,7 @@ export function register(bot) {
   )
 
   bot.registerCommand(
-    "^#取消订阅(UP|up|)(直播|文字|图文|视频|转发|抽奖|专栏|)(动态|)(uid:|UID:|)",
+    { reg: "^#取消订阅(UP|up|)(直播|文字|图文|视频|转发|抽奖|专栏|)(动态|)(uid:|UID:|)", key: "unsubscribe" },
     async ctx => {
       if (!(await ensureGroupCommand(ctx))) return true
 
@@ -412,7 +412,7 @@ export function register(bot) {
   )
 
   //视频解析
-  bot.registerCommand(["", 1200], async ctx => {
+  bot.registerCommand(["", 1200, { key: "video" }], async ctx => {
     const url = extractBilibiliUrl(ctx)
 
     if (!url) return false
@@ -590,7 +590,7 @@ export function register(bot) {
     return true
   })
 
-  bot.registerCommand("^(|#)b站扫码$", async ctx => {
+  bot.registerCommand(["^(#|)b站扫码$", 1000, { key: "scan" }], async ctx => {
     if (!ctx.isMaster) return false
     await Blogin.login()
     await ctx.reply(segment.image(Blogin.qrImagePath), false, { recallMsg: 120 })
@@ -622,7 +622,7 @@ export function register(bot) {
     }, 3000)
   })
 
-  bot.registerCommand(["^#订阅列表$", 1000], async ctx => {
+  bot.registerCommand(["^#订阅列表$", 1000, { key: "list" }], async ctx => {
     if (!(await ensureGroupCommand(ctx))) return true
 
     let updata = getBiliData(ctx.group_id) || {}
@@ -642,7 +642,7 @@ export function register(bot) {
     return await ctx.reply(msg)
   })
 
-  bot.registerCommand("^#查询灯牌", async ctx => {
+  bot.registerCommand(["^#查询灯牌", { key: "fans-badge" }], async ctx => {
     let card = ctx.msg.replace(new RegExp(ctx.reg), "").trim()
     if (!card) {
       return await ctx.reply("请输入要查询的直播的灯牌！")
@@ -675,7 +675,7 @@ export function register(bot) {
     }
   })
 
-  bot.registerCommand("#查询up最新动态", async ctx => {
+  bot.registerCommand(["#查询up最新动态", { key: "query-up" }], async ctx => {
     if (!(await ensureGroupCommand(ctx))) return true
 
     const midInput = ctx.msg.replace(new RegExp(ctx.reg), "").trim()

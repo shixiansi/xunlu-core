@@ -784,6 +784,7 @@ export function register(bot) {
       "^(荨鹿|xunlu)帮助(\\s+.*)?$",
       4400,
       {
+        key: "help-xunlu",
         example: ["荨鹿帮助", "xunlu帮助 钓鱼"],
         desc: "显式查看 xunlu-core 帮助，插件环境可用于避开宿主的通用帮助指令",
       },
@@ -797,7 +798,7 @@ export function register(bot) {
   // 帮助 / 帮助 <插件名|简称|关键词>
   bot.registerCommand(
     ["^帮助(\\s+.*)?$",
-      { example: ["帮助", "帮助 钓鱼", "帮助 鱼"], desc: "默认展示大插件列表，带上插件名或简称可查看详细功能" }],
+      { key: "help", example: ["帮助", "帮助 钓鱼", "帮助 鱼"], desc: "默认展示大插件列表，带上插件名或简称可查看详细功能" }],
     async ctx => {
       if (shouldSkipDirectHelpCommand(ctx)) return false
       const raw = String(ctx?.msg || "").trim()
@@ -807,7 +808,7 @@ export function register(bot) {
   )
 
   bot.registerCommand(
-    ["^([^\\s]{1,24})帮助$", 4500, { example: ["钓鱼帮助", "鱼帮助"], desc: "按插件名或简称查看该插件的详细帮助" }],
+    ["^([^\\s]{1,24})帮助$", 4500, { key: "help-plugin", example: ["钓鱼帮助", "鱼帮助"], desc: "按插件名或简称查看该插件的详细帮助" }],
     async ctx => {
       const raw = String(ctx?.msg || "").trim()
       const rest = raw.replace(/帮助$/, "").trim()

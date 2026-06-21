@@ -91,6 +91,7 @@ export default definePlugin({
 
     botApi.registerCommand(
       ["^[#]?(api测试|测试api|兼容测试)$", 2000, {
+        key: "api-test",
         example: ["#api测试", "#兼容测试"],
         desc: "遍历测试所有通用 API 并返回转发消息",
       }],

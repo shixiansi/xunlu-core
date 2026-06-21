@@ -43,6 +43,7 @@ export function register(bot) {
       "message",
       5000,
       {
+        key: "status",
         example: aliases.slice(0, 3),
         desc: "生成暖色二次元状态卡片，展示系统与机器人运行信息",
       },

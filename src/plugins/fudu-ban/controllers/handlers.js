@@ -748,7 +748,7 @@ export function register(bot) {
   if (!bot || typeof bot.registerCommand !== "function") return
 
   bot.registerCommand(
-    ["^(|#)复读禁言设置$", 900, { example: ["#复读禁言设置"], desc: "查看复读禁言开关（主人）" }],
+    ["^(|#)复读禁言设置$", 900, { key: "repeat-settings", example: ["#复读禁言设置"], desc: "查看复读禁言开关（主人）" }],
     async ctx => {
       return await cmdSettings(ctx)
     },
@@ -758,7 +758,7 @@ export function register(bot) {
     [
       "^(|#)复读禁言设置全局(开启|关闭)$",
       900,
-      { example: ["#复读禁言设置全局开启"], desc: "开启/关闭复读禁言全局开关（主人）" },
+      { key: "repeat-global-toggle", example: ["#复读禁言设置全局开启"], desc: "开启/关闭复读禁言全局开关（主人）" },
     ],
     async ctx => {
       const enabled = /开启$/.test(String(ctx?.msg || ""))
@@ -770,7 +770,7 @@ export function register(bot) {
     [
       "^(|#)复读禁言设置单独(开启|关闭)$",
       900,
-      { example: ["#复读禁言设置单独关闭"], desc: "开启/关闭本群复读禁言（主人）" },
+      { key: "repeat-group-toggle", example: ["#复读禁言设置单独关闭"], desc: "开启/关闭本群复读禁言（主人）" },
     ],
     async ctx => {
       const enabled = /开启$/.test(String(ctx?.msg || ""))
@@ -778,11 +778,11 @@ export function register(bot) {
     },
   )
 
-  bot.registerCommand(["^(解禁\\s*全部|全部解禁|解禁(\\s*\\d{4,13})?)$", 900], async ctx => {
+  bot.registerCommand(["^(解禁\\s*全部|全部解禁|解禁(\\s*\\d{4,13})?)$", 900, { key: "unban" }], async ctx => {
     return await cmdUnban(ctx)
   })
 
-  bot.registerCommand(["", 200], async ctx => {
+  bot.registerCommand(["", 200, { key: "repeat-detect" }], async ctx => {
     try {
       return await handleRepeat(ctx)
     } catch (err) {

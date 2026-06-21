@@ -157,7 +157,7 @@ function setMessageEmojiReactionEnabled(enabled) {
 export function register(bot) {
   if (!bot || !bot.registerCommand) return
   //第一个参数是数组第一个是命令，第二个是事件,如果是其他事件就是事件列表中的事件名称，第二个是方法，第三个是下文函数
-  bot.registerCommand(["", 1000], async ctx => {
+  bot.registerCommand(["", 1000, { key: "auto-reaction" }], async ctx => {
     // 仅群消息可用 reaction
     if (!ctx?.isGroup || !ctx?.group_id) return false
     if (!ctx?.message_id && ctx?.seq === undefined && ctx?.message_seq === undefined) return false
@@ -212,6 +212,7 @@ export function register(bot) {
       "^(?:[#＃])?表情回应(\\s*.*)?$",
       1000,
       {
+        key: "set-reaction",
         example: ["#表情回应277", "#表情回应 277 233", "#表情回应😭😂"],
         desc: "开启当前用户的消息表情回应并设置表情（可多个）",
       },
@@ -240,7 +241,7 @@ export function register(bot) {
 
   // #关闭表情回应：关闭当前用户
   bot.registerCommand(
-    ["^(?:[#＃])?关闭表情回应$", 1000, { example: "#关闭表情回应", desc: "关闭当前用户的消息表情回应" }],
+    ["^(?:[#＃])?关闭表情回应$", 1000, { key: "disable-reaction", example: "#关闭表情回应", desc: "关闭当前用户的消息表情回应" }],
     async ctx => {
       disableUserReaction(ctx?.user_id)
       return await ctx.reply("已关闭表情回应（仅对你生效）")
@@ -252,6 +253,7 @@ export function register(bot) {
       "^(?:[#＃])?贴表情(开启|关闭)$",
       1000,
       {
+        key: "toggle-reaction-global",
         example: ["#贴表情开启", "#贴表情关闭"],
         desc: "开启或关闭全局消息自动贴表情",
       },
@@ -268,7 +270,7 @@ export function register(bot) {
     },
   )
 
-  bot.registerCommand(["^测试转发$", 1000], async ctx => {
+  bot.registerCommand(["^测试转发$", 1000, { key: "test-forward" }], async ctx => {
     return ctx.reply(
       await ctx.makeGroupForwardMsg(
         ctx,
@@ -283,7 +285,7 @@ export function register(bot) {
     )
   })
 
-  bot.registerCommand(["一会做什么", 1000], async ctx => {
+  bot.registerCommand(["一会做什么", 1000, { key: "what-next" }], async ctx => {
     console.log("被调用的ctx", ctx)
 
     if (ctx.isMaster) {
@@ -292,7 +294,7 @@ export function register(bot) {
     }
   })
 
-  bot.registerCommand(["^调用$", 1000], async ctx => {
+  bot.registerCommand(["^调用$", 1000, { key: "call-tts" }], async ctx => {
     if (ctx.isMaster) {
       ctx.reply("我将会调用语音合成发送：可莉说你是个几把")
       void bot
@@ -301,7 +303,7 @@ export function register(bot) {
     }
   })
 
-  bot.registerCommand(["^测试撤回$", 1000], async ctx => {
+  bot.registerCommand(["^测试撤回$", 1000, { key: "test-recall" }], async ctx => {
     if (ctx.isMaster) {
       return await ctx.reply(
         await ctx.makeGroupForwardMsg(ctx, ["测试撤回", "消息二"], "测试撤回"),
@@ -313,14 +315,14 @@ export function register(bot) {
     }
   })
 
-  bot.registerCommand(["^测试群员$", 1000], async ctx => {
+  bot.registerCommand(["^测试群员$", 1000, { key: "test-members" }], async ctx => {
     const member_list = await Bot.getGroupMemberList(ctx.group_id)
     const member_list2 = await ctx.getGroupMemberList(ctx.group_id)
     console.log("ce1:", member_list)
     console.log("ce2:", member_list2)
   })
 
-  bot.registerCommand(["取直链", 1000], async ctx => {
+  bot.registerCommand(["取直链", 1000, { key: "get-direct-link" }], async ctx => {
     const replied = await ctx.getReplyMessage?.()
     if (!replied) return ctx.reply("请回复需要取直链的消息")
 
@@ -333,7 +335,7 @@ export function register(bot) {
   })
 
   // 引用撤回：回复一条消息并发送“引用撤回”，机器人尝试撤回被引用的那条消息（需要权限）
-  bot.registerCommand(["^(引用撤回|#?撤回)$", 1000], async ctx => {
+  bot.registerCommand(["^(引用撤回|#?撤回)$", 1000, { key: "recall-quote" }], async ctx => {
     const normalizedCommand = String(ctx?.msg ?? "").trim()
     if (normalizedCommand === "撤回") {
       return false

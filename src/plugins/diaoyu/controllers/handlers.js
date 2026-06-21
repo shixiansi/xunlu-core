@@ -205,7 +205,7 @@ async function withUser(ctx, fn) {
 export function register(bot) {
   if (!bot || typeof bot.registerCommand !== "function") return
 
-  bot.registerCommand(["^钓鱼帮助$"], async ctx => {
+  bot.registerCommand(["^钓鱼帮助$", { key: "help" }], async ctx => {
     const lines = [
       "- 钓鱼 / 钓鱼 高级",
       "- 钓鱼状态",
@@ -229,7 +229,7 @@ export function register(bot) {
     )
   })
 
-  bot.registerCommand(["^钓鱼测试$"], async ctx => {
+  bot.registerCommand(["^钓鱼测试$", { key: "test" }], async ctx => {
     const scene = ctx?.message_scene || ctx?.message_type || (ctx?.group_id ? "group" : "private")
     const groupId = ctx?.group_id ? String(ctx.group_id) : "-"
     const userId = ctx?.user_id ? String(ctx.user_id) : "-"
@@ -247,7 +247,7 @@ export function register(bot) {
     )
   })
 
-  bot.registerCommand(["^钓鱼状态$"], async ctx => {
+  bot.registerCommand(["^钓鱼状态$", { key: "status" }], async ctx => {
     return await withUser(ctx, ({ user }) => {
       const today = dateKey()
       const signed = user.sign?.lastDate === today
@@ -281,7 +281,7 @@ export function register(bot) {
     })
   })
 
-  bot.registerCommand(["^钓鱼(商店|店|小卖部)$"], async ctx => {
+  bot.registerCommand(["^钓鱼(商店|店|小卖部)$", { key: "shop" }], async ctx => {
     return await withUser(ctx, ({ user }) => {
       const lv = Math.floor(user.rodLevel)
       const cost = rodUpgradeCost(lv)
@@ -318,7 +318,7 @@ export function register(bot) {
     })
   })
 
-  bot.registerCommand(["^钓鱼(购买|买)(\\s*.+)?$"], async ctx => {
+  bot.registerCommand(["^钓鱼(购买|买)(\\s*.+)?$", { key: "buy" }], async ctx => {
     return await withUser(ctx, ({ user }) => {
       const raw = String(ctx?.msg || "")
       const rest = raw.replace(/^钓鱼(购买|买)/, "").trim()
@@ -380,7 +380,7 @@ export function register(bot) {
     })
   })
 
-  bot.registerCommand(["^钓鱼升级(鱼竿)?$"], async ctx => {
+  bot.registerCommand(["^钓鱼升级(鱼竿)?$", { key: "upgrade" }], async ctx => {
     return await withUser(ctx, ({ user }) => {
       const lv = Math.floor(user.rodLevel)
       if (lv >= MAX_ROD_LEVEL) {
@@ -422,7 +422,7 @@ export function register(bot) {
     })
   })
 
-  bot.registerCommand(["^钓鱼(签到|签)$"], async ctx => {
+  bot.registerCommand(["^钓鱼(签到|签)$", { key: "sign" }], async ctx => {
     return await withUser(ctx, ({ user }) => {
       const today = dateKey()
       const yday = yesterdayKey()
@@ -475,7 +475,7 @@ export function register(bot) {
     })
   })
 
-  bot.registerCommand(["^钓鱼(仓库|背包)$"], async ctx => {
+  bot.registerCommand(["^钓鱼(仓库|背包)$", { key: "warehouse" }], async ctx => {
     return await withUser(ctx, ({ user }) => {
       const bait = getItemCount(user.items, BAIT.NORMAL)
       const baitAdv = getItemCount(user.items, BAIT.ADV)
@@ -533,7 +533,7 @@ export function register(bot) {
     })
   })
 
-  bot.registerCommand(["^钓鱼(出售|卖)(\\s*.+)?$"], async ctx => {
+  bot.registerCommand(["^钓鱼(出售|卖)(\\s*.+)?$", { key: "sell" }], async ctx => {
     return await withUser(ctx, ({ user }) => {
       const raw = String(ctx?.msg || "")
       const rest = raw.replace(/^钓鱼(出售|卖)/, "").trim()
@@ -643,7 +643,7 @@ export function register(bot) {
     })
   })
 
-  bot.registerCommand(["^钓鱼(\\s+.+)?$"], async ctx => {
+  bot.registerCommand(["^钓鱼(\\s+.+)?$", { key: "fish" }], async ctx => {
     return await withUser(ctx, ({ user }) => {
       const arg = String(ctx?.msg || "")
         .replace(/^钓鱼/, "")

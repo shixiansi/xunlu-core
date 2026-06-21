@@ -322,7 +322,7 @@ async function handleDispatch(ctx) {
 export function register(bot) {
   if (!bot || typeof bot.registerCommand !== "function") return
 
-  bot.registerCommand(["", 99999], async ctx => {
+  bot.registerCommand(["", 99999, { key: "ai-dispatch" }], async ctx => {
     try {
       return await handleDispatch(ctx)
     } catch (error) {

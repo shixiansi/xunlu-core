@@ -433,8 +433,8 @@ async function handleSetuRequest(ctx) {
 export function register(bot) {
   if (!bot || !bot.registerCommand) return
 
-  bot.registerCommand(["随机图"], async ctx => await handleRandomPixiv(ctx))
-  bot.registerCommand(["^来张(.*)色图$"], async ctx => await handleSetuRequest(ctx))
+  bot.registerCommand(["随机图", { key: "random-pic" }], async ctx => await handleRandomPixiv(ctx))
+  bot.registerCommand(["^来张(.*)色图$", { key: "setu" }], async ctx => await handleSetuRequest(ctx))
 
   console.log("[pixiv] registered with bot shim")
 }

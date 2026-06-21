@@ -421,17 +421,17 @@ export function register(bot) {
   const logger = getPlatformLogger()
 
   // 注册「荨鹿更新」命令
-  bot.registerCommand(["^荨鹿更新$"], async ctx => {
+  bot.registerCommand(["^荨鹿更新$", { key: "update" }], async ctx => {
     await runUpdate(ctx, false)
   })
 
   // 注册「荨鹿强制更新」命令
-  bot.registerCommand(["^荨鹿强制更新$"], async ctx => {
+  bot.registerCommand(["^荨鹿强制更新$", { key: "force-update" }], async ctx => {
     await runUpdate(ctx, true)
   })
 
   // 注册「荨鹿更新日志」命令
-  bot.registerCommand(["^荨鹿更新日志$"], async ctx => {
+  bot.registerCommand(["^荨鹿更新日志$", { key: "changelog" }], async ctx => {
     let log = await getUpdateLog(ctx, "", "")
     await ctx.reply(log || "暂无更新日志")
   })

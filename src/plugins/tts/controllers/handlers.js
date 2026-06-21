@@ -84,7 +84,7 @@ function findHighestMatch(inputStr, strArray) {
 
 export function register(bot) {
   if (!bot || !bot.registerCommand) return
-  bot.registerCommand(["^(.+)说"], async ctx => {
+  bot.registerCommand(["^(.+)说", { key: "speak" }], async ctx => {
     let characterAudioList = readCharacterAudioList()
     // console.log(characterAudioList);
     let strarr = ctx.msg.split("说")
@@ -121,7 +121,7 @@ export function register(bot) {
     }
   })
 
-  bot.registerCommand(["^#语音模型列表$"], async ctx => {
+  bot.registerCommand(["^#语音模型列表$", { key: "model-list" }], async ctx => {
     let characterAudioList = readCharacterAudioList()
     let catelist = await hobbyist.getCategories()
 
@@ -149,7 +149,7 @@ export function register(bot) {
     })
   })
 
-  bot.registerCommand(["^tts帮助$"], async ctx => {
+  bot.registerCommand(["^tts帮助$", { key: "help" }], async ctx => {
     console.log(process.env.xunLuEnv)
     ctx.reply(
       "tts帮助:\n#语音模型列表（查看模型列表）\n模型名+说+内容（使用模型说话,如“可莉说你好”不需要加游戏名。只需要角色名即可）",

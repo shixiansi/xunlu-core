@@ -63,7 +63,7 @@ async function ensureGroupMaster(ctx) {
 export function register(bot) {
   if (!bot || !bot.registerCommand) return
   //第一个参数是数组第一个是命令，第二个是事件，第三个是优先级（第二个和第三个都可以省略）
-  bot.registerCommand(["^(|#)设置尾缀", { example: "设置尾缀 xxx", desc: "设置机器人回复尾缀" }], async ctx => {
+  bot.registerCommand(["^(|#)设置尾缀", { key: "set-suffix", example: "设置尾缀 xxx", desc: "设置机器人回复尾缀" }], async ctx => {
     let suffix = ctx.msg.replace(/^(|#)设置尾缀/, "") || ""
     if (ctx.message?.find(i => i.type == "face")) {
       suffix = ctx.message.map(i => {
@@ -85,12 +85,12 @@ export function register(bot) {
     return ctx.reply(`尾缀已设置为: ${suffix}`)
   })
 
-  bot.registerCommand(["^(|#)我是什么bot", { example: "我是什么bot", desc: "查看当前机器人类型" }], async ctx => {
+  bot.registerCommand(["^(|#)我是什么bot", { key: "bot-type", example: "我是什么bot", desc: "查看当前机器人类型" }], async ctx => {
     const name = JSON.parse(fs.readFileSync("./package.json")).name
     ctx.reply(`我是运行在${name}的${ctx.adapterType}_Bot`)
   })
 
-  bot.registerCommand(["^(?:#|＃)?设置前缀\\s+(.+)$", { example: "设置前缀 #", desc: "设置群聊前缀（仅群主可用）" }], async ctx => {
+  bot.registerCommand(["^(?:#|＃)?设置前缀\\s+(.+)$", { key: "set-prefix", example: "设置前缀 #", desc: "设置群聊前缀（仅群主可用）" }], async ctx => {
     if (!(await ensureGroupMaster(ctx))) return true
 
     const prefix = String(ctx?.msg || "").replace(/^(?:#|＃)?设置前缀\s+/, "").trim()
@@ -102,14 +102,14 @@ export function register(bot) {
     return await ctx.reply(`已将当前群前缀设置为：${state.prefix}\n${formatGroupPrefixState(state)}`)
   })
 
-  bot.registerCommand(["^(?:#|＃)?开启群前缀$", { example: "开启群前缀", desc: "开启当前群前缀限制（仅群主可用）" }], async ctx => {
+  bot.registerCommand(["^(?:#|＃)?开启群前缀$", { key: "prefix-on", example: "开启群前缀", desc: "开启当前群前缀限制（仅群主可用）" }], async ctx => {
     if (!(await ensureGroupMaster(ctx))) return true
 
     const state = await setCurrentGroupPrefixEnabled(ctx.group_id, true)
     return await ctx.reply(`已开启当前群前缀限制\n${formatGroupPrefixState(state)}`)
   })
 
-  bot.registerCommand(["^(?:#|＃)?关闭群前缀$", { example: "关闭群前缀", desc: "关闭当前群前缀限制（仅群主可用）" }], async ctx => {
+  bot.registerCommand(["^(?:#|＃)?关闭群前缀$", { key: "prefix-off", example: "关闭群前缀", desc: "关闭当前群前缀限制（仅群主可用）" }], async ctx => {
     if (!(await ensureGroupMaster(ctx))) return true
 
     const state = await setCurrentGroupPrefixEnabled(ctx.group_id, false)
@@ -119,7 +119,7 @@ export function register(bot) {
   // 插件管理命令
 
   // 禁用插件命令
-  bot.registerCommand(["^(?:#|＃)?禁用插件\\s+(.+)$", { example: "禁用插件 抖音", desc: "禁用指定插件（支持文件夹名/别名/短名，仅主人可用，重载插件后生效）" }], async ctx => {
+  bot.registerCommand(["^(?:#|＃)?禁用插件\\s+(.+)$", { key: "disable-plugin", example: "禁用插件 抖音", desc: "禁用指定插件（支持文件夹名/别名/短名，仅主人可用，重载插件后生效）" }], async ctx => {
     if (!ctx.isMaster) return false
 
     const userInput = String(ctx?.msg || "").replace(/^(?:#|＃)?禁用插件\s+/, "").trim()
@@ -149,7 +149,7 @@ export function register(bot) {
   })
 
   // 启用插件命令
-  bot.registerCommand(["^(?:#|＃)?启用插件\\s+(.+)$", { example: "启用插件 抖音", desc: "启用指定插件（支持文件夹名/别名/短名，仅主人可用，重载插件后生效）" }], async ctx => {
+  bot.registerCommand(["^(?:#|＃)?启用插件\\s+(.+)$", { key: "enable-plugin", example: "启用插件 抖音", desc: "启用指定插件（支持文件夹名/别名/短名，仅主人可用，重载插件后生效）" }], async ctx => {
     if (!ctx.isMaster) return false
 
     const userInput = String(ctx?.msg || "").replace(/^(?:#|＃)?启用插件\s+/, "").trim()
@@ -179,12 +179,12 @@ export function register(bot) {
   })
 
   // 禁用命令命令
-  bot.registerCommand(["^(?:#|＃)?禁用命令\\s+(.+)$", { example: "禁用命令 set:示例", desc: "禁用指定命令（仅主人可用，重载插件后生效）" }], async ctx => {
+  bot.registerCommand(["^(?:#|＃)?禁用命令\\s+(.+)$", { key: "disable-cmd", example: ["禁用命令 bilibili-plugin:video", "禁用命令 bilibili-plugin:^#订阅"], desc: "禁用指定命令（支持 插件名:key 或 插件名:正则，仅主人可用，重载插件后生效）" }], async ctx => {
     if (!ctx.isMaster) return false
 
     const commandKey = String(ctx?.msg || "").replace(/^(?:#|＃)?禁用命令\s+/, "").trim()
     if (!commandKey) {
-      return await ctx.reply("用法：禁用命令 <插件名>:<命令正则> 或 <命令正则>")
+      return await ctx.reply("用法：禁用命令 <插件名>:<命令key> 或 <插件名>:<命令正则>\n如 #禁用命令 bilibili-plugin:video")
     }
 
     const botCfg = cfg.getConfig("bot") || {}
@@ -204,7 +204,7 @@ export function register(bot) {
   })
 
   // 启用命令命令
-  bot.registerCommand(["^(?:#|＃)?启用命令\\s+(.+)$", { example: "启用命令 set:示例", desc: "启用指定命令（仅主人可用，重载插件后生效）" }], async ctx => {
+  bot.registerCommand(["^(?:#|＃)?启用命令\\s+(.+)$", { key: "enable-cmd", example: "启用命令 bilibili-plugin:video", desc: "启用指定命令（支持 key 或正则，仅主人可用，重载插件后生效）" }], async ctx => {
     if (!ctx.isMaster) return false
 
     const commandKey = String(ctx?.msg || "").replace(/^(?:#|＃)?启用命令\s+/, "").trim()
@@ -229,7 +229,7 @@ export function register(bot) {
   })
 
   // 查看已禁用插件命令
-  bot.registerCommand(["^(?:#|＃)?查看禁用插件$", { example: "查看禁用插件", desc: "查看所有已禁用的插件列表（仅主人可用）" }], async ctx => {
+  bot.registerCommand(["^(?:#|＃)?查看禁用插件$", { key: "list-disabled-plugins", example: "查看禁用插件", desc: "查看所有已禁用的插件列表（仅主人可用）" }], async ctx => {
     if (!ctx.isMaster) return false
 
     const botCfg = cfg.getConfig("bot") || {}
@@ -243,7 +243,7 @@ export function register(bot) {
   })
 
   // 查看已禁用命令命令
-  bot.registerCommand(["^(?:#|＃)?查看禁用命令$", { example: "查看禁用命令", desc: "查看所有已禁用的命令列表（仅主人可用）" }], async ctx => {
+  bot.registerCommand(["^(?:#|＃)?查看禁用命令$", { key: "list-disabled-cmds", example: "查看禁用命令", desc: "查看所有已禁用的命令列表（仅主人可用）" }], async ctx => {
     if (!ctx.isMaster) return false
 
     const botCfg = cfg.getConfig("bot") || {}
@@ -257,7 +257,7 @@ export function register(bot) {
   })
 
   // 查看所有插件命令
-  bot.registerCommand(["^(?:#|＃)?查看插件列表$", { example: "查看插件列表", desc: "查看所有已加载的插件列表（仅主人可用）" }], async ctx => {
+  bot.registerCommand(["^(?:#|＃)?查看插件列表$", { key: "list-plugins", example: "查看插件列表", desc: "查看所有已加载的插件列表（仅主人可用）" }], async ctx => {
     if (!ctx.isMaster) return false
 
     const plugins = ctx.baseBot?.pluginCatalog || {}
@@ -271,7 +271,7 @@ export function register(bot) {
   })
 
   // 查看插件命令列表命令
-  bot.registerCommand(["^(?:#|＃)?查看插件命令\\s+(.+)$", { example: "查看插件命令 set", desc: "查看指定插件的所有命令列表（仅主人可用）" }], async ctx => {
+  bot.registerCommand(["^(?:#|＃)?查看插件命令\\s+(.+)$", { key: "list-plugin-cmds", example: "查看插件命令 set", desc: "查看指定插件的所有命令列表（仅主人可用）" }], async ctx => {
     if (!ctx.isMaster) return false
 
     const pluginName = String(ctx?.msg || "").replace(/^(?:#|＃)?查看插件命令\s+/, "").trim()

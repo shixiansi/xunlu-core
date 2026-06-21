@@ -24,7 +24,7 @@ const textChuo = [
 ]
 export function register(bot) {
   if (!bot || !bot.registerCommand) return
-  bot.registerCommand(["", "notice.group.poke"], ctx => {
+  bot.registerCommand(["", "notice.group.poke", { key: "poke-reply" }], ctx => {
     console.log("触发戳一戳了", ctx)
 
     const cfg = getChuoConfig()

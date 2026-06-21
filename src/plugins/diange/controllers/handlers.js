@@ -238,7 +238,7 @@ export function register(bot) {
       "^(?:#|＃)?点歌\\s+(.+)$",
       "message",
       1200,
-      { example: "点歌 稻香", desc: "搜索歌曲并通过上下文选择后发送卡片或语音" },
+      { key: "song-request", example: "点歌 稻香", desc: "搜索歌曲并通过上下文选择后发送卡片或语音" },
     ],
     async ctx => await handleSongRequest(ctx, bot),
   )

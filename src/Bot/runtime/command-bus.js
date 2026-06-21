@@ -505,12 +505,14 @@ export class CommandBus {
       let priority = 5000
       let help = null
       let trackUsage
+      let cmdKey = ""
 
       if (command && typeof command === "object" && !Array.isArray(command)) {
         reg = String(command.reg ?? command.pattern ?? command.command ?? "")
         if (lodash.isString(command.event)) event = command.event
         if (lodash.isNumber(command.priority)) priority = command.priority
         if (typeof command.trackUsage === "boolean") trackUsage = command.trackUsage
+        if (lodash.isString(command.key)) cmdKey = command.key
 
         const meta = command.help && typeof command.help === "object" ? command.help : command
         const example = meta.example ?? meta.examples
@@ -529,6 +531,7 @@ export class CommandBus {
         const last = commands[commands.length - 1]
         if (last && typeof last === "object" && !Array.isArray(last)) {
           if (typeof last.trackUsage === "boolean") trackUsage = last.trackUsage
+          if (lodash.isString(last.key)) cmdKey = last.key
           const example = last.example ?? last.examples
           const desc = last.desc ?? last.description
           if (example !== undefined || desc !== undefined) {
@@ -537,25 +540,23 @@ export class CommandBus {
         }
       }
 
-      // 检查命令是否被禁用
+      // 检查命令是否被禁用（优先按 key 匹配，其次按 reg 匹配）
       const commandReg = String(reg || "").trim()
-      if (commandReg) {
-        const commandKey = `${pname}:${commandReg}`
+      if (commandReg || cmdKey) {
+        const keyId = cmdKey ? `${pname}:${cmdKey}` : ""
+        const regId = commandReg ? `${pname}:${commandReg}` : ""
         const isDisabled = disabledCommands.some(item => {
           const disabledKey = String(item || "").trim()
           if (!disabledKey) return false
 
-          // 支持两种格式：
-          // 1. 完整格式：插件名:命令正则
-          // 2. 简写格式：命令正则（匹配当前插件）
           if (disabledKey.includes(":")) {
-            return disabledKey === commandKey
+            return disabledKey === keyId || disabledKey === regId
           }
-          return disabledKey === commandReg
+          return disabledKey === cmdKey || disabledKey === commandReg
         })
 
         if (isDisabled) {
-          logger.info?.(`[commandBus] skip disabled command: ${commandKey}`)
+          logger.info?.(`[commandBus] skip disabled command: ${keyId || regId}`)
           return
         }
       }
@@ -567,6 +568,7 @@ export class CommandBus {
         pluginShortName: pshort,
         pluginAliases: paliases,
         reg,
+        key: cmdKey || undefined,
         event,
         priority,
         trackUsage:

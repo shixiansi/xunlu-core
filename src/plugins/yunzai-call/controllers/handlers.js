@@ -32,6 +32,7 @@ export function register(bot) {
       "^(#)?调用(\\s*.+)?$",
       900,
       {
+        key: "call-yunzai",
         example: ["调用 #帮助", "#调用 #原神帮助", "调用 #面板"],
         desc: "把后面的文本当作云崽原生指令重新匹配并触发",
         trackUsage: false,

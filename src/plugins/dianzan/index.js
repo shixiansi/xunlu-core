@@ -150,6 +150,7 @@ export default definePlugin({
         "^[#]?(点赞|赞我|给我点赞)$",
         1000,
         {
+          key: "profile-like",
           example: ["#点赞", "#赞我", "#给我点赞"],
           desc: "资料卡点赞（陌生人固定20；好友VIP=20否则10）",
         },

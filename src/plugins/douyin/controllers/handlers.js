@@ -433,12 +433,12 @@ export function register(bot) {
 
   renderImg = typeof bot?.renderImg === "function" ? bot.renderImg : null
 
-  bot.registerCommand(["^[#＃]抖音扫码$", 1000], async ctx => await handleQrLoginCommand(ctx))
+  bot.registerCommand(["^[#＃]抖音扫码$", 1000, { key: "qr-login" }], async ctx => await handleQrLoginCommand(ctx))
   bot.registerCommand(
-    ["^[#＃]抖音(登录|cookie|ck)(\\s+.+)?$", 1000],
+    ["^[#＃]抖音(登录|cookie|ck)(\\s+.+)?$", 1000, { key: "cookie-login" }],
     async ctx => await handleCookieLoginCommand(ctx),
   )
-  bot.registerCommand(["", 1200], async ctx => await handleDouyinParse(ctx))
+  bot.registerCommand(["", 1200, { key: "parse-url" }], async ctx => await handleDouyinParse(ctx))
 }
 
 export function onBotEvent() {}

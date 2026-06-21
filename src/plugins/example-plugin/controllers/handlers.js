@@ -10,7 +10,7 @@
 export function register(bot) {
   if (!bot || !bot.registerCommand) return
   //第一个参数是数组第一个是命令，第二个是事件，第三个是优先级（第二个和第三个都可以省略）
-  bot.registerCommand(["示例"], async ctx => {
+  bot.registerCommand(["示例", { key: "example" }], async ctx => {
     console.log(ctx)
     console.log("这是示例插件的响应")
     await ctx.reply("这是示例插件的响应")

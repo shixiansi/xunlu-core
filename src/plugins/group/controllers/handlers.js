@@ -272,7 +272,7 @@ export function register(bot) {
 
   // ===================== 荨鹿通知设置（主人） =====================
   bot.registerCommand(
-    ["^(|#)荨鹿通知设置$", { example: ["#荨鹿通知设置"], desc: "查看/提示荨鹿通知开关（主人）" }],
+    ["^(|#)荨鹿通知设置$", { key: "notice-settings", example: ["#荨鹿通知设置"], desc: "查看/提示荨鹿通知开关（主人）" }],
     async ctx => {
       if (!ctx.isMaster) return await ctx.reply("仅主人可用")
 
@@ -343,7 +343,7 @@ export function register(bot) {
   bot.registerCommand(
     [
       "^(|#)荨鹿通知设置删除缓存时间\\s*(\\d+)\\s*(秒|s)?$",
-      { example: ["#荨鹿通知设置删除缓存时间 60 秒"], desc: "设置通知去重缓存时间（秒）" },
+      { key: "notice-cache-ttl", example: ["#荨鹿通知设置删除缓存时间 60 秒"], desc: "设置通知去重缓存时间（秒）" },
     ],
     async ctx => {
       if (!ctx.isMaster) return await ctx.reply("仅主人可用")
@@ -359,7 +359,7 @@ export function register(bot) {
   bot.registerCommand(
     [
       "^(|#)荨鹿通知设置(.+?)(单独)?(开启|关闭)$",
-      { example: ["#荨鹿通知设置群消息开启"], desc: "开启/关闭指定通知（主人）" },
+      { key: "notice-toggle", example: ["#荨鹿通知设置群消息开启"], desc: "开启/关闭指定通知（主人）" },
     ],
     async ctx => {
       if (!ctx.isMaster) return await ctx.reply("仅主人可用")
@@ -373,7 +373,7 @@ export function register(bot) {
 
   // 戳一戳开关（主人）
   bot.registerCommand(
-    ["^(|#)开启戳一戳$", { example: ["#开启戳一戳"], desc: "开启戳一戳回复（chuo 插件）" }],
+    ["^(|#)开启戳一戳$", { key: "chuo-enable", example: ["#开启戳一戳"], desc: "开启戳一戳回复（chuo 插件）" }],
     async ctx => {
       if (!ctx.isMaster) return await ctx.reply("仅主人可用")
       setChuoEnabled(true)
@@ -381,7 +381,7 @@ export function register(bot) {
     },
   )
   bot.registerCommand(
-    ["^(|#)关闭戳一戳$", { example: ["#关闭戳一戳"], desc: "关闭戳一戳回复（chuo 插件）" }],
+    ["^(|#)关闭戳一戳$", { key: "chuo-disable", example: ["#关闭戳一戳"], desc: "关闭戳一戳回复（chuo 插件）" }],
     async ctx => {
       if (!ctx.isMaster) return await ctx.reply("仅主人可用")
       setChuoEnabled(false)
@@ -391,7 +391,7 @@ export function register(bot) {
 
   // ===================== 通知推送（事件型） =====================
   // 群消息（群单独）
-  bot.registerCommand(["", "message.group.*", 100], async ctx => {
+  bot.registerCommand(["", "message.group.*", 100, { key: "notify-group-msg" }], async ctx => {
     try {
       const groupId = toInt(ctx.group_id)
       if (!groupId) return false
@@ -419,7 +419,7 @@ export function register(bot) {
   })
 
   // 私聊消息（好友/临时）
-  bot.registerCommand(["", "message.private.*", 100], async ctx => {
+  bot.registerCommand(["", "message.private.*", 100, { key: "notify-private-msg" }], async ctx => {
     try {
       const sid = toInt(ctx.self_id)
       if (!sid) return false
@@ -466,7 +466,7 @@ export function register(bot) {
   })
 
   // 群撤回（群单独）
-  bot.registerCommand(["", "notice.group.recall", 100], async ctx => {
+  bot.registerCommand(["", "notice.group.recall", 100, { key: "notify-group-recall" }], async ctx => {
     try {
       const groupId = toInt(ctx.group_id)
       if (!groupId) return false
@@ -512,7 +512,7 @@ export function register(bot) {
   })
 
   // 好友撤回（Bot 单独）
-  bot.registerCommand(["", "notice.private.recall", 100], async ctx => {
+  bot.registerCommand(["", "notice.private.recall", 100, { key: "notify-private-recall" }], async ctx => {
     try {
       const proto = String(ctx?.protocol || "").toLowerCase()
       if (proto === "milky" && String(ctx?.message_scene || "") !== "friend") return false
@@ -557,7 +557,7 @@ export function register(bot) {
   })
 
   // 好友申请（Bot 单独）
-  bot.registerCommand(["", "request.private.friend", 100], async ctx => {
+  bot.registerCommand(["", "request.private.friend", 100, { key: "notify-friend-request" }], async ctx => {
     try {
       const sid = toInt(ctx.self_id)
       if (!sid) return false
@@ -586,7 +586,7 @@ export function register(bot) {
   })
 
   // 加群申请（群单独）
-  bot.registerCommand(["", "request.group.add", 100], async ctx => {
+  bot.registerCommand(["", "request.group.add", 100, { key: "notify-group-request" }], async ctx => {
     try {
       const groupId = toInt(ctx.group_id)
       if (!groupId) return false
@@ -611,7 +611,7 @@ export function register(bot) {
   })
 
   // request.group.invite：milky=邀请入群审核（群单独）；onebot=bot 被邀请入群（Bot 单独）
-  bot.registerCommand(["", "request.group.invite", 100], async ctx => {
+  bot.registerCommand(["", "request.group.invite", 100, { key: "notify-group-invite" }], async ctx => {
     try {
       const proto = String(ctx?.protocol || "").toLowerCase()
 
@@ -661,7 +661,7 @@ export function register(bot) {
   })
 
   // milky: bot 被邀请入群事件
-  bot.registerCommand(["", "notice.group.invited", 100], async ctx => {
+  bot.registerCommand(["", "notice.group.invited", 100, { key: "notify-group-invited" }], async ctx => {
     try {
       const sid = toInt(ctx.self_id)
       if (!sid) return false
@@ -686,7 +686,7 @@ export function register(bot) {
   })
 
   // 群成员变动（群单独） + 群聊列表变动（仅 bot 自己进/退群）
-  bot.registerCommand(["", "notice.group.increase", 100], async ctx => {
+  bot.registerCommand(["", "notice.group.increase", 100, { key: "notify-member-increase" }], async ctx => {
     try {
       const groupId = toInt(ctx.group_id)
       if (!groupId) return false
@@ -729,7 +729,7 @@ export function register(bot) {
     return false
   })
 
-  bot.registerCommand(["", "notice.group.decrease", 100], async ctx => {
+  bot.registerCommand(["", "notice.group.decrease", 100, { key: "notify-member-decrease" }], async ctx => {
     try {
       const groupId = toInt(ctx.group_id)
       if (!groupId) return false
@@ -777,7 +777,7 @@ export function register(bot) {
   })
 
   // 群管理变动（群单独）
-  bot.registerCommand(["", "notice.group.admin", 100], async ctx => {
+  bot.registerCommand(["", "notice.group.admin", 100, { key: "notify-admin-change" }], async ctx => {
     try {
       const groupId = toInt(ctx.group_id)
       if (!groupId) return false
@@ -805,7 +805,7 @@ export function register(bot) {
   })
 
   // Bot 被禁言（群单独）
-  bot.registerCommand(["", "notice.group.ban", 100], async ctx => {
+  bot.registerCommand(["", "notice.group.ban", 100, { key: "notify-bot-ban" }], async ctx => {
     try {
       const groupId = toInt(ctx.group_id)
       if (!groupId) return false
@@ -836,7 +836,7 @@ export function register(bot) {
     return false
   })
 
-  bot.registerCommand(["", "notice.group.allban", 100], async ctx => {
+  bot.registerCommand(["", "notice.group.allban", 100, { key: "notify-allban" }], async ctx => {
     try {
       const groupId = toInt(ctx.group_id)
       if (!groupId) return false
@@ -864,7 +864,7 @@ export function register(bot) {
   bot.registerCommand(
     [
       "^(|#)发好友\\s+([1-9]\\d{3,12})\\s+(.+)$",
-      { example: ["#发好友 10001 你好"], desc: "向指定好友发送消息（主人）" },
+      { key: "send-friend", example: ["#发好友 10001 你好"], desc: "向指定好友发送消息（主人）" },
     ],
     async ctx => {
       if (!ctx.isMaster) return await ctx.reply("仅主人可用")
@@ -882,7 +882,7 @@ export function register(bot) {
   bot.registerCommand(
     [
       "^(|#)发群聊\\s+(\\d+)\\s+(.+)$",
-      { example: ["#发群聊 123 你好"], desc: "向指定群聊发送消息（主人）" },
+      { key: "send-group", example: ["#发群聊 123 你好"], desc: "向指定群聊发送消息（主人）" },
     ],
     async ctx => {
       if (!ctx.isMaster) return await ctx.reply("仅主人可用")
@@ -899,7 +899,7 @@ export function register(bot) {
   bot.registerCommand(
     [
       "^(|#)发群列表\\s+([0-9,，]+)\\s+(.+)$",
-      { example: ["#发群列表 1,2,3 你好"], desc: "向多个群发送消息（主人）" },
+      { key: "send-multi-group", example: ["#发群列表 1,2,3 你好"], desc: "向多个群发送消息（主人）" },
     ],
     async ctx => {
       if (!ctx.isMaster) return await ctx.reply("仅主人可用")
@@ -932,7 +932,7 @@ export function register(bot) {
   )
 
   bot.registerCommand(
-    ["^(|#)获取好友列表$", { example: ["#获取好友列表"], desc: "获取好友列表（主人）" }],
+    ["^(|#)获取好友列表$", { key: "get-friend-list", example: ["#获取好友列表"], desc: "获取好友列表（主人）" }],
     async ctx => {
       if (!ctx.isMaster) return await ctx.reply("仅主人可用")
       const res = await ctx.getFriendList()
@@ -950,7 +950,7 @@ export function register(bot) {
   )
 
   bot.registerCommand(
-    ["^(|#)获取群列表$", { example: ["#获取群列表"], desc: "获取群列表（主人）" }],
+    ["^(|#)获取群列表$", { key: "get-group-list", example: ["#获取群列表"], desc: "获取群列表（主人）" }],
     async ctx => {
       if (!ctx.isMaster) return await ctx.reply("仅主人可用")
       const res = await ctx.getGroupList()
@@ -968,7 +968,7 @@ export function register(bot) {
   )
 
   bot.registerCommand(
-    ["^(|#)退群\\s+(\\d+)$", { example: ["#退群 123"], desc: "让 Bot 退出群聊（主人）" }],
+    ["^(|#)退群\\s+(\\d+)$", { key: "quit-group", example: ["#退群 123"], desc: "让 Bot 退出群聊（主人）" }],
     async ctx => {
       if (!ctx.isMaster) return await ctx.reply("仅主人可用")
       const m = String(ctx.msg || "").match(/^(?:#)?退群\s+(\d+)$/)
@@ -988,7 +988,7 @@ export function register(bot) {
   bot.registerCommand(
     [
       "^(|#)撤回$",
-      { example: ["#撤回"], desc: "回复消息后撤回：主人可撤回他人；其他人仅可撤回 bot 消息" },
+      { key: "recall", example: ["#撤回"], desc: "回复消息后撤回：主人可撤回他人；其他人仅可撤回 bot 消息" },
     ],
     async ctx => await handleRecallCommand(ctx, { missingReplyText: "请先回复需要撤回的消息，再发送：撤回" }),
   )
@@ -996,7 +996,7 @@ export function register(bot) {
   bot.registerCommand(
     [
       "^(|#)设置日志等级\\s+(trace|debug|info|warn|fatal|mark|error|off)$",
-      { example: ["#设置日志等级 debug"], desc: "设置 xunlu-core 日志等级（主人，重启生效）" },
+      { key: "set-log-level", example: ["#设置日志等级 debug"], desc: "设置 xunlu-core 日志等级（主人，重启生效）" },
     ],
     async ctx => {
       if (!ctx.isMaster) return await ctx.reply("仅主人可用")
@@ -1013,7 +1013,7 @@ export function register(bot) {
   bot.registerCommand(
     [
       "^(|#)(查看头像|看头像)\\s+([1-9]\\d{3,12})$",
-      { example: ["#查看头像 10001"], desc: "查看 QQ 头像（主人）" },
+      { key: "view-avatar", example: ["#查看头像 10001"], desc: "查看 QQ 头像（主人）" },
     ],
     async ctx => {
       if (!ctx.isMaster) return await ctx.reply("仅主人可用")
@@ -1028,7 +1028,7 @@ export function register(bot) {
   bot.registerCommand(
     [
       "^(|#)(查看群头像|看群头像)\\s+(\\d+)$",
-      { example: ["#查看群头像 123"], desc: "查看群头像（主人）" },
+      { key: "view-group-avatar", example: ["#查看群头像 123"], desc: "查看群头像（主人）" },
     ],
     async ctx => {
       if (!ctx.isMaster) return await ctx.reply("仅主人可用")
@@ -1042,7 +1042,7 @@ export function register(bot) {
 
   // ===================== 群管（管理员/主人） =====================
   bot.registerCommand(
-    ["^(|#)禁言\\s*.*$", { example: ["#禁言 @用户 60秒", "#禁言60秒"], desc: "禁言群成员（管理员/主人）" }],
+    ["^(|#)禁言\\s*.*$", { key: "mute", example: ["#禁言 @用户 60秒", "#禁言60秒"], desc: "禁言群成员（管理员/主人）" }],
     async ctx => {
       if (!ctx.group_id) return await ctx.reply("请在群内使用")
       if (!(await checkUserAdminOrMaster(ctx))) return await ctx.reply("需要管理员权限")
@@ -1070,7 +1070,7 @@ export function register(bot) {
   )
 
   bot.registerCommand(
-    ["^(|#)解禁\\s*.*$", { example: ["#解禁 @用户"], desc: "解除禁言（管理员/主人）" }],
+    ["^(|#)解禁\\s*.*$", { key: "unmute", example: ["#解禁 @用户"], desc: "解除禁言（管理员/主人）" }],
     async ctx => {
       if (!ctx.group_id) return await ctx.reply("请在群内使用")
       if (!(await checkUserAdminOrMaster(ctx))) return await ctx.reply("需要管理员权限")
@@ -1094,7 +1094,7 @@ export function register(bot) {
   )
 
   bot.registerCommand(
-    ["^(|#)全体禁言$", { example: ["#全体禁言"], desc: "全体禁言（管理员/主人）" }],
+    ["^(|#)全体禁言$", { key: "mute-all", example: ["#全体禁言"], desc: "全体禁言（管理员/主人）" }],
     async ctx => {
       if (!ctx.group_id) return await ctx.reply("请在群内使用")
       if (!(await checkUserAdminOrMaster(ctx))) return await ctx.reply("需要管理员权限")
@@ -1110,7 +1110,7 @@ export function register(bot) {
   )
 
   bot.registerCommand(
-    ["^(|#)全体解禁$", { example: ["#全体解禁"], desc: "解除全体禁言（管理员/主人）" }],
+    ["^(|#)全体解禁$", { key: "unmute-all", example: ["#全体解禁"], desc: "解除全体禁言（管理员/主人）" }],
     async ctx => {
       if (!ctx.group_id) return await ctx.reply("请在群内使用")
       if (!(await checkUserAdminOrMaster(ctx))) return await ctx.reply("需要管理员权限")
@@ -1126,7 +1126,7 @@ export function register(bot) {
   )
 
   bot.registerCommand(
-    ["^(|#)踢黑\\s*.*$", { example: ["#踢黑 @用户"], desc: "踢出并拉黑（管理员/主人）" }],
+    ["^(|#)踢黑\\s*.*$", { key: "kick-ban", example: ["#踢黑 @用户"], desc: "踢出并拉黑（管理员/主人）" }],
     async ctx => {
       if (!ctx.group_id) return await ctx.reply("请在群内使用")
       if (!(await checkUserAdminOrMaster(ctx))) return await ctx.reply("需要管理员权限")
@@ -1150,7 +1150,7 @@ export function register(bot) {
   )
 
   bot.registerCommand(
-    ["^(|#)踢\\s*.*$", { example: ["#踢 @用户"], desc: "踢出群成员（管理员/主人）" }],
+    ["^(|#)踢\\s*.*$", { key: "kick", example: ["#踢 @用户"], desc: "踢出群成员（管理员/主人）" }],
     async ctx => {
       if (!ctx.group_id) return await ctx.reply("请在群内使用")
       if (!(await checkUserAdminOrMaster(ctx))) return await ctx.reply("需要管理员权限")
@@ -1176,7 +1176,7 @@ export function register(bot) {
   bot.registerCommand(
     [
       "^(|#)设置管理\\s+.*$",
-      { example: ["#设置管理 @用户"], desc: "设置群管理员（主人，Bot需群主）" },
+      { key: "set-admin", example: ["#设置管理 @用户"], desc: "设置群管理员（主人，Bot需群主）" },
     ],
     async ctx => {
       if (!ctx.isMaster) return await ctx.reply("仅主人可用")
@@ -1198,7 +1198,7 @@ export function register(bot) {
   bot.registerCommand(
     [
       "^(|#)取消管理\\s+.*$",
-      { example: ["#取消管理 @用户"], desc: "取消群管理员（主人，Bot需群主）" },
+      { key: "unset-admin", example: ["#取消管理 @用户"], desc: "取消群管理员（主人，Bot需群主）" },
     ],
     async ctx => {
       if (!ctx.isMaster) return await ctx.reply("仅主人可用")
@@ -1220,7 +1220,7 @@ export function register(bot) {
   bot.registerCommand(
     [
       "^(|#)修改头衔\\s+.*$",
-      { example: ["#修改头衔 @用户 头衔"], desc: "修改群头衔（主人，Bot需群主）" },
+      { key: "set-title", example: ["#修改头衔 @用户 头衔"], desc: "修改群头衔（主人，Bot需群主）" },
     ],
     async ctx => {
       //if (!ctx.isMaster) return await ctx.reply("仅主人可用")
@@ -1252,7 +1252,7 @@ export function register(bot) {
   )
 
   bot.registerCommand(
-    ["^(|#)获取禁言列表$", { example: ["#获取禁言列表"], desc: "查看当前禁言成员（管理员/主人）" }],
+    ["^(|#)获取禁言列表$", { key: "get-mute-list", example: ["#获取禁言列表"], desc: "查看当前禁言成员（管理员/主人）" }],
     async ctx => {
       if (!ctx.group_id) return await ctx.reply("请在群内使用")
       if (!(await checkUserAdminOrMaster(ctx))) return await ctx.reply("需要管理员权限")
@@ -1288,7 +1288,7 @@ export function register(bot) {
     },
   )
 
-  bot.registerCommand(["", "request.group.add"], async ctx => {
+  bot.registerCommand(["", "request.group.add", { key: "gatekeeper" }], async ctx => {
     console.log("触发群申请可", ctx)
 
     const user_id = ctx.user_id
@@ -1320,7 +1320,7 @@ export function register(bot) {
       },
     ])
   })
-  bot.registerCommand(["(开门|关门)"], async ctx => {
+  bot.registerCommand(["(开门|关门)", { key: "gatekeeper-action" }], async ctx => {
     if (!ctx.group_id) return ctx.reply("请在群内使用")
     if (!(await checkUserAdminOrMaster(ctx))) return ctx.reply("需要管理员权限")
 
@@ -1345,7 +1345,7 @@ export function register(bot) {
     delete groupPass[passID]
     return ctx.reply("已经把这个家伙拒之门外了！")
   })
-  bot.registerCommand(["", "notice.group.increase"], async ctx => {
+  bot.registerCommand(["", "notice.group.increase", { key: "welcome-tts" }], async ctx => {
     let userInfo = await ctx.getUserInfo({ user_id: ctx.user_id })
     void bot
       .callFnc("tts-plugin-1", {
@@ -1354,7 +1354,7 @@ export function register(bot) {
       })
       .catch(err => console.warn("[group] callFnc tts failed:", err?.message || err))
   })
-  bot.registerCommand(["", "notice.group.decrease"], async ctx => {
+  bot.registerCommand(["", "notice.group.decrease", { key: "farewell" }], async ctx => {
     if (toInt(ctx?.user_id) === toInt(ctx?.self_id)) {
       await cleanupGroupScopedPluginData(ctx?.group_id, {
         reason: "notice-group-decrease-self",
@@ -1367,7 +1367,7 @@ export function register(bot) {
     let userInfo = await ctx.getUserInfo({ user_id: ctx.user_id })
     ctx.reply(`把${userInfo.nickname || "不知名的家伙"}丢出群了！`)
   })
-  bot.registerCommand(["保存群员信息"], async ctx => {
+  bot.registerCommand(["保存群员信息", { key: "save-members" }], async ctx => {
     const member_list = await ctx.getGroupMemberList(ctx.group_id)
     console.log(member_list)
     let msglist = []
@@ -1383,7 +1383,7 @@ export function register(bot) {
     return await ctx.reply(await ctx.makeGroupForwardMsg(ctx, msglist))
   })
 
-  bot.registerCommand(["^今日发言记录$"], async ctx => {
+  bot.registerCommand(["^今日发言记录$", { key: "daily-chat-log" }], async ctx => {
     const targetUserId = ctx.at || ctx.user_id
     console.log(ctx)
 
@@ -1403,7 +1403,7 @@ export function register(bot) {
     await ctx.reply(await ctx.makeGroupForwardMsgByUser(targetUserId, msgList, "今日发言记录"))
   })
 
-  bot.registerCommand(["^今日表情包$"], async ctx => {
+  bot.registerCommand(["^今日表情包$", { key: "daily-stickers" }], async ctx => {
     const targetUserId = ctx.at || ctx.user_id
     let msgChat = await ctx.getGroupChatHistory(ctx.group_id)
     const rkey = String((await getSceneRkey("group"))?.value || "").trim()
