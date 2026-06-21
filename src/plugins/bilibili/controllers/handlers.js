@@ -1,4 +1,5 @@
 import fs from "node:fs"
+import path from "node:path"
 
 import { segment } from "../../../Bot/message/index.js"
 import Blogin from "../model/Blogin.js"
@@ -56,6 +57,10 @@ import { getCompatRuntimeBot } from "../../../runtime/platform-services.js"
 const filemage = new Filemage()
 const download = new Download()
 const bilibiliCachePaths = createBilibiliCachePaths(filemage.RootPath)
+const dataBgPath = path.relative(
+  path.join(filemage.RootPath, "src", "plugins", "bilibili", "resources", "html", "bilibili"),
+  path.join(filemage.RootPath, "data", "bilibili", "bg"),
+).replace(/\\/g, "/") + "/"
 const GROUP_DATA_DIR = bilibiliCachePaths.groupDataDir
 const BILIBILI_VIDEO_DIR = bilibiliCachePaths.videoDir
 const {
@@ -688,6 +693,7 @@ export function register(bot) {
       return await ctx.reply(
         await renderDynamicMessage(ctx, result, {
           getRandomBackground: getRandomBilibiliBackground,
+          bgPath: dataBgPath,
           logger,
         }),
       )
@@ -785,6 +791,7 @@ export function register(bot) {
 
           const dynamicMessage = await renderDynamicMessage(bot, result, {
             getRandomBackground: getRandomBilibiliBackground,
+            bgPath: dataBgPath,
             logger,
           })
           const sendResult = await bot.sendMessage({ group_id: g }, dynamicMessage)

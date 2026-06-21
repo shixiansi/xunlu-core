@@ -96,10 +96,11 @@ export async function renderBilibiliCard(renderer, card = {}, options = {}) {
 }
 
 export async function renderDynamicMessage(renderer, result = {}, options = {}) {
-  const { getRandomBackground = () => "", logger } = options
+  const { getRandomBackground = () => "", logger, bgPath } = options
   if (renderer && typeof renderer.renderImg === "function") {
     try {
       const rendered = await renderer.renderImg("bilibili", {
+        _bg_path: bgPath || "",
         radom: getRandomBackground(),
         ...result,
       })
