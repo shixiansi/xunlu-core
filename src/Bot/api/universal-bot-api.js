@@ -127,6 +127,14 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       const normalizedAction = normalizeApiActionName(protocol, action)
       if (!normalizedAction) throw new Error("[sendApi] requires action")
 
+      // 诊断：谁在调用 universal sendApi
+      const lg = global.logger
+      if (lg?.mark) {
+        const sendApiType = typeof ctx?.sendApi
+        const rawSendApiType = typeof ctx?.__xunlu_raw_sendApi
+        lg.mark(`[sendApi] enter this=${ctx?.constructor?.name} hasBot=${!!ctx?.bot} sendApi=${sendApiType} raw=${rawSendApiType} universal=${ctx?.sendApi?.__xunlu_universal} runtimeBot=${runtimeBot?.constructor?.name}`)
+      }
+
       // 优先尝试原生 sendApi（绕过 universal wrapper 链）
       const nativeSendApi = ctx?.bot?.sendApi ?? ctx?.__xunlu_raw_sendApi
       if (typeof nativeSendApi === "function" && !nativeSendApi.__xunlu_universal) {
