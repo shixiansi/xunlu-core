@@ -257,11 +257,11 @@ function renderField(field, values, scopeKey) {
       <div class="${classes.join(" ")}">
         <span>${escapeHtml(field.label || field.path)}</span>
         <div class="pc-field" data-plugin-control="${escapeHtml(scopeKey + ":" + field.path)}" data-sub-type="${escapeHtml(sub)}">
-          <div class="pc-row">
+          <div class="pc-dropdown-zone">
             <div class="pc-search-wrapper"><i class="fas fa-search"></i><input type="text" class="pc-search" placeholder="${escapeHtml(sub === "plugin" ? "搜索插件名称..." : "搜索命令 key...")}"></div>
+            <div class="pc-picks"></div>
           </div>
           <div class="pc-tags"></div>
-          <div class="pc-picks"></div>
         </div>
       </div>
     `
@@ -443,7 +443,28 @@ async function initPluginControlField(container, subType) {
     })
   }
 
-  container.querySelector(".pc-search")?.addEventListener("input", refresh)
+  const searchInput = container.querySelector(".pc-search")
+  const pickEl = container.querySelector(".pc-picks")
+  let hideTimer = null
+
+  function showPicks() {
+    if (hideTimer) { clearTimeout(hideTimer); hideTimer = null }
+    pickEl.classList.add("show")
+    refresh()
+  }
+
+  function hidePicks() {
+    hideTimer = setTimeout(() => {
+      pickEl.classList.remove("show")
+    }, 180)
+  }
+
+  searchInput?.addEventListener("focus", showPicks)
+  searchInput?.addEventListener("input", refresh)
+  searchInput?.addEventListener("blur", hidePicks)
+  pickEl?.addEventListener("mousedown", e => {
+    e.preventDefault()
+  });
   await ensureData()
   refresh()
 }
