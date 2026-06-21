@@ -38,6 +38,11 @@ export class BaseAdapterDriver {
     return Object.values(botCore.pluginCatalog)
   }
 
+  getCommandRegistry() {
+    const botCore = this.getBotCore()
+    return botCore?.plugins || {}
+  }
+
   async reloadPlugins(options = {}) {
     const botCore = this.getBotCore()
     if (typeof botCore?.reloadBotPlugins === "function") {

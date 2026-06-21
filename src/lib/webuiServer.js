@@ -246,7 +246,7 @@ export async function startWebuiServer(options = {}) {
         const disabledPlugins = botCfg?.plugin_control?.disabled_plugins || []
         const disabledCommands = botCfg?.plugin_control?.disabled_commands || []
         const catalog = globalThis.__xunlu_runtime_kernel?.getLoadedPlugins?.() || []
-        const commands = globalThis.__xunlu_runtime_bot?.plugins || {}
+        const commands = globalThis.__xunlu_runtime_kernel?.getCommandRegistry?.() || {}
         res.json({
           ok: true,
           plugins: catalog.map(p => ({

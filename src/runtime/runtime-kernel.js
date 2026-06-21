@@ -112,6 +112,7 @@ export class RuntimeKernel {
       this.registerDefaultServices()
       await this.services.startAll(this)
       this.started = true
+      globalThis.__xunlu_runtime_kernel = this
       return this
     } catch (err) {
       await this.rollbackFailedStart(globals)
@@ -229,6 +230,10 @@ export class RuntimeKernel {
 
   getLoadedPlugins() {
     return this.driver?.getLoadedPlugins?.() || []
+  }
+
+  getCommandRegistry() {
+    return this.driver?.getCommandRegistry?.() || {}
   }
 
   getRuntimeContext() {
