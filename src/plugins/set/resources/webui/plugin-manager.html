@@ -6,91 +6,90 @@
 <title>插件管理 · xunlu-core</title>
 <link rel="stylesheet" href="/webui/static/style.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-<style>
-.container { max-width: 1100px; padding: 28px 32px; }
-.page-header { margin-bottom: 24px; }
-.page-header h1 { font-size: 22px; font-weight: 700; }
-.page-header p { color: var(--text-secondary); font-size: 13px; margin-top: 4px; }
-.toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
-.feedback { font-size: 13px; color: var(--green); font-weight: 500; }
-h2 { font-size: 15px; font-weight: 600; margin: 24px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; }
-h2 .count { font-weight: 400; font-size: 12px; color: var(--text-muted); }
-</style>
 </head>
 <body>
-<div class="container">
-  <div class="page-header">
-    <h1><i class="fas fa-sliders-h" style="color:var(--accent);margin-right:8px;"></i> 插件与命令管理</h1>
-    <p>开关控制插件和命令的启用/禁用状态，修改后需重载生效</p>
+<div class="main-area" style="max-width:1100px">
+  <div class="topbar">
+    <div>
+      <h2><i class="fas fa-sliders-h" style="color:var(--primary);margin-right:6px;"></i> 插件与命令管理</h2>
+      <p class="desc">开关控制插件和命令的启用/禁用状态，修改后需重载生效</p>
+    </div>
   </div>
 
-  <div class="toolbar">
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap">
     <button class="btn btn-primary" id="btnReload"><i class="fas fa-sync-alt"></i> 重载插件</button>
-    <span class="feedback" id="reloadMsg"></span>
+    <span id="reloadMsg" style="font-size:14px;color:var(--green);font-weight:500"></span>
   </div>
 
-  <h2><i class="fas fa-puzzle-piece"></i> 插件列表 <span class="count" id="pluginCount"></span></h2>
-  <table class="data-table" id="pluginTable">
-    <thead><tr><th>名称</th><th>标题</th><th>状态</th><th>操作</th></tr></thead>
-    <tbody></tbody>
-  </table>
+  <h3 style="font-size:15px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px"><i class="fas fa-puzzle-piece"></i> 插件列表 <span id="pluginCount" style="font-weight:400;font-size:12px;color:var(--text-muted)"></span></h3>
+  <div class="plugin-grid" id="pluginList"></div>
 
-  <h2><i class="fas fa-terminal"></i> 命令列表 <span class="count" id="cmdCount"></span></h2>
+  <h3 style="font-size:15px;font-weight:600;margin:24px 0 12px;display:flex;align-items:center;gap:8px"><i class="fas fa-terminal"></i> 命令列表 <span id="cmdCount" style="font-weight:400;font-size:12px;color:var(--text-muted)"></span></h3>
   <table class="data-table" id="cmdTable">
-    <thead><tr><th>插件</th><th>Key</th><th>匹配</th><th>状态</th><th>操作</th></tr></thead>
+    <thead><tr><th>插件</th><th>Key</th><th>匹配规则</th><th>状态</th><th>操作</th></tr></thead>
     <tbody></tbody>
   </table>
 </div>
 
 <script>
-const api = (p, o) => fetch(p, { credentials: "include", headers: { "Content-Type": "application/json" }, ...o }).then(r => { if (!r.ok) return r.json().then(e => { throw new Error(e.error || r.statusText) }); return r.json() })
-const $ = s => document.querySelector(s)
-let data = { plugins: [], commands: [] }
+const api=(p,o)=>fetch(p,{credentials:"include",headers:{"Content-Type":"application/json"},...o}).then(r=>{if(!r.ok)return r.json().then(e=>{throw new Error(e.error||r.statusText)});return r.json()})
+const $=s=>document.querySelector(s)
+let data={plugins:[],commands:[]}
 
-function toast(msg, err) {
-  const el = document.createElement("div")
-  el.className = "toast show " + (err ? "err" : "ok")
-  el.textContent = msg
+function toast(msg,err){
+  const el=document.createElement("div")
+  el.className="toast show "+(err?"err":"ok")
+  el.textContent=msg
   document.body.appendChild(el)
-  setTimeout(() => { el.classList.remove("show"); setTimeout(() => el.remove(), 200) }, 2500)
+  setTimeout(()=>{el.classList.remove("show");setTimeout(()=>el.remove(),200)},2500)
 }
 
-async function load() {
-  data = await api("/webui/api/plugin-manager/plugins")
-  $("#pluginCount").textContent = `(${data.plugins.length})`
-  $("#cmdCount").textContent = `(${data.commands.length})`
-  render("pluginTable", data.plugins, p => `<tr>
-    <td>${esc(p.name)}</td><td>${esc(p.title)}</td>
-    <td><span class="status-badge ${p.disabled ? 'off' : 'on'}">${p.disabled ? '已禁用' : '已启用'}</span></td>
-    <td><label class="switch"><input type="checkbox" ${p.disabled ? '' : 'checked'} onchange="togglePlugin('${esc(p.name)}',this.checked)"><span class="slider"></span></label></td>
-  </tr>`)
-  render("cmdTable", data.commands, c => `<tr>
+async function load(){
+  data=await api("/webui/api/plugin-manager/plugins")
+  $("#pluginCount").textContent=`(${data.plugins.length})`
+  $("#cmdCount").textContent=`(${data.commands.length})`
+
+  // plugins as cards
+  $("#pluginList").innerHTML=data.plugins.map(p=>`<div class="plugin-card">
+    <div class="card-icon"><i class="fas fa-cube"></i></div>
+    <div class="card-info">
+      <div class="header"><span class="name">${esc(p.name)}</span><span class="version">${esc(p.title)}</span></div>
+      <div class="desc">${p.disabled?'已禁用':'已启用'}</div>
+    </div>
+    <div class="card-status">
+      <span class="status-badge ${p.disabled?'off':'on'}">${p.disabled?'已禁用':'已启用'}</span>
+    </div>
+    <div class="card-actions">
+      <label class="switch"><input type="checkbox" ${p.disabled?'':'checked'} onchange="togglePlugin('${esc(p.name)}',this.checked)"><span class="slider"></span></label>
+    </div>
+  </div>`).join("")
+
+  // commands as table
+  document.querySelector("#cmdTable tbody").innerHTML=data.commands.map(c=>`<tr>
     <td>${esc(c.plugin)}</td>
-    <td>${c.key ? `<span class="key-badge">${esc(c.key)}</span>` : '-'}</td>
-    <td><code>${esc(c.reg || '(自动)')}</code></td>
-    <td><span class="status-badge ${c.disabled ? 'off' : 'on'}">${c.disabled ? '已禁用' : '已启用'}</span></td>
-    <td><label class="switch"><input type="checkbox" ${c.disabled ? '' : 'checked'} onchange="toggleCmd('${esc(c.id)}',this.checked)"><span class="slider"></span></label></td>
-  </tr>`)
+    <td>${c.key?`<span class="key-badge">${esc(c.key)}</span>`:'-'}</td>
+    <td><code>${esc(c.reg||'(自动)')}</code></td>
+    <td><span class="status-badge ${c.disabled?'off':'on'}">${c.disabled?'已禁用':'已启用'}</span></td>
+    <td><label class="switch"><input type="checkbox" ${c.disabled?'':'checked'} onchange="toggleCmd('${esc(c.id)}',this.checked)"><span class="slider"></span></label></td>
+  </tr>`).join("")
 }
 
-function render(tid, items, fn) { document.querySelector(`#${tid} tbody`).innerHTML = items.map(fn).join("") }
-
-async function togglePlugin(name, enable) {
-  await api("/webui/api/plugin-manager/toggle-plugin", { method: "POST", body: JSON.stringify({ name }) })
-  toast(enable ? `已启用 ${name}` : `已禁用 ${name}`); load()
+async function togglePlugin(name,enable){
+  await api("/webui/api/plugin-manager/toggle-plugin",{method:"POST",body:JSON.stringify({name})})
+  toast(enable?`已启用 ${name}`:`已禁用 ${name}`);load()
 }
 
-async function toggleCmd(id, enable) {
-  await api("/webui/api/plugin-manager/toggle-command", { method: "POST", body: JSON.stringify({ id }) })
-  toast(enable ? `已启用 ${id}` : `已禁用 ${id}`); load()
+async function toggleCmd(id,enable){
+  await api("/webui/api/plugin-manager/toggle-command",{method:"POST",body:JSON.stringify({id})})
+  toast(enable?`已启用 ${id}`:`已禁用 ${id}`);load()
 }
 
-function esc(s) { return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;") }
+function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
 
-$("#btnReload").addEventListener("click", async () => {
-  const r = await api("/webui/api/plugin-manager/reload", { method: "POST" })
-  $("#reloadMsg").textContent = r.message || "已重载"
-  setTimeout(() => $("#reloadMsg").textContent = "", 3000); load()
+$("#btnReload").addEventListener("click",async()=>{
+  const r=await api("/webui/api/plugin-manager/reload",{method:"POST"})
+  $("#reloadMsg").textContent=r.message||"已重载"
+  setTimeout(()=>$("#reloadMsg").textContent="",3000);load()
 })
 
 load()
