@@ -190,6 +190,13 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       const normalizedAction = normalizeApiActionName(protocol, action)
       if (!normalizedAction) throw new Error("[callApi] requires action")
 
+      // TRSS Bot 为包装对象，原生 Bot（含 adapter）以 uin 为 key 挂载在其上
+      const nativeBotKey = ctx ? Object.keys(ctx).find(k => ctx[k]?.adapter?.callApi) : null
+      const targetBot = nativeBotKey ? ctx[nativeBotKey] : ctx?.bot ?? ctx
+      if (targetBot?.adapter?.callApi) {
+        return await targetBot.adapter.callApi(normalizedAction, params)
+      }
+
       const rawCallApi = getRawMethod(runtimeBot, "callApi", api.callApi)
       {
         const r = await tryCallRawApi(rawCallApi, runtimeBot, normalizedAction, params)
@@ -226,6 +233,11 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       const takeoverAdapter = globalThis.__xunlu_takeover_adapter
       if (takeoverAdapter?.callApi) {
         return await takeoverAdapter.callApi(normalizedAction, params)
+      }
+
+      const lg = global.logger
+      if (lg?.mark) {
+        lg.mark(`[callApi] diag nativeBotKey=${nativeBotKey} hasTargetBot=${!!targetBot} targetBotSendApi=${typeof targetBot?.sendApi} targetBotAdapter=${typeof targetBot?.adapter} targetBotAdapterCallApi=${typeof targetBot?.adapter?.callApi} runtimeBotType=${typeof runtimeBot} runtimeBotSendApi=${typeof runtimeBot?.sendApi} runtimeBotUU=${runtimeBot?.sendApi?.__xunlu_universal} runtimeBotRaw=${typeof runtimeBot?.__xunlu_raw_sendApi} fallbackBotType=${typeof fallbackBot} takeoverAdapter=${typeof takeoverAdapter} takeoverAdapterCallApi=${typeof takeoverAdapter?.callApi}`)
       }
 
       throw new Error("[callApi] API not available")
