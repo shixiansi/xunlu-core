@@ -274,15 +274,22 @@ export function register(bot) {
   bot.registerCommand(["^(?:#|＃)?查看插件命令\\s+(.+)$", { key: "list-plugin-cmds", example: "查看插件命令 set", desc: "查看指定插件的所有命令列表（仅主人可用）" }], async ctx => {
     if (!ctx.isMaster) return false
 
-    const pluginName = String(ctx?.msg || "").replace(/^(?:#|＃)?查看插件命令\s+/, "").trim()
-    if (!pluginName) {
-      return await ctx.reply("用法：查看插件命令 <插件名>")
+    const userInput = String(ctx?.msg || "").replace(/^(?:#|＃)?查看插件命令\s+/, "").trim()
+    if (!userInput) {
+      return await ctx.reply("用法：查看插件命令 <插件名或别名>")
     }
+
+    const resolvedName = await resolvePluginFolderName(userInput)
+    const pluginName = resolvedName || userInput
 
     const plugins = ctx.baseBot?.plugins || {}
     const commandList = Object.values(plugins)
       .filter(p => p.plugin === pluginName)
-      .map(p => `${p.reg || "(空正则)"}`)
+      .map(p => {
+        const keyLabel = p.key ? `[${p.key}] ` : ""
+        const regLabel = p.reg || "(自动触发)"
+        return `${keyLabel}${regLabel}`
+      })
 
     if (commandList.length === 0) {
       return await ctx.reply(`插件 ${pluginName} 没有注册任何命令`)
