@@ -147,6 +147,7 @@ async function loadSession() {
 }
 
 async function loadPlugins() {
+  _pluginManagerDataCache = null
   const res = await api("/plugins")
   state.pluginStates = new Map()
   state.plugins = Array.isArray(res.plugins) ? res.plugins : []
@@ -371,12 +372,17 @@ function groupSectionsByScope(sections = []) {
   return map
 }
 
+let _pluginManagerDataCache = null
+
 async function initPluginControlField(container, subType) {
   let disabled = []
   let items = []
 
   async function loadData() {
-    const data = await api("/plugin-manager/plugins")
+    if (!_pluginManagerDataCache) {
+      _pluginManagerDataCache = await api("/plugin-manager/plugins")
+    }
+    const data = _pluginManagerDataCache
     if (subType === "plugin") {
       disabled = [...(data.disabledPlugins || [])]
       items = (data.plugins || []).map(p => ({ name: p.name || "", title: p.title || p.name || "" }))
