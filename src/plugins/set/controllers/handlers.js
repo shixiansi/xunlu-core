@@ -1,4 +1,5 @@
 import fs from "fs"
+import path from "path"
 
 import cfg from "../../../lib/config.js"
 import {
@@ -6,6 +7,26 @@ import {
   setCurrentGroupPrefix,
   setCurrentGroupPrefixEnabled,
 } from "../model/prefix-config.js"
+
+function resolvePluginFolderName(userInput, bot) {
+  const input = String(userInput || "").trim().toLowerCase()
+  if (!input) return null
+
+  // 直接文件夹名匹配
+  const pluginDir = path.join(bot?.baseBot?.pluginDir || "src/plugins", input)
+  if (fs.existsSync(pluginDir) && fs.statSync(pluginDir).isDirectory()) return input
+
+  // 别名/短名匹配（从 pluginCatalog 读取）
+  const catalog = bot?.baseBot?.pluginCatalog || {}
+  for (const [name, meta] of Object.entries(catalog)) {
+    const aliases = Array.isArray(meta.aliases) ? meta.aliases : []
+    const shortName = meta.pluginShortName || meta.shortName || ""
+    if (name.toLowerCase() === input) return name
+    if (shortName.toLowerCase() === input) return name
+    if (aliases.some(a => String(a).toLowerCase() === input)) return name
+  }
+  return null
+}
 
 async function ensureGroupMaster(ctx) {
   if (!ctx?.isGroup || !ctx?.group_id) {
@@ -78,12 +99,17 @@ export function register(bot) {
   // 插件管理命令
 
   // 禁用插件命令
-  bot.registerCommand(["^(?:#|＃)?禁用插件\\s+(.+)$", { example: "禁用插件 bilibili-plugin", desc: "禁用指定插件（仅主人可用，重载插件后生效）" }], async ctx => {
+  bot.registerCommand(["^(?:#|＃)?禁用插件\\s+(.+)$", { example: "禁用插件 抖音", desc: "禁用指定插件（支持文件夹名/别名/短名，仅主人可用，重载插件后生效）" }], async ctx => {
     if (!ctx.isMaster) return false
 
-    const pluginName = String(ctx?.msg || "").replace(/^(?:#|＃)?禁用插件\s+/, "").trim()
+    const userInput = String(ctx?.msg || "").replace(/^(?:#|＃)?禁用插件\s+/, "").trim()
+    if (!userInput) {
+      return await ctx.reply("用法：禁用插件 <插件名或别名>")
+    }
+
+    const pluginName = resolvePluginFolderName(userInput, global?.Bot || ctx?.bot)
     if (!pluginName) {
-      return await ctx.reply("用法：禁用插件 <插件名>")
+      return await ctx.reply(`未找到匹配的插件：${userInput}\n请使用文件夹名、别名或短名（如 #禁用插件 抖音）`)
     }
 
     const botCfg = cfg.getConfig("bot") || {}
@@ -103,12 +129,17 @@ export function register(bot) {
   })
 
   // 启用插件命令
-  bot.registerCommand(["^(?:#|＃)?启用插件\\s+(.+)$", { example: "启用插件 bilibili-plugin", desc: "启用指定插件（仅主人可用，重载插件后生效）" }], async ctx => {
+  bot.registerCommand(["^(?:#|＃)?启用插件\\s+(.+)$", { example: "启用插件 抖音", desc: "启用指定插件（支持文件夹名/别名/短名，仅主人可用，重载插件后生效）" }], async ctx => {
     if (!ctx.isMaster) return false
 
-    const pluginName = String(ctx?.msg || "").replace(/^(?:#|＃)?启用插件\s+/, "").trim()
+    const userInput = String(ctx?.msg || "").replace(/^(?:#|＃)?启用插件\s+/, "").trim()
+    if (!userInput) {
+      return await ctx.reply("用法：启用插件 <插件名或别名>")
+    }
+
+    const pluginName = resolvePluginFolderName(userInput, global?.Bot || ctx?.bot)
     if (!pluginName) {
-      return await ctx.reply("用法：启用插件 <插件名>")
+      return await ctx.reply(`未找到匹配的插件：${userInput}`)
     }
 
     const botCfg = cfg.getConfig("bot") || {}
