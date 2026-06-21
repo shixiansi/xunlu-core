@@ -128,14 +128,14 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       if (!normalizedAction) throw new Error("[sendApi] requires action")
 
       // 优先使用 Bot 上的原生 sendApi 或 adapter.callApi
-      const bot = ctx?.bot ?? ctx // TRSS Bot 自引用 ctx.bot === ctx，取自身即可
-      if (bot && typeof bot.sendApi === "function" && !bot.sendApi.__xunlu_universal) {
+      const targetBot = ctx?.bot ?? ctx
+      if (targetBot && typeof targetBot.sendApi === "function" && !targetBot.sendApi.__xunlu_universal) {
         try {
-          return await bot.sendApi(normalizedAction, params)
+          return await targetBot.sendApi(normalizedAction, params)
         } catch {}
       }
-      if (bot?.adapter?.callApi) {
-        return await bot.adapter.callApi(normalizedAction, params)
+      if (targetBot?.adapter?.callApi) {
+        return await targetBot.adapter.callApi(normalizedAction, params)
       }
 
       const rawSendApi = getRawMethod(runtimeBot, "sendApi", api.sendApi)
