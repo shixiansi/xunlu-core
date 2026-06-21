@@ -691,7 +691,23 @@ function filterByQuery(items, query, pluginMetaMap) {
 
 async function replyHelp(ctx, query, options = {}) {
   const rawList = typeof ctx?.listCommands === "function" ? ctx.listCommands() : []
-  const items = Array.isArray(rawList) ? rawList.map(normalizeHelpItem).filter(Boolean) : []
+  const rawArr = Array.isArray(rawList) ? rawList : []
+
+  // 从 xunlu-core 自身 catalog 补 key（TRSS-Yunzai 的 listCommands 不含 key）
+  const xunluPlugins = ctx?.baseBot?.plugins || {}
+  for (const raw of rawArr) {
+    if (raw?.key) continue
+    const reg = String(raw?.reg || "")
+    const pname = String(raw?.plugin || "")
+    for (const cmd of Object.values(xunluPlugins)) {
+      if (cmd?.key && cmd?.reg === reg && cmd?.plugin === pname) {
+        raw.key = cmd.key
+        break
+      }
+    }
+  }
+
+  const items = rawArr.map(normalizeHelpItem).filter(Boolean)
   const rawPlugins = typeof ctx?.listPlugins === "function" ? ctx.listPlugins() : []
   const pluginMetaMap = buildPluginMetaMap(rawPlugins, items)
   const filtered = filterByQuery(items, query, pluginMetaMap)
