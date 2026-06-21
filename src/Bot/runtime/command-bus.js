@@ -545,6 +545,9 @@ export class CommandBus {
       if (commandReg || cmdKey) {
         const keyId = cmdKey ? `${pname}:${cmdKey}` : ""
         const regId = commandReg ? `${pname}:${commandReg}` : ""
+        if (cmdKey) {
+          logger.mark?.(`[commandBus] check reg="${reg}" key="${cmdKey}" pname="${pname}" keyId="${keyId}" disabled=${JSON.stringify(disabledCommands)}`)
+        }
         const isDisabled = disabledCommands.some(item => {
           const disabledKey = String(item || "").trim()
           if (!disabledKey) return false
@@ -558,6 +561,8 @@ export class CommandBus {
         if (isDisabled) {
           logger.info?.(`[commandBus] skip disabled command: ${keyId || regId}`)
           return
+        }
+      }
         }
       }
 
