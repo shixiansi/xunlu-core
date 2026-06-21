@@ -127,23 +127,16 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       const normalizedAction = normalizeApiActionName(protocol, action)
       if (!normalizedAction) throw new Error("[sendApi] requires action")
 
-      // 优先使用 Bot 上的原生 sendApi 或 adapter.callApi
-      const targetBot = ctx?.bot ?? ctx
+      // TRSS Bot 为包装对象，原生 Bot（含 adapter）以 uin 为 key 挂载在其上
+      const nativeBotKey = ctx ? Object.keys(ctx).find(k => ctx[k]?.adapter?.callApi) : null
+      const targetBot = nativeBotKey ? ctx[nativeBotKey] : ctx?.bot ?? ctx
       if (targetBot && typeof targetBot.sendApi === "function" && !targetBot.sendApi.__xunlu_universal) {
         try {
           return await targetBot.sendApi(normalizedAction, params)
         } catch {}
       }
       if (targetBot?.adapter?.callApi) {
-        try {
-          return await targetBot.adapter.callApi(normalizedAction, params)
-        } catch (err) {
-          global.logger?.mark?.("[sendApi] adapter.callApi threw: " + (err?.message || err))
-        }
-      }
-
-      if (!targetBot?.adapter) {
-        global.logger?.mark?.("[sendApi] no adapter on targetBot type=" + targetBot?.constructor?.name + " hasSendApi=" + (typeof targetBot?.sendApi))
+        return await targetBot.adapter.callApi(normalizedAction, params)
       }
 
       const rawSendApi = getRawMethod(runtimeBot, "sendApi", api.sendApi)
