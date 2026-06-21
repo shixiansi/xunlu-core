@@ -12,9 +12,19 @@ const $ = selector => document.querySelector(selector)
 
 function setToast(message, kind = "", target = "#toast") {
   const el = $(target)
-  if (!el) return
-  el.className = `toast${kind ? ` ${kind}` : ""}`
+  if (!el) {
+    // fallback: create floating toast
+    const t = document.createElement("div")
+    t.className = "toast show " + (kind || "")
+    t.textContent = message || ""
+    document.body.appendChild(t)
+    setTimeout(() => { t.classList.remove("show"); setTimeout(() => t.remove(), 200) }, 3000)
+    return
+  }
+  el.className = `toast ${kind || ""}`
   el.textContent = message || ""
+  if (message) el.classList.add("show")
+  else el.classList.remove("show")
 }
 
 async function api(path, options = {}) {
@@ -195,18 +205,15 @@ function renderPluginList() {
 
   listEl.innerHTML = state.plugins
     .map(plugin => {
-      const classes = [
-        "plugin-item",
-        plugin.name === state.activePlugin ? "active" : "",
-        plugin.configurable ? "" : "disabled",
-      ]
-        .filter(Boolean)
-        .join(" ")
+      const active = plugin.name === state.activePlugin
+      const classes = `plugin-nav-item${active ? " active" : ""}`
       const desc = plugin.description || (plugin.configurable ? "已接入共享配置面板" : "尚未声明共享 WebUI 协议")
+      const icon = active ? "fa-chevron-right" : "fa-circle"
       return `
         <button class="${classes}" type="button" data-plugin="${escapeHtml(plugin.name)}">
-          <h3>${escapeHtml(plugin.title || plugin.name)}</h3>
-          <p>${escapeHtml(desc)}</p>
+          <span class="dot"><i class="fas ${icon}" style="font-size:6px;"></i></span>
+          <span>${escapeHtml(plugin.title || plugin.name)}</span>
+          ${plugin.configurable ? '<span class="badge-sub">config</span>' : ""}
         </button>
       `
     })
@@ -218,6 +225,15 @@ function renderPluginList() {
       void refreshActivePlugin().catch(handleError)
     })
   })
+
+  // stats
+  const disabledCount = state.plugins.filter(p => !p.configurable).length
+  const webuiCount = state.plugins.filter(p => p.configurable).length
+  if ($("#statPlugins")) $("#statPlugins").textContent = state.plugins.length
+  if ($("#statWebui")) $("#statWebui").textContent = webuiCount
+  if ($("#statDisabled")) $("#statDisabled").textContent = disabledCount
+  const activePlugin = state.plugins.find(p => p.name === state.activePlugin)
+  if ($("#statActive")) $("#statActive").textContent = activePlugin?.title || "-"
 }
 
 function renderHeader(definition) {
@@ -496,10 +512,10 @@ function syncSessionUi() {
   const title = safe?.ui?.title || "xunlu-core WebUI"
   const username = state.session?.user?.username || safe?.auth?.username || "admin"
 
-  $("#uiTitle").textContent = title
-  $("#sessionUser").textContent = username
-
-  if ($("#sys_title")) $("#sys_title").value = title
+  if ($("#uiTitle")) $("#uiTitle").textContent = title
+  if ($("#sessionUser")) $("#sessionUser").textContent = username
+  if ($("#sessionRole")) $("#sessionRole").textContent = "管理员"
+  if ($("#loginTitle")) $("#loginTitle").textContent = title
 }
 
 async function saveSystemSettings() {
@@ -598,7 +614,8 @@ async function initLogin() {
       })
       location.href = "/webui"
     } catch (error) {
-      handleError(error)
+      const toast = $("#loginToast")
+      if (toast) { toast.textContent = error?.message || "登录失败"; toast.style.color = "var(--red)" }
     }
   })
 }

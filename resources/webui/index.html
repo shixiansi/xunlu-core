@@ -3,34 +3,67 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>xunlu-core WebUI</title>
+  <title>xunlu-core · 插件管理</title>
   <link rel="stylesheet" href="/webui/static/style.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
   <script type="module" src="/webui/static/app.js" defer></script>
 </head>
 <body class="shell-page" data-page="dashboard">
   <aside class="sidebar">
     <div class="brand">
-      <h1 id="uiTitle">xunlu-core</h1>
-      <p class="sub">插件配置管理中心</p>
+      <div class="brand-icon">X</div>
+      <div class="brand-text">
+        <h1 id="uiTitle">xunlu-core</h1>
+        <span class="sub">插件管理中心</span>
+      </div>
     </div>
+
     <div class="sidebar-section">
-      <h3>插件列表</h3>
+      <span class="nav-label">插件列表</span>
       <nav class="plugin-nav" id="pluginList"></nav>
     </div>
-    <div class="sidebar-section" style="margin-top:8px">
-      <button class="btn btn-secondary" id="btnReloadPlugins" style="width:100%;justify-content:center;">重新加载插件</button>
+
+    <div class="sidebar-section">
+      <span class="nav-label">操作</span>
+      <div class="sidebar-action">
+        <button class="btn btn-secondary btn-full" id="btnReloadPlugins"><i class="fas fa-sync-alt"></i> 重新加载</button>
+      </div>
     </div>
+
     <div class="sidebar-footer">
-      <p class="user" id="sessionUser">未登录</p>
-      <button class="btn btn-ghost btn-sm" id="btnLogout">退出登录</button>
+      <div class="avatar"><i class="fas fa-user"></i></div>
+      <div class="user-info">
+        <span class="name" id="sessionUser">加载中...</span>
+        <span class="role" id="sessionRole">管理员</span>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="btnLogout" title="退出登录"><i class="fas fa-sign-out-alt"></i></button>
     </div>
   </aside>
 
   <div class="main-area">
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-info"><div class="stat-label">已加载插件</div><div class="stat-number" id="statPlugins">-</div></div>
+        <div class="stat-icon"><i class="fas fa-puzzle-piece"></i></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-info"><div class="stat-label">已接入 WebUI</div><div class="stat-number" id="statWebui">-</div></div>
+        <div class="stat-icon"><i class="fas fa-desktop"></i></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-info"><div class="stat-label">已禁用</div><div class="stat-number" id="statDisabled">-</div></div>
+        <div class="stat-icon"><i class="fas fa-ban"></i></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-info"><div class="stat-label">当前插件</div><div class="stat-number" id="statActive">-</div></div>
+        <div class="stat-icon"><i class="fas fa-sliders-h"></i></div>
+      </div>
+    </div>
+
     <div class="topbar">
       <div>
-        <h2 id="pluginTitle">系统概览</h2>
-        <p class="desc" id="pluginDescription">选择一个插件以查看和修改配置</p>
+        <h2 id="pluginTitle">系统总览</h2>
+        <p class="desc" id="pluginDescription">选择一个插件以查看和编辑配置</p>
       </div>
       <div class="tags" id="pluginTags"></div>
     </div>

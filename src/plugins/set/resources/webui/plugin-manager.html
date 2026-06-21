@@ -5,32 +5,37 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>插件管理 · xunlu-core</title>
 <link rel="stylesheet" href="/webui/static/style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
 <style>
-.container { max-width: 1000px; padding: 24px; }
-h1 { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
-.subtitle { color: var(--text-muted); font-size: 13px; margin-bottom: 24px; }
-.toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
-.feedback { font-size: 13px; color: var(--green); }
-h2 { font-size: 16px; font-weight: 600; margin: 24px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.container { max-width: 1100px; padding: 28px 32px; }
+.page-header { margin-bottom: 24px; }
+.page-header h1 { font-size: 22px; font-weight: 700; }
+.page-header p { color: var(--text-secondary); font-size: 13px; margin-top: 4px; }
+.toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+.feedback { font-size: 13px; color: var(--green); font-weight: 500; }
+h2 { font-size: 15px; font-weight: 600; margin: 24px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; }
+h2 .count { font-weight: 400; font-size: 12px; color: var(--text-muted); }
 </style>
 </head>
 <body>
 <div class="container">
-  <h1>插件与命令管理</h1>
-  <p class="subtitle">开关控制插件和命令的启用/禁用状态，修改后需重载生效。</p>
+  <div class="page-header">
+    <h1><i class="fas fa-sliders-h" style="color:var(--accent);margin-right:8px;"></i> 插件与命令管理</h1>
+    <p>开关控制插件和命令的启用/禁用状态，修改后需重载生效</p>
+  </div>
 
   <div class="toolbar">
-    <button class="btn btn-primary" id="btnReload">重载插件</button>
+    <button class="btn btn-primary" id="btnReload"><i class="fas fa-sync-alt"></i> 重载插件</button>
     <span class="feedback" id="reloadMsg"></span>
   </div>
 
-  <h2>插件列表</h2>
+  <h2><i class="fas fa-puzzle-piece"></i> 插件列表 <span class="count" id="pluginCount"></span></h2>
   <table class="data-table" id="pluginTable">
     <thead><tr><th>名称</th><th>标题</th><th>状态</th><th>操作</th></tr></thead>
     <tbody></tbody>
   </table>
 
-  <h2>命令列表</h2>
+  <h2><i class="fas fa-terminal"></i> 命令列表 <span class="count" id="cmdCount"></span></h2>
   <table class="data-table" id="cmdTable">
     <thead><tr><th>插件</th><th>Key</th><th>匹配</th><th>状态</th><th>操作</th></tr></thead>
     <tbody></tbody>
@@ -52,16 +57,18 @@ function toast(msg, err) {
 
 async function load() {
   data = await api("/webui/api/plugin-manager/plugins")
+  $("#pluginCount").textContent = `(${data.plugins.length})`
+  $("#cmdCount").textContent = `(${data.commands.length})`
   render("pluginTable", data.plugins, p => `<tr>
     <td>${esc(p.name)}</td><td>${esc(p.title)}</td>
-    <td class="${p.disabled ? 'status-off' : 'status-on'}">${p.disabled ? '已禁用' : '已启用'}</td>
+    <td><span class="status-badge ${p.disabled ? 'off' : 'on'}">${p.disabled ? '已禁用' : '已启用'}</span></td>
     <td><label class="switch"><input type="checkbox" ${p.disabled ? '' : 'checked'} onchange="togglePlugin('${esc(p.name)}',this.checked)"><span class="slider"></span></label></td>
   </tr>`)
   render("cmdTable", data.commands, c => `<tr>
     <td>${esc(c.plugin)}</td>
     <td>${c.key ? `<span class="key-badge">${esc(c.key)}</span>` : '-'}</td>
     <td><code>${esc(c.reg || '(自动)')}</code></td>
-    <td class="${c.disabled ? 'status-off' : 'status-on'}">${c.disabled ? '已禁用' : '已启用'}</td>
+    <td><span class="status-badge ${c.disabled ? 'off' : 'on'}">${c.disabled ? '已禁用' : '已启用'}</span></td>
     <td><label class="switch"><input type="checkbox" ${c.disabled ? '' : 'checked'} onchange="toggleCmd('${esc(c.id)}',this.checked)"><span class="slider"></span></label></td>
   </tr>`)
 }
