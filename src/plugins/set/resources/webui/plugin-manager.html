@@ -6,92 +6,147 @@
 <title>插件管理 · xunlu-core</title>
 <link rel="stylesheet" href="/webui/static/style.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+<style>
+.container{max-width:1100px;padding:28px 32px}
+.page-header{margin-bottom:20px}
+.page-header h1{font-size:20px;font-weight:700}
+.page-header p{color:var(--text-secondary);font-size:14px;margin-top:4px}
+.section{margin-bottom:28px}
+.section h3{font-size:15px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.search-wrapper{position:relative;flex:1;min-width:200px;max-width:400px}
+.search-wrapper i{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:13px}
+.search-wrapper input{width:100%;padding:8px 12px 8px 32px;background:var(--bg-input);border:1px solid var(--border);border-radius:20px;font-size:13px;font-family:var(--font);outline:none;transition:var(--transition)}
+.search-wrapper input:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(22,119,255,0.1)}
+select.filter-select{padding:8px 32px 8px 12px;background:var(--bg-input);border:1px solid var(--border);border-radius:20px;font-size:13px;font-family:var(--font);appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12'%3E%3Cpath fill='%23999' d='M6 8L1 3h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;cursor:pointer}
+.tag-list{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.tag{display:inline-flex;align-items:center;gap:4px;padding:5px 12px;border-radius:20px;font-size:13px;font-weight:500;background:var(--primary-bg);color:var(--primary);cursor:default}
+.tag.tag-off{background:rgba(0,0,0,0.04);color:var(--text-muted)}
+.tag .tag-x{cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;margin-left:2px;transition:var(--transition)}
+.tag .tag-x:hover{background:rgba(0,0,0,0.1)}
+.tag.tag-off .tag-x:hover{background:rgba(0,0,0,0.08)}
+.pick-list{display:flex;flex-wrap:wrap;gap:6px;max-height:240px;overflow-y:auto;padding:8px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius)}
+.pick-item{padding:4px 12px;border-radius:14px;font-size:12px;cursor:pointer;transition:var(--transition);color:var(--text-secondary);border:1px solid transparent}
+.pick-item:hover{border-color:var(--primary);color:var(--primary);background:var(--primary-bg)}
+.pick-item.picked{background:var(--primary-bg);color:var(--primary);font-weight:500}
+.empty-hint{color:var(--text-muted);font-size:13px;padding:8px}
+.feedback{font-size:13px;font-weight:500;min-height:20px}
+.feedback.green{color:var(--green)}
+.btn-full{width:100%;justify-content:center}
+</style>
 </head>
 <body>
-<div class="main-area" style="max-width:1100px">
-  <div class="topbar">
-    <div>
-      <h2><i class="fas fa-sliders-h" style="color:var(--primary);margin-right:6px;"></i> 插件与命令管理</h2>
-      <p class="desc">开关控制插件和命令的启用/禁用状态，修改后需重载生效</p>
+<div class="container">
+  <div class="page-header">
+    <h1><i class="fas fa-sliders-h" style="color:var(--primary);margin-right:8px"></i>插件与命令管理</h1>
+    <p>搜索并选择要禁用的插件或命令，已禁用的以标签展示，点击标签 × 可取消禁用。修改后需点击"保存并重载"生效。</p>
+  </div>
+
+  <div class="row" style="margin-bottom:16px">
+    <button class="btn btn-primary" id="btnSaveReload"><i class="fas fa-save"></i> 保存并重载</button>
+    <span class="feedback" id="saveMsg"></span>
+  </div>
+
+  <!-- 插件禁用 -->
+  <div class="section">
+    <h3><i class="fas fa-puzzle-piece"></i> 插件禁用管理</h3>
+    <div class="row">
+      <div class="search-wrapper"><i class="fas fa-search"></i><input type="text" id="pluginSearch" placeholder="搜索插件名称..."></div>
     </div>
+    <div class="tag-list" id="pluginTagsDisabled"></div>
+    <div class="pick-list" id="pluginPickList"></div>
   </div>
 
-  <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap">
-    <button class="btn btn-primary" id="btnReload"><i class="fas fa-sync-alt"></i> 重载插件</button>
-    <span id="reloadMsg" style="font-size:14px;color:var(--green);font-weight:500"></span>
+  <!-- 命令禁用 -->
+  <div class="section">
+    <h3><i class="fas fa-terminal"></i> 命令禁用管理</h3>
+    <div class="row">
+      <div class="search-wrapper"><i class="fas fa-search"></i><input type="text" id="cmdSearch" placeholder="搜索命令 key 或正则..."></div>
+      <select class="filter-select" id="cmdPluginFilter"><option value="">全部插件</option></select>
+    </div>
+    <div class="tag-list" id="cmdTagsDisabled"></div>
+    <div class="pick-list" id="cmdPickList"></div>
   </div>
-
-  <h3 style="font-size:15px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px"><i class="fas fa-puzzle-piece"></i> 插件列表 <span id="pluginCount" style="font-weight:400;font-size:12px;color:var(--text-muted)"></span></h3>
-  <div class="plugin-grid" id="pluginList"></div>
-
-  <h3 style="font-size:15px;font-weight:600;margin:24px 0 12px;display:flex;align-items:center;gap:8px"><i class="fas fa-terminal"></i> 命令列表 <span id="cmdCount" style="font-weight:400;font-size:12px;color:var(--text-muted)"></span></h3>
-  <table class="data-table" id="cmdTable">
-    <thead><tr><th>插件</th><th>Key</th><th>匹配规则</th><th>状态</th><th>操作</th></tr></thead>
-    <tbody></tbody>
-  </table>
 </div>
 
 <script>
-const api=(p,o)=>fetch(p,{credentials:"include",headers:{"Content-Type":"application/json"},...o}).then(r=>{if(!r.ok)return r.json().then(e=>{throw new Error(e.error||r.statusText)});return r.json()})
+const API=(p,o)=>fetch(p,{credentials:"include",headers:{"Content-Type":"application/json"},...o}).then(r=>{if(!r.ok)return r.json().then(e=>{throw new Error(e.error||r.statusText)});return r.json()})
 const $=s=>document.querySelector(s)
-let data={plugins:[],commands:[]}
+let data={plugins:[],commands:[],disabledPlugins:[],disabledCommands:[]}
 
-function toast(msg,err){
-  const el=document.createElement("div")
-  el.className="toast show "+(err?"err":"ok")
-  el.textContent=msg
-  document.body.appendChild(el)
-  setTimeout(()=>{el.classList.remove("show");setTimeout(()=>el.remove(),200)},2500)
-}
+function msg(text,err){const el=$("#saveMsg");el.textContent=text;el.className="feedback"+(err?"":" green");setTimeout(()=>{el.textContent=""},3000)}
 
 async function load(){
-  data=await api("/webui/api/plugin-manager/plugins")
-  $("#pluginCount").textContent=`(${data.plugins.length})`
-  $("#cmdCount").textContent=`(${data.commands.length})`
-
-  // plugins as cards
-  $("#pluginList").innerHTML=data.plugins.map(p=>`<div class="plugin-card">
-    <div class="card-icon"><i class="fas fa-cube"></i></div>
-    <div class="card-info">
-      <div class="header"><span class="name">${esc(p.name)}</span><span class="version">${esc(p.title)}</span></div>
-      <div class="desc">${p.disabled?'已禁用':'已启用'}</div>
-    </div>
-    <div class="card-status">
-      <span class="status-badge ${p.disabled?'off':'on'}">${p.disabled?'已禁用':'已启用'}</span>
-    </div>
-    <div class="card-actions">
-      <label class="switch"><input type="checkbox" ${p.disabled?'':'checked'} onchange="togglePlugin('${esc(p.name)}',this.checked)"><span class="slider"></span></label>
-    </div>
-  </div>`).join("")
-
-  // commands as table
-  document.querySelector("#cmdTable tbody").innerHTML=data.commands.map(c=>`<tr>
-    <td>${esc(c.plugin)}</td>
-    <td>${c.key?`<span class="key-badge">${esc(c.key)}</span>`:'-'}</td>
-    <td><code>${esc(c.reg||'(自动)')}</code></td>
-    <td><span class="status-badge ${c.disabled?'off':'on'}">${c.disabled?'已禁用':'已启用'}</span></td>
-    <td><label class="switch"><input type="checkbox" ${c.disabled?'':'checked'} onchange="toggleCmd('${esc(c.id)}',this.checked)"><span class="slider"></span></label></td>
-  </tr>`).join("")
+  data=await API("/webui/api/plugin-manager/plugins")
+  data.disabledPlugins=data.disabledPlugins||[]
+  data.disabledCommands=data.disabledCommands||[]
+  renderPluginTags()
+  renderPluginPicks()
+  renderCmdTags()
+  renderCmdPicks()
+  renderCmdPluginFilter()
 }
 
-async function togglePlugin(name,enable){
-  await api("/webui/api/plugin-manager/toggle-plugin",{method:"POST",body:JSON.stringify({name})})
-  toast(enable?`已启用 ${name}`:`已禁用 ${name}`);load()
+// ==== Plugins ====
+function renderPluginTags(){
+  const el=$("#pluginTagsDisabled")
+  if(!data.disabledPlugins.length){el.innerHTML='<span class="empty-hint">暂无禁用插件</span>';return}
+  el.innerHTML=data.disabledPlugins.map(p=>`<span class="tag tag-off">${esc(p)} <span class="tag-x" onclick="untogglePlugin('${esc(p)}')">&times;</span></span>`).join("")
+}
+function renderPluginPicks(){
+  const el=$("#pluginPickList"),q=($("#pluginSearch")?.value||"").toLowerCase()
+  const filtered=data.plugins.filter(p=>p.name.toLowerCase().includes(q)).sort((a,b)=>a.name.localeCompare(b.name))
+  if(!filtered.length){el.innerHTML='<span class="empty-hint">无匹配插件</span>';return}
+  el.innerHTML=filtered.map(p=>{
+    const disabled=data.disabledPlugins.includes(p.name)
+    return `<span class="pick-item ${disabled?'picked':''}" onclick="togglePlugin('${esc(p.name)}')">${esc(p.title||p.name)} <span style="color:var(--text-muted);font-size:11px">${esc(p.name)}</span></span>`
+  }).join("")
+}
+async function togglePlugin(name){
+  await API("/webui/api/plugin-manager/toggle-plugin",{method:"POST",body:JSON.stringify({name})})
+  await load()
+}
+async function untogglePlugin(name){await togglePlugin(name)}
+
+// ==== Commands ====
+function renderCmdTags(){
+  const el=$("#cmdTagsDisabled")
+  if(!data.disabledCommands.length){el.innerHTML='<span class="empty-hint">暂无禁用命令</span>';return}
+  el.innerHTML=data.disabledCommands.map(c=>`<span class="tag tag-off">${esc(c)} <span class="tag-x" onclick="untoggleCmd('${esc(c)}')">&times;</span></span>`).join("")
+}
+function renderCmdPicks(){
+  const el=$("#cmdPickList"),q=($("#cmdSearch")?.value||"").toLowerCase(),pf=($("#cmdPluginFilter")?.value||"").toLowerCase()
+  const filtered=data.commands.filter(c=>{
+    if(pf && c.plugin.toLowerCase()!==pf)return false
+    if(!q)return true
+    return (c.key||"").toLowerCase().includes(q)||(c.reg||"").toLowerCase().includes(q)||(`"${c.plugin}:${c.key||c.reg}"`.toLowerCase().includes(q))
+  })
+  if(!filtered.length){el.innerHTML='<span class="empty-hint">无匹配命令</span>';return}
+  el.innerHTML=filtered.map(c=>{
+    const id=`${c.plugin}:${c.key||c.reg}`;const disabled=data.disabledCommands.includes(id)
+    return `<span class="pick-item ${disabled?'picked':''}" onclick="toggleCmd('${esc(id)}')"><span class="key-badge">${esc(c.plugin)}</span> ${c.key?esc(c.key):esc(c.reg||'(自动)')}</span>`
+  }).join("")
+}
+async function toggleCmd(id){
+  await API("/webui/api/plugin-manager/toggle-command",{method:"POST",body:JSON.stringify({id})})
+  await load()
+}
+async function untoggleCmd(id){await toggleCmd(id)}
+function renderCmdPluginFilter(){
+  const el=$("#cmdPluginFilter"),names=[...new Set(data.commands.map(c=>c.plugin))].sort()
+  el.innerHTML='<option value="">全部插件</option>'+names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join("")
 }
 
-async function toggleCmd(id,enable){
-  await api("/webui/api/plugin-manager/toggle-command",{method:"POST",body:JSON.stringify({id})})
-  toast(enable?`已启用 ${id}`:`已禁用 ${id}`);load()
-}
-
-function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
-
-$("#btnReload").addEventListener("click",async()=>{
-  const r=await api("/webui/api/plugin-manager/reload",{method:"POST"})
-  $("#reloadMsg").textContent=r.message||"已重载"
-  setTimeout(()=>$("#reloadMsg").textContent="",3000);load()
+// ==== Events ====
+$("#pluginSearch")?.addEventListener("input",renderPluginPicks)
+$("#cmdSearch")?.addEventListener("input",renderCmdPicks)
+$("#cmdPluginFilter")?.addEventListener("change",renderCmdPicks)
+$("#btnSaveReload")?.addEventListener("click",async()=>{
+  const r=await API("/webui/api/plugin-manager/reload",{method:"POST"})
+  msg(r.message||"已保存并重载");await load()
 })
 
+function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
 load()
 </script>
 </body>

@@ -37,7 +37,7 @@
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 
 html,body{
-  height:100%;background:var(--bg-page);color:var(--text);
+  height:100%;color:var(--text);
   font-family:var(--font);font-size:14px;line-height:1.6;
   -webkit-font-smoothing:antialiased;
 }
