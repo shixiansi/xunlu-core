@@ -541,6 +541,7 @@ function normalizeHelpItem(item) {
     pluginTitle: String(item?.pluginTitle || "").trim(),
     pluginShortName: String(item?.pluginShortName || "").trim(),
     pluginAliases: Array.isArray(item?.pluginAliases) ? item.pluginAliases : [],
+    key: String(item?.key || "").trim() || undefined,
     example: clampText(example, 60),
     desc: clampText(desc, 96),
     event,
@@ -766,10 +767,11 @@ async function replyHelp(ctx, query, options = {}) {
     lines.push(`[${p.title}] ${p.summaryText}`)
     if (p.aliasText) lines.push(`别名：${p.aliasText}`)
     if (p.detailHint) lines.push(`查看：${p.detailHint}`)
-    for (const c of p.commands.slice(0, 12)) {
-      const label = [c.triggerLabel, c.eventCategory].filter(Boolean).join("·")
-      lines.push(`- [${label}] ${c.example}：${c.desc}`)
-    }
+      for (const c of p.commands.slice(0, 12)) {
+        const label = [c.triggerLabel, c.eventCategory].filter(Boolean).join("·")
+        const keyHint = c.key ? ` [${c.key}]` : ""
+        lines.push(`- [${label}]${keyHint} ${c.example}：${c.desc}`)
+      }
     if (p.commands.length > 12) lines.push(`- ...(共 ${p.commands.length} 条)`)
     lines.push("")
   }
