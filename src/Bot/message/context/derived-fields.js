@@ -76,7 +76,7 @@ function applyDerivedFieldsFromUniversalSegments(ctx) {
   if (!hasExistingMsg) ctx.msg = msgText
   ctx.url = msgText.match(URL_REGEXP)?.[0] || ""
 
-  ctx.img = segments
+  const imgs = segments
     .filter(seg => normalizeDerivedSegmentType(seg?.type) === UniversalSegmentType.IMAGE)
     .map(seg => {
       if (seg?.data?.url) return seg.data.url
@@ -84,6 +84,7 @@ function applyDerivedFieldsFromUniversalSegments(ctx) {
       return classifyMediaReference(file).kind === "url" ? file : undefined
     })
     .filter(Boolean)
+  if (imgs.length > 0) ctx.img = imgs
 
   const selfId = ctx.self_id !== undefined && ctx.self_id !== null ? String(ctx.self_id) : ""
 
