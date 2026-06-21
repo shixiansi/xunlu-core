@@ -2,22 +2,23 @@ import fs from "fs"
 import path from "path"
 
 import cfg from "../../../lib/config.js"
+import { getRuntimePaths } from "../../../runtime/runtime-context.js"
 import {
   formatGroupPrefixState,
   setCurrentGroupPrefix,
   setCurrentGroupPrefixEnabled,
 } from "../model/prefix-config.js"
 
-function resolvePluginFolderName(userInput, bot) {
+function resolvePluginFolderName(userInput) {
   const input = String(userInput || "").trim().toLowerCase()
   if (!input) return null
 
-  // 直接文件夹名匹配
-  const pluginDir = path.join(bot?.baseBot?.pluginDir || "src/plugins", input)
+  // 直接文件夹名匹配（相对于 xunlu-core 根目录）
+  const pluginDir = path.join(getRuntimePaths().rootDir, "src", "plugins", input)
   if (fs.existsSync(pluginDir) && fs.statSync(pluginDir).isDirectory()) return input
 
   // 别名/短名匹配（从 pluginCatalog 读取）
-  const catalog = bot?.baseBot?.pluginCatalog || {}
+  const catalog = globalThis.__xunlu_core?.commandBus?.getCatalog?.() || {}
   for (const [name, meta] of Object.entries(catalog)) {
     const aliases = Array.isArray(meta.aliases) ? meta.aliases : []
     const shortName = meta.pluginShortName || meta.shortName || ""
@@ -107,7 +108,7 @@ export function register(bot) {
       return await ctx.reply("用法：禁用插件 <插件名或别名>")
     }
 
-    const pluginName = resolvePluginFolderName(userInput, global?.Bot || ctx?.bot)
+    const pluginName = resolvePluginFolderName(userInput)
     if (!pluginName) {
       return await ctx.reply(`未找到匹配的插件：${userInput}\n请使用文件夹名、别名或短名（如 #禁用插件 抖音）`)
     }
@@ -137,7 +138,7 @@ export function register(bot) {
       return await ctx.reply("用法：启用插件 <插件名或别名>")
     }
 
-    const pluginName = resolvePluginFolderName(userInput, global?.Bot || ctx?.bot)
+    const pluginName = resolvePluginFolderName(userInput)
     if (!pluginName) {
       return await ctx.reply(`未找到匹配的插件：${userInput}`)
     }
