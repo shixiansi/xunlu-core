@@ -181,8 +181,11 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
 
       const lg = global.logger
       if (lg?.mark) {
-        const nativeBotKey = ctx ? Object.keys(ctx).find(k => ctx[k]?.adapter?.callApi) : null
-        lg.mark(`[sendApi] diag nativeBotKey=${nativeBotKey} targetBotAdapter=${typeof ctx?.[nativeBotKey]?.adapter} targetBotAdapterCallApi=${typeof ctx?.[nativeBotKey]?.adapter?.callApi} ctxKeys=${Object.keys(ctx || {}).length} runtimeBotSendApi=${typeof runtimeBot?.sendApi} runtimeBotUU=${runtimeBot?.sendApi?.__xunlu_universal} takeoverAdapter=${typeof takeoverAdapter}`)
+        const nbKeys = ctx ? Object.keys(ctx) : []
+        const nbOwn = ctx ? Object.getOwnPropertyNames(ctx) : []
+        const nbFound = nbKeys.find(k => ctx[k]?.adapter?.callApi) || nbOwn.find(k => ctx[k]?.adapter?.callApi)
+        const nbSelfId = String(ctx?.self_id ?? ctx?.uin ?? '')
+        lg.mark(`[sendApi] diag nbFound=${nbFound} nbSelfId=${nbSelfId} hasSelfKey=${!!ctx?.[nbSelfId]?.adapter} keys=${nbKeys.length} own=${nbOwn.length} keysSample=${nbKeys.slice(0,5).join(',')} runtimeBotUU=${runtimeBot?.sendApi?.__xunlu_universal} takeoverAdapter=${typeof takeoverAdapter}`)
       }
 
       throw new Error("[sendApi] API not available")
