@@ -31,11 +31,6 @@ async function resolvePluginFolderName(userInput) {
   const rootDir = getRuntimePaths().rootDir
   const pluginsDir = path.join(rootDir, "src", "plugins")
 
-  // 文件夹名直接匹配
-  const directPath = path.join(pluginsDir, input)
-  if (fs.existsSync(directPath) && fs.statSync(directPath).isDirectory()) return input
-
-  // 遍历所有插件目录，匹配 name / title / shortName / aliases
   if (!fs.existsSync(pluginsDir)) return null
   const entries = fs.readdirSync(pluginsDir, { withFileTypes: true })
   for (const entry of entries) {
@@ -50,12 +45,13 @@ async function resolvePluginFolderName(userInput) {
       const title = String(meta.title || "").trim()
       const aliases = Array.isArray(meta.aliases) ? meta.aliases.map(String) : []
       if (
+        entry.name === input ||
         name === input ||
         shortName === input ||
         title === input ||
         aliases.includes(input)
       ) {
-        return entry.name
+        return name || entry.name
       }
     } catch {}
   }
