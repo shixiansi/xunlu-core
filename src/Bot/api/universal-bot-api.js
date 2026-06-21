@@ -127,22 +127,18 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       const normalizedAction = normalizeApiActionName(protocol, action)
       if (!normalizedAction) throw new Error("[sendApi] requires action")
 
-      // 诊断：谁在调用 universal sendApi
-      const lg = global.logger
-      if (lg?.mark) {
-        const sendApiType = typeof ctx?.sendApi
-        const rawSendApiType = typeof ctx?.__xunlu_raw_sendApi
-        const selfIsBot = ctx ? ctx === ctx.bot : null
-        lg.mark(`[sendApi] enter this=${ctx?.constructor?.name} hasBot=${!!ctx?.bot} selfIsBot=${selfIsBot} botSendApiU=${ctx?.bot?.sendApi?.__xunlu_universal} sendApi=${sendApiType} raw=${rawSendApiType} universal=${ctx?.sendApi?.__xunlu_universal} runtimeBot=${runtimeBot?.constructor?.name}`)
-      }
-
-      // 优先尝试原生 sendApi（绕过 universal wrapper 链）
-      const nativeSendApi = ctx?.bot?.sendApi ?? ctx?.__xunlu_raw_sendApi
-      if (typeof nativeSendApi === "function" && !nativeSendApi.__xunlu_universal) {
-        try {
-          return await nativeSendApi.call(ctx.bot || ctx, normalizedAction, params)
-        } catch (err) {
-          if (lg?.mark) lg.mark(`[sendApi] native sendApi threw: ${err?.message || err}`)
+      // 尝试多种方式找到原生 sendApi（绕过 universal wrapper 链）
+      const nativeCandidates = [
+        ctx?.__xunlu_raw_sendApi,
+        ctx?.bot?.sendApi,
+        runtimeBot?.__xunlu_raw_sendApi,
+        ctx?.constructor?.prototype?.sendApi,
+      ]
+      for (const candidate of nativeCandidates) {
+        if (typeof candidate === "function" && !candidate.__xunlu_universal) {
+          try {
+            return await candidate.call(ctx || runtimeBot, normalizedAction, params)
+          } catch {}
         }
       }
 
