@@ -374,10 +374,8 @@ function groupSectionsByScope(sections = []) {
 async function initPluginControlField(container, subType) {
   let disabled = []
   let items = []
-  let loaded = false
 
-  async function ensureData() {
-    if (loaded) return
+  async function loadData() {
     const data = await api("/plugin-manager/plugins")
     if (subType === "plugin") {
       disabled = [...(data.disabledPlugins || [])]
@@ -389,7 +387,6 @@ async function initPluginControlField(container, subType) {
         return { name, title: `[${c.plugin || ""}] ${c.key || c.reg || "(auto)"}`, plugin: c.plugin || "" }
       })
     }
-    loaded = true
   }
 
   async function toggle(name) {
@@ -405,7 +402,8 @@ async function initPluginControlField(container, subType) {
   }
 
   function refresh() {
-    const q = (container.querySelector(".pc-search")?.value || "").toLowerCase()
+    const searchInput = container.querySelector(".pc-search")
+    const q = (searchInput?.value || "").toLowerCase()
     const filtered = items.filter(item =>
       item.name.toLowerCase().includes(q) || (item.title || "").toLowerCase().includes(q),
     )
@@ -459,14 +457,15 @@ async function initPluginControlField(container, subType) {
     }, 180)
   }
 
+  await loadData()
+  refresh()
+
   searchInput?.addEventListener("focus", showPicks)
   searchInput?.addEventListener("input", refresh)
   searchInput?.addEventListener("blur", hidePicks)
   pickEl?.addEventListener("mousedown", e => {
     e.preventDefault()
-  });
-  await ensureData()
-  refresh()
+  })
 }
 
 async function saveScope(pluginName, scope, sections) {
