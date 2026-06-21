@@ -526,8 +526,8 @@ function normalizeHelpItem(item) {
   const mode = hasReg && isMessage ? "command" : "auto"
   const eventMeta = getEventMeta(event)
 
-  // 空 reg 的消息监听器通常属于内部逻辑，避免塞满帮助页；非消息事件则展示为自动触发能力
-  if (!hasReg && !help && isMessage) return null
+  // 空 reg 的消息监听器通常属于内部逻辑，但有 key 的命令也展示出来方便禁用
+  if (!hasReg && !help && !item?.key && isMessage) return null
 
   const example = pickHelpExample(help) || autoExampleFromReg(reg) || (mode === "auto" ? eventMeta.title : "(指令)")
   const helpDesc = pickHelpDesc(help)
