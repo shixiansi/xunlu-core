@@ -127,6 +127,13 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       const normalizedAction = normalizeApiActionName(protocol, action)
       if (!normalizedAction) throw new Error("[sendApi] requires action")
 
+      // 优先尝试 ctx.bot 上的原生 sendApi（绕过 universal wrapper 链）
+      if (ctx?.bot && typeof ctx.bot.sendApi === "function" && !ctx.bot.sendApi.__xunlu_universal) {
+        try {
+          return await ctx.bot.sendApi(normalizedAction, params)
+        } catch {}
+      }
+
       const rawSendApi = getRawMethod(runtimeBot, "sendApi", api.sendApi)
       {
         const r = await tryCallRawApi(rawSendApi, runtimeBot, normalizedAction, params)
