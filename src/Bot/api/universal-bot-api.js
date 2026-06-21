@@ -161,14 +161,11 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
         if (fbSendApi) return await fbSendApi(normalizedAction, params)
       }
 
-      // takeover 模式直通: 直接走全局 adapter 引用
+      // takeover 模式直通
       const takeoverAdapter = globalThis.__xunlu_takeover_adapter
       if (takeoverAdapter?.callApi) {
         return await takeoverAdapter.callApi(normalizedAction, params)
       }
-
-      const lg = global.logger
-      if (lg?.mark) lg.mark(`[sendApi] takeoverAdapter=${typeof takeoverAdapter} adapterCallApi=${typeof takeoverAdapter?.callApi}`)
 
       throw new Error("[sendApi] API not available")
     },
@@ -885,12 +882,10 @@ export function applyUniversalBotApi(target, { bot, adapterHint, override = [], 
     if (excludeSet.has(key)) continue
     if (!overrideSet.has(key) && typeof target[key] === "function") continue
 
-    // 若覆盖已有实现，则缓存原实现，避免通用封装递归调用自身
-    if (overrideSet.has(key) && typeof target[key] === "function") {
+    // 覆盖前始终缓存原实现（无论是否在 override 列表中）
+    if (typeof target[key] === "function") {
       const rawKey = `__xunlu_raw_${key}`
-      if (typeof target[rawKey] !== "function") {
-        target[rawKey] = target[key]
-      }
+      target[rawKey] = target[key]
     }
     target[key] = value
   }
