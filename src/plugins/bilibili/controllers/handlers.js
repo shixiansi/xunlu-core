@@ -61,6 +61,7 @@ const dataBgPath = path.relative(
   path.join(filemage.RootPath, "src", "plugins", "bilibili", "resources", "html", "bilibili"),
   path.join(filemage.RootPath, "data", "bilibili", "bg"),
 ).replace(/\\/g, "/") + "/"
+const absBgPath = path.join(filemage.RootPath, "data", "bilibili", "bg")
 const GROUP_DATA_DIR = bilibiliCachePaths.groupDataDir
 const BILIBILI_VIDEO_DIR = bilibiliCachePaths.videoDir
 const {
@@ -694,6 +695,7 @@ export function register(bot) {
         await renderDynamicMessage(ctx, result, {
           getRandomBackground: getRandomBilibiliBackground,
           bgPath: dataBgPath,
+          absBgPath,
           logger,
         }),
       )
@@ -792,6 +794,7 @@ export function register(bot) {
           const dynamicMessage = await renderDynamicMessage(bot, result, {
             getRandomBackground: getRandomBilibiliBackground,
             bgPath: dataBgPath,
+            absBgPath,
             logger,
           })
           const sendResult = await bot.sendMessage({ group_id: g }, dynamicMessage)

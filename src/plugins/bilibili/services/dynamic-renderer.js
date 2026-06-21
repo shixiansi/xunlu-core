@@ -96,13 +96,13 @@ export async function renderBilibiliCard(renderer, card = {}, options = {}) {
 }
 
 export async function renderDynamicMessage(renderer, result = {}, options = {}) {
-  const { getRandomBackground = () => "", logger, bgPath } = options
+  const { getRandomBackground = () => "", logger, bgPath, absBgPath } = options
   if (renderer && typeof renderer.renderImg === "function") {
     try {
       const rendered = await renderer.renderImg("bilibili", {
-        _bg_path: bgPath || "",
         radom: getRandomBackground(),
         ...result,
+        _bg_path: absBgPath ? `file:///${absBgPath.replace(/\\/g, "/")}/` : bgPath || "",
       })
       if (rendered) return rendered
     } catch (err) {
