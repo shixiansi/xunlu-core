@@ -227,11 +227,10 @@ function renderPluginList() {
   })
 
   // stats
-  const disabledCount = state.plugins.filter(p => !p.configurable).length
   const webuiCount = state.plugins.filter(p => p.configurable).length
   if ($("#statPlugins")) $("#statPlugins").textContent = state.plugins.length
   if ($("#statWebui")) $("#statWebui").textContent = webuiCount
-  if ($("#statDisabled")) $("#statDisabled").textContent = disabledCount
+  if ($("#statDisabled")) $("#statDisabled").textContent = "-"
   const activePlugin = state.plugins.find(p => p.name === state.activePlugin)
   if ($("#statActive")) $("#statActive").textContent = activePlugin?.title || "-"
 }
@@ -251,6 +250,22 @@ function renderField(field, values, scopeKey) {
   const normalized = normalizeFieldValue(field, value)
   const classes = ["field"]
   if (field.type === "textarea" || field.type === "array" || field.type === "json") classes.push("wide")
+
+  if (field.type === "plugin_control") {
+    const sub = field.subType || "plugin"
+    return `
+      <div class="${classes.join(" ")}">
+        <span>${escapeHtml(field.label || field.path)}</span>
+        <div class="pc-field" data-plugin-control="${escapeHtml(scopeKey + ":" + field.path)}" data-sub-type="${escapeHtml(sub)}">
+          <div class="pc-row">
+            <div class="pc-search-wrapper"><i class="fas fa-search"></i><input type="text" class="pc-search" placeholder="${escapeHtml(sub === "plugin" ? "搜索插件名称..." : "搜索命令 key...")}"></div>
+          </div>
+          <div class="pc-tags"></div>
+          <div class="pc-picks"></div>
+        </div>
+      </div>
+    `
+  }
 
   if (field.type === "boolean") {
     return `
@@ -354,6 +369,83 @@ function groupSectionsByScope(sections = []) {
     map.get(scope).push(section)
   }
   return map
+}
+
+async function initPluginControlField(container, subType) {
+  let disabled = []
+  let items = []
+  let loaded = false
+
+  async function ensureData() {
+    if (loaded) return
+    const data = await api("/plugin-manager/plugins")
+    if (subType === "plugin") {
+      disabled = [...(data.disabledPlugins || [])]
+      items = (data.plugins || []).map(p => ({ name: p.name || "", title: p.title || p.name || "" }))
+    } else {
+      disabled = [...(data.disabledCommands || [])]
+      items = (data.commands || []).map(c => {
+        const name = `${c.plugin || ""}:${c.key || c.reg || ""}`
+        return { name, title: `[${c.plugin || ""}] ${c.key || c.reg || "(auto)"}`, plugin: c.plugin || "" }
+      })
+    }
+    loaded = true
+  }
+
+  async function toggle(name) {
+    if (subType === "plugin") {
+      await api("/plugin-manager/toggle-plugin", { method: "POST", body: JSON.stringify({ name }) })
+    } else {
+      await api("/plugin-manager/toggle-command", { method: "POST", body: JSON.stringify({ id: name }) })
+    }
+    const idx = disabled.indexOf(name)
+    if (idx >= 0) disabled.splice(idx, 1)
+    else disabled.push(name)
+    refresh()
+  }
+
+  function refresh() {
+    const q = (container.querySelector(".pc-search")?.value || "").toLowerCase()
+    const filtered = items.filter(item =>
+      item.name.toLowerCase().includes(q) || (item.title || "").toLowerCase().includes(q),
+    )
+
+    const tagEl = container.querySelector(".pc-tags")
+    if (disabled.length) {
+      tagEl.innerHTML = disabled
+        .map(d => `<span class="tag tag-off">${escapeHtml(d)} <span class="tag-x" data-untoggle="${escapeHtml(d)}">&times;</span></span>`)
+        .join("")
+    } else {
+      tagEl.innerHTML = '<span class="pc-empty">暂无禁用项</span>'
+    }
+
+    const pickEl = container.querySelector(".pc-picks")
+    const available = filtered.filter(item => !disabled.includes(item.name))
+    if (!available.length) {
+      pickEl.innerHTML = '<span class="pc-empty">无匹配项可禁用</span>'
+    } else {
+      pickEl.innerHTML = available
+        .map(item => `<span class="pc-pick-item" data-toggle="${escapeHtml(item.name)}">${escapeHtml(item.title || item.name)}</span>`)
+        .join("")
+    }
+
+    tagEl.querySelectorAll("[data-untoggle]").forEach(el => {
+      el.addEventListener("click", e => {
+        e.stopPropagation()
+        toggle(el.dataset.untoggle || "").catch(handleError)
+      })
+    })
+
+    pickEl.querySelectorAll("[data-toggle]").forEach(el => {
+      el.addEventListener("click", () => {
+        toggle(el.dataset.toggle || "").catch(handleError)
+      })
+    })
+  }
+
+  container.querySelector(".pc-search")?.addEventListener("input", refresh)
+  await ensureData()
+  refresh()
 }
 
 async function saveScope(pluginName, scope, sections) {
@@ -485,6 +577,11 @@ async function renderPluginPanel() {
     .join("")
 
   panel.innerHTML = `${pagesHtml}${scopesHtml}`
+
+  panel.querySelectorAll("[data-plugin-control]").forEach(el => {
+    const subType = el.dataset.subType || "plugin"
+    initPluginControlField(el, subType).catch(handleError)
+  })
 
   panel.querySelectorAll("[data-scope-select]").forEach(select => {
     select.addEventListener("change", async event => {

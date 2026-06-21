@@ -69,6 +69,8 @@ async function resolveProvider(plugin) {
 
 async function createEntry(plugin) {
   const provider = await resolveProvider(plugin)
+  if (!provider) return null
+
   const meta = provider?.meta && typeof provider.meta === "object" ? provider.meta : {}
   const staticDir = plugin?.rootDir ? path.join(plugin.rootDir, "resources", "webui") : ""
 
@@ -95,7 +97,7 @@ function getProviderMethod(entry, primary, fallback) {
 }
 
 export async function createWebUiRegistry(plugins = []) {
-  const entries = await Promise.all(asArray(plugins).map(createEntry))
+  const entries = (await Promise.all(asArray(plugins).map(createEntry))).filter(Boolean)
   entries.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))
 
   const byName = new Map(entries.map(entry => [entry.name, entry]))
