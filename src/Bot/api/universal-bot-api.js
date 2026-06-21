@@ -132,7 +132,8 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       if (lg?.mark) {
         const sendApiType = typeof ctx?.sendApi
         const rawSendApiType = typeof ctx?.__xunlu_raw_sendApi
-        lg.mark(`[sendApi] enter this=${ctx?.constructor?.name} hasBot=${!!ctx?.bot} sendApi=${sendApiType} raw=${rawSendApiType} universal=${ctx?.sendApi?.__xunlu_universal} runtimeBot=${runtimeBot?.constructor?.name}`)
+        const selfIsBot = ctx ? ctx === ctx.bot : null
+        lg.mark(`[sendApi] enter this=${ctx?.constructor?.name} hasBot=${!!ctx?.bot} selfIsBot=${selfIsBot} botSendApiU=${ctx?.bot?.sendApi?.__xunlu_universal} sendApi=${sendApiType} raw=${rawSendApiType} universal=${ctx?.sendApi?.__xunlu_universal} runtimeBot=${runtimeBot?.constructor?.name}`)
       }
 
       // 优先尝试原生 sendApi（绕过 universal wrapper 链）
