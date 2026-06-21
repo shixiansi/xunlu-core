@@ -1,4 +1,5 @@
 import fs from "fs"
+import os from "os"
 import path from "path"
 import { pathToFileURL } from "url"
 
@@ -333,11 +334,23 @@ export function register(bot) {
     return globalThis.__xunlu_webui_tokens
   }
 
+function getServerHostIp() {
+  const interfaces = os.networkInterfaces()
+  for (const [name, addrs] of Object.entries(interfaces)) {
+    if (!addrs) continue
+    for (const addr of addrs) {
+      if (addr.family === "IPv4" && !addr.internal) return addr.address
+    }
+  }
+  return "127.0.0.1"
+}
+
   bot.registerCommand(["^(?:#|＃)?荨鹿web登录$", { key: "webui-login", desc: "生成带token的Web管理后台登录链接（仅主人可用，30分钟有效）" }], async ctx => {
     if (!ctx.isMaster) return false
 
     const botCfg = cfg.getConfig("bot") || {}
-    const host = botCfg.webui_host || process.env.XUNLU_WEBUI_HOST || "127.0.0.1"
+    const rawHost = botCfg.webui_host || process.env.XUNLU_WEBUI_HOST || "127.0.0.1"
+    const host = rawHost === "0.0.0.0" || rawHost === "::" ? getServerHostIp() : rawHost
     const port = botCfg.webui_port || process.env.XUNLU_WEBUI_PORT || 9191
     const token = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
     const tokens = getWebuiTokens()
