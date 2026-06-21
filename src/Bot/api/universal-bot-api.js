@@ -140,7 +140,9 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       if (typeof nativeSendApi === "function" && !nativeSendApi.__xunlu_universal) {
         try {
           return await nativeSendApi.call(ctx.bot || ctx, normalizedAction, params)
-        } catch {}
+        } catch (err) {
+          if (lg?.mark) lg.mark(`[sendApi] native sendApi threw: ${err?.message || err}`)
+        }
       }
 
       const rawSendApi = getRawMethod(runtimeBot, "sendApi", api.sendApi)
