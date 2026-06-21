@@ -127,19 +127,15 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       const normalizedAction = normalizeApiActionName(protocol, action)
       if (!normalizedAction) throw new Error("[sendApi] requires action")
 
-      // 尝试多种方式找到原生 sendApi（绕过 universal wrapper 链）
-      const nativeCandidates = [
-        ctx?.__xunlu_raw_sendApi,
-        ctx?.bot?.sendApi,
-        runtimeBot?.__xunlu_raw_sendApi,
-        ctx?.constructor?.prototype?.sendApi,
-      ]
-      for (const candidate of nativeCandidates) {
-        if (typeof candidate === "function" && !candidate.__xunlu_universal) {
-          try {
-            return await candidate.call(ctx || runtimeBot, normalizedAction, params)
-          } catch {}
-        }
+      // 优先使用 Bot 上的原生 sendApi 或 adapter.callApi
+      const bot = ctx?.bot ?? ctx // TRSS Bot 自引用 ctx.bot === ctx，取自身即可
+      if (bot && typeof bot.sendApi === "function" && !bot.sendApi.__xunlu_universal) {
+        try {
+          return await bot.sendApi(normalizedAction, params)
+        } catch {}
+      }
+      if (bot?.adapter?.callApi) {
+        return await bot.adapter.callApi(normalizedAction, params)
       }
 
       const rawSendApi = getRawMethod(runtimeBot, "sendApi", api.sendApi)
