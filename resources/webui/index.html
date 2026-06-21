@@ -1,91 +1,43 @@
 <!doctype html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>xunlu-core WebUI</title>
-    <link rel="stylesheet" href="/webui/static/style.css" />
-    <script type="module" src="/webui/static/app.js" defer></script>
-  </head>
-  <body class="shell-page" data-page="dashboard">
-    <div class="shell-bg shell-bg-a"></div>
-    <div class="shell-bg shell-bg-b"></div>
-    <div class="shell">
-      <aside class="sidebar">
-        <div class="brand">
-          <p class="brand-kicker">xunlu-core</p>
-          <h1 id="uiTitle">WebUI</h1>
-          <p class="brand-copy">共享宿主统一渲染插件配置，插件只负责声明自己的配置协议和扩展页面。</p>
-        </div>
-
-        <div class="sidebar-card">
-          <div class="section-head">
-            <h2>插件</h2>
-            <button class="ghost-btn" id="btnReloadPlugins" type="button">刷新</button>
-          </div>
-          <div id="pluginList" class="plugin-list"></div>
-        </div>
-
-        <div class="sidebar-card">
-          <div class="section-head">
-            <h2>当前登录</h2>
-          </div>
-          <p class="muted" id="sessionUser">未登录</p>
-          <button class="ghost-btn wide" id="btnLogout" type="button">退出登录</button>
-        </div>
-      </aside>
-
-      <main class="main">
-        <header class="topbar">
-          <div>
-            <p class="eyebrow">Shared Plugin Console</p>
-            <h2 id="pluginTitle">加载中...</h2>
-            <p class="muted" id="pluginDescription"></p>
-          </div>
-          <div class="tag-row" id="pluginTags"></div>
-        </header>
-
-        <div id="toast" class="toast"></div>
-
-        <section class="panel" id="pluginPanel">
-          <div class="panel-empty">
-            <h3>正在加载插件定义</h3>
-            <p>如果这个页面是第一次打开，系统会先拉取共享协议和插件元信息。</p>
-          </div>
-        </section>
-
-        <section class="panel security-panel">
-          <div class="section-head">
-            <div>
-              <p class="eyebrow">System</p>
-              <h3>WebUI 安全设置</h3>
-            </div>
-          </div>
-
-          <div class="field-grid">
-            <label class="field">
-              <span>标题</span>
-              <input id="sys_title" type="text" placeholder="xunlu-core WebUI" />
-            </label>
-            <label class="field">
-              <span>用户名</span>
-              <input id="sys_username" type="text" placeholder="留空表示不修改" />
-            </label>
-            <label class="field">
-              <span>新密码</span>
-              <input id="sys_password" type="password" placeholder="留空表示不修改" />
-            </label>
-            <label class="field checkbox-field">
-              <input id="sys_rotate" type="checkbox" />
-              <span>同步轮换 token_secret</span>
-            </label>
-          </div>
-
-          <div class="panel-actions">
-            <button id="btnSaveSystem" type="button">保存安全设置</button>
-          </div>
-        </section>
-      </main>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>xunlu-core WebUI</title>
+  <link rel="stylesheet" href="/webui/static/style.css" />
+  <script type="module" src="/webui/static/app.js" defer></script>
+</head>
+<body class="shell-page" data-page="dashboard">
+  <aside class="sidebar">
+    <div class="brand">
+      <h1 id="uiTitle">xunlu-core</h1>
+      <p class="sub">插件配置管理中心</p>
     </div>
-  </body>
+    <div class="sidebar-section">
+      <h3>插件列表</h3>
+      <nav class="plugin-nav" id="pluginList"></nav>
+    </div>
+    <div class="sidebar-section" style="margin-top:8px">
+      <button class="btn btn-secondary" id="btnReloadPlugins" style="width:100%;justify-content:center;">重新加载插件</button>
+    </div>
+    <div class="sidebar-footer">
+      <p class="user" id="sessionUser">未登录</p>
+      <button class="btn btn-ghost btn-sm" id="btnLogout">退出登录</button>
+    </div>
+  </aside>
+
+  <div class="main-area">
+    <div class="topbar">
+      <div>
+        <h2 id="pluginTitle">系统概览</h2>
+        <p class="desc" id="pluginDescription">选择一个插件以查看和修改配置</p>
+      </div>
+      <div class="tags" id="pluginTags"></div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <div id="pluginPanel"></div>
+  </div>
+</body>
 </html>

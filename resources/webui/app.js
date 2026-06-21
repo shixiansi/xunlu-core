@@ -565,7 +565,7 @@ async function initDashboard() {
 async function initLogin() {
   const session = await loadSession()
   const safe = session?.config || {}
-  $("#loginTitle").textContent = safe?.ui?.title || "统一插件 WebUI"
+  $("#loginTitle").textContent = safe?.ui?.title || "xunlu-core"
 
   if (session?.authenticated) {
     location.href = "/webui"

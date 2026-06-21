@@ -3,134 +3,90 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>插件管理 - 荨鹿</title>
+<title>插件管理 · xunlu-core</title>
 <link rel="stylesheet" href="/webui/static/style.css">
 <style>
-.container { max-width: 1000px; margin: 0 auto; padding: 20px; }
-h2 { margin: 20px 0 10px; border-bottom: 2px solid var(--accent, #00aeec); padding-bottom: 5px; }
-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #333; }
-th { background: #1a1a2e; color: #ccc; font-weight: 600; }
-td { background: #16213e; }
-tr:hover td { background: #1a2744; }
-.switch { position: relative; display: inline-block; width: 44px; height: 24px; }
-.switch input { opacity: 0; width: 0; height: 0; }
-.slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #555; transition: .3s; border-radius: 24px; }
-.slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .3s; border-radius: 50%; }
-input:checked + .slider { background-color: #00aeec; }
-input:checked + .slider:before { transform: translateX(20px); }
-.btn { padding: 8px 20px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; margin-right: 10px; }
-.btn-primary { background: #00aeec; color: #fff; }
-.btn-danger { background: #e74c3c; color: #fff; }
-.btn-primary:hover { background: #0099d1; }
-.toast { position: fixed; top: 20px; right: 20px; padding: 12px 24px; border-radius: 8px; color: #fff; z-index: 999; transition: opacity .3s; }
-.toast-ok { background: #27ae60; }
-.toast-err { background: #e74c3c; }
-.key-badge { display: inline-block; background: #00aeec22; color: #00aeec; border-radius: 4px; padding: 1px 6px; font-size: 11px; margin-right: 4px; }
+.container { max-width: 1000px; padding: 24px; }
+h1 { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+.subtitle { color: var(--text-muted); font-size: 13px; margin-bottom: 24px; }
+.toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+.feedback { font-size: 13px; color: var(--green); }
+h2 { font-size: 16px; font-weight: 600; margin: 24px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
 </style>
 </head>
 <body>
 <div class="container">
   <h1>插件与命令管理</h1>
-  <p style="color:#888;margin-bottom:20px;">修改插件/命令状态后需点击"重载插件"生效。</p>
+  <p class="subtitle">开关控制插件和命令的启用/禁用状态，修改后需重载生效。</p>
 
-  <button class="btn btn-primary" id="btnReload">重载插件</button>
-  <span id="reloadMsg" style="margin-left:10px;color:#27ae60;"></span>
+  <div class="toolbar">
+    <button class="btn btn-primary" id="btnReload">重载插件</button>
+    <span class="feedback" id="reloadMsg"></span>
+  </div>
 
   <h2>插件列表</h2>
-  <table id="pluginTable">
-    <thead><tr><th>插件名</th><th>标题</th><th>状态</th><th>操作</th></tr></thead>
+  <table class="data-table" id="pluginTable">
+    <thead><tr><th>名称</th><th>标题</th><th>状态</th><th>操作</th></tr></thead>
     <tbody></tbody>
   </table>
 
   <h2>命令列表</h2>
-  <table id="cmdTable">
-    <thead><tr><th>插件</th><th>Key</th><th>正则</th><th>状态</th><th>操作</th></tr></thead>
+  <table class="data-table" id="cmdTable">
+    <thead><tr><th>插件</th><th>Key</th><th>匹配</th><th>状态</th><th>操作</th></tr></thead>
     <tbody></tbody>
   </table>
 </div>
-<div id="toast" class="toast toast-ok" style="display:none;"></div>
 
 <script>
-const API = (p, o) => fetch(p, { credentials: "include", headers: { "Content-Type": "application/json" }, ...o }).then(r => { if (!r.ok) return r.json().then(e => { throw new Error(e.error || r.statusText) }); return r.json() })
+const api = (p, o) => fetch(p, { credentials: "include", headers: { "Content-Type": "application/json" }, ...o }).then(r => { if (!r.ok) return r.json().then(e => { throw new Error(e.error || r.statusText) }); return r.json() })
 const $ = s => document.querySelector(s)
 let data = { plugins: [], commands: [] }
 
 function toast(msg, err) {
-  const el = $("#toast")
+  const el = document.createElement("div")
+  el.className = "toast show " + (err ? "err" : "ok")
   el.textContent = msg
-  el.className = "toast " + (err ? "toast-err" : "toast-ok")
-  el.style.display = "block"
-  setTimeout(() => el.style.display = "none", 3000)
+  document.body.appendChild(el)
+  setTimeout(() => { el.classList.remove("show"); setTimeout(() => el.remove(), 200) }, 2500)
 }
 
-async function loadData() {
-  data = await API("/webui/api/plugin-manager/plugins")
-  renderPlugins()
-  renderCommands()
+async function load() {
+  data = await api("/webui/api/plugin-manager/plugins")
+  render("pluginTable", data.plugins, p => `<tr>
+    <td>${esc(p.name)}</td><td>${esc(p.title)}</td>
+    <td class="${p.disabled ? 'status-off' : 'status-on'}">${p.disabled ? '已禁用' : '已启用'}</td>
+    <td><label class="switch"><input type="checkbox" ${p.disabled ? '' : 'checked'} onchange="togglePlugin('${esc(p.name)}',this.checked)"><span class="slider"></span></label></td>
+  </tr>`)
+  render("cmdTable", data.commands, c => `<tr>
+    <td>${esc(c.plugin)}</td>
+    <td>${c.key ? `<span class="key-badge">${esc(c.key)}</span>` : '-'}</td>
+    <td><code>${esc(c.reg || '(自动)')}</code></td>
+    <td class="${c.disabled ? 'status-off' : 'status-on'}">${c.disabled ? '已禁用' : '已启用'}</td>
+    <td><label class="switch"><input type="checkbox" ${c.disabled ? '' : 'checked'} onchange="toggleCmd('${esc(c.id)}',this.checked)"><span class="slider"></span></label></td>
+  </tr>`)
 }
 
-function renderPlugins() {
-  const tbody = $("#pluginTable tbody")
-  tbody.innerHTML = data.plugins.map(p => `
-    <tr>
-      <td>${esc(p.name)}</td>
-      <td>${esc(p.title)}</td>
-      <td>${p.disabled ? '<span style="color:#e74c3c">已禁用</span>' : '<span style="color:#27ae60">已启用</span>'}</td>
-      <td>
-        <label class="switch">
-          <input type="checkbox" ${p.disabled ? '' : 'checked'} onchange="togglePlugin('${esc(p.name)}', this.checked)">
-          <span class="slider"></span>
-        </label>
-      </td>
-    </tr>`).join("")
-}
-
-function renderCommands() {
-  const tbody = $("#cmdTable tbody")
-  tbody.innerHTML = data.commands.map(c => `
-    <tr>
-      <td>${esc(c.plugin)}</td>
-      <td>${c.key ? `<span class="key-badge">${esc(c.key)}</span>` : "-"}</td>
-      <td><code>${esc(c.reg || "(自动触发)")}</code></td>
-      <td>${c.disabled ? '<span style="color:#e74c3c">已禁用</span>' : '<span style="color:#27ae60">已启用</span>'}</td>
-      <td>
-        <label class="switch">
-          <input type="checkbox" ${c.disabled ? '' : 'checked'} onchange="toggleCmd('${esc(c.id)}', this.checked)">
-          <span class="slider"></span>
-        </label>
-      </td>
-    </tr>`).join("")
-}
-
-function esc(s) { return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;") }
+function render(tid, items, fn) { document.querySelector(`#${tid} tbody`).innerHTML = items.map(fn).join("") }
 
 async function togglePlugin(name, enable) {
-  try {
-    await API("/webui/api/plugin-manager/toggle-plugin", { method: "POST", body: JSON.stringify({ name }) })
-    toast(enable ? `已启用插件 ${name}` : `已禁用插件 ${name}`)
-    loadData()
-  } catch (e) { toast(e.message, true); loadData() }
+  await api("/webui/api/plugin-manager/toggle-plugin", { method: "POST", body: JSON.stringify({ name }) })
+  toast(enable ? `已启用 ${name}` : `已禁用 ${name}`); load()
 }
 
 async function toggleCmd(id, enable) {
-  try {
-    await API("/webui/api/plugin-manager/toggle-command", { method: "POST", body: JSON.stringify({ id }) })
-    toast(enable ? `已启用命令 ${id}` : `已禁用命令 ${id}`)
-    loadData()
-  } catch (e) { toast(e.message, true); loadData() }
+  await api("/webui/api/plugin-manager/toggle-command", { method: "POST", body: JSON.stringify({ id }) })
+  toast(enable ? `已启用 ${id}` : `已禁用 ${id}`); load()
 }
 
+function esc(s) { return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;") }
+
 $("#btnReload").addEventListener("click", async () => {
-  try {
-    const r = await API("/webui/api/plugin-manager/reload", { method: "POST" })
-    $("#reloadMsg").textContent = r.message || "插件已重载"
-    setTimeout(() => $("#reloadMsg").textContent = "", 3000)
-    loadData()
-  } catch (e) { toast(e.message, true) }
+  const r = await api("/webui/api/plugin-manager/reload", { method: "POST" })
+  $("#reloadMsg").textContent = r.message || "已重载"
+  setTimeout(() => $("#reloadMsg").textContent = "", 3000); load()
 })
 
-loadData()
+load()
 </script>
 </body>
 </html>
