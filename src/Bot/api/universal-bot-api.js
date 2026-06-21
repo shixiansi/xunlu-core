@@ -133,7 +133,13 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       if (targetBot && typeof targetBot.sendApi === "function" && !targetBot.sendApi.__xunlu_universal) {
         try {
           return await targetBot.sendApi(normalizedAction, params)
-        } catch {}
+        } catch (err) {
+          global.logger?.mark?.(`[sendApi] native sendApi threw: ${err?.message || err}`)
+        }
+      }
+      // adapter 可能没有 callApi（TRSS 定制），尝试 sendApi
+      if (targetBot?.adapter?.sendApi) {
+        return await targetBot.adapter.sendApi(normalizedAction, params)
       }
       if (targetBot?.adapter?.callApi) {
         return await targetBot.adapter.callApi(normalizedAction, params)
