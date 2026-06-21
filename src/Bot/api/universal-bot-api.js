@@ -135,7 +135,15 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
         } catch {}
       }
       if (targetBot?.adapter?.callApi) {
-        return await targetBot.adapter.callApi(normalizedAction, params)
+        try {
+          return await targetBot.adapter.callApi(normalizedAction, params)
+        } catch (err) {
+          global.logger?.mark?.("[sendApi] adapter.callApi threw: " + (err?.message || err))
+        }
+      }
+
+      if (!targetBot?.adapter) {
+        global.logger?.mark?.("[sendApi] no adapter on targetBot type=" + targetBot?.constructor?.name + " hasSendApi=" + (typeof targetBot?.sendApi))
       }
 
       const rawSendApi = getRawMethod(runtimeBot, "sendApi", api.sendApi)
