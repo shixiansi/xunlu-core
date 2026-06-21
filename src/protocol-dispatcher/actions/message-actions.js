@@ -20,11 +20,16 @@ export function registerMessageActions(dispatcher) {
       }
       throw new Error("[recallMessage] milky API not available")
     },
-    onebotv11: async (params) => {
+    onebotv11: async (params, ctx) => {
       const runtimeBot = getRuntimeBotOrNull()
       const messageId = toInt(params.message_id ?? params.message_seq ?? params.seq)
       if (messageId === undefined) throw new Error("[recallMessage] onebotv11 requires message_id")
       if (runtimeBot?.deleteMessage) return await runtimeBot.deleteMessage({ message_id: messageId })
+      if (runtimeBot?.callApi) return await runtimeBot.callApi("delete_msg", { message_id: messageId })
+      const nativeBotUin = String(ctx?.self_id ?? ctx?.uin ?? '')
+      const targetBot = nativeBotUin && ctx?.[nativeBotUin]?.adapter ? ctx[nativeBotUin] : ctx?.bot ?? ctx
+      if (targetBot?.callApi) return await targetBot.callApi("delete_msg", { message_id: messageId })
+      if (targetBot?.adapter?.callApi) return await targetBot.adapter.callApi("delete_msg", { message_id: messageId })
       throw new Error("[recallMessage] onebotv11 API not available")
     },
     icqq: async (params) => {
