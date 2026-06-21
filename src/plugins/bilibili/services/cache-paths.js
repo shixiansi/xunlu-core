@@ -16,7 +16,7 @@ export function createBilibiliCachePaths(rootPath) {
   const groupDataDir = toRootRelative(getPluginDataPath("bilibili", "group"), rootPath)
   const dynamicForwardDir = toRootRelative(getPluginTempPath("bilibili", "dynamic-forward"), rootPath)
   const backgroundDir = toRootRelative(
-    getPluginResourcePath("bilibili", "html", "bilibili", "bg"),
+    getPluginDataPath("bilibili", "bg"),
     rootPath,
   )
 

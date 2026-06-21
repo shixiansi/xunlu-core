@@ -17,6 +17,10 @@ const LEGACY_RUNTIME_MIGRATIONS = [
     targetSegments: ["temp", "bilibili", "dynamic-forward"],
   },
   {
+    legacySegments: ["src", "plugins", "bilibili", "resources", "html", "bilibili", "bg"],
+    targetSegments: ["data", "bilibili", "bg"],
+  },
+  {
     legacySegments: ["src", "plugins", "qun-daily", "data"],
     targetSegments: ["data", "qun-daily"],
   },
