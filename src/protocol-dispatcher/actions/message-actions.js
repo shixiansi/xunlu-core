@@ -24,23 +24,13 @@ export function registerMessageActions(dispatcher) {
       const runtimeBot = getRuntimeBotOrNull()
       const messageId = toInt(params.message_id ?? params.message_seq ?? params.seq)
       if (messageId === undefined) throw new Error("[recallMessage] onebotv11 requires message_id")
-      // 直接 deleteMessage
       if (runtimeBot?.deleteMessage) return await runtimeBot.deleteMessage({ message_id: messageId })
-      // runtimeBot.callApi（排除了 universal 覆盖）
       if (runtimeBot?.callApi) return await runtimeBot.callApi("delete_msg", { message_id: messageId })
-      // 从 ctx 上找原生 Bot（event.bot / uin key / ctx 自身）
       const nativeBotUin = String(ctx?.self_id ?? ctx?.uin ?? '')
       const targetBot = nativeBotUin && ctx?.[nativeBotUin]?.adapter ? ctx[nativeBotUin] : ctx?.bot ?? ctx
       if (targetBot?.callApi) return await targetBot.callApi("delete_msg", { message_id: messageId })
-      // 原生 Bot 的 adapter.callApi
       if (targetBot?.adapter?.callApi) return await targetBot.adapter.callApi("delete_msg", { message_id: messageId })
-      // 从 Bot 包装对象的 uin key 找原生 Bot 的 adapter（TRSS Bot 包装对象）
-      if (runtimeBot) {
-        const uinKey = String(runtimeBot.self_id ?? runtimeBot.uin ?? runtimeBot.user_id ?? '')
-        const nativeFromRuntime = runtimeBot[uinKey]
-        if (nativeFromRuntime?.adapter?.callApi) return await nativeFromRuntime.adapter.callApi("delete_msg", { message_id: messageId })
-      }
-      throw new Error("[recallMessage] onebotv11 API not available")
+      return null
     },
     icqq: async (params) => {
       const runtimeBot = getRuntimeBotOrNull()
