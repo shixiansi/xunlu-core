@@ -1,5 +1,6 @@
 import fs from "fs"
 import path from "path"
+import { pathToFileURL } from "url"
 
 import cfg from "../../../lib/config.js"
 import { getRuntimePaths } from "../../../runtime/runtime-context.js"
@@ -9,22 +10,40 @@ import {
   setCurrentGroupPrefixEnabled,
 } from "../model/prefix-config.js"
 
-function resolvePluginFolderName(userInput) {
-  const input = String(userInput || "").trim().toLowerCase()
+async function resolvePluginFolderName(userInput) {
+  const input = String(userInput || "").trim()
   if (!input) return null
 
-  // 直接文件夹名匹配（相对于 xunlu-core 根目录）
-  const pluginDir = path.join(getRuntimePaths().rootDir, "src", "plugins", input)
-  if (fs.existsSync(pluginDir) && fs.statSync(pluginDir).isDirectory()) return input
+  const rootDir = getRuntimePaths().rootDir
+  const pluginsDir = path.join(rootDir, "src", "plugins")
 
-  // 别名/短名匹配（从 pluginCatalog 读取）
-  const catalog = globalThis.__xunlu_core?.commandBus?.getCatalog?.() || {}
-  for (const [name, meta] of Object.entries(catalog)) {
-    const aliases = Array.isArray(meta.aliases) ? meta.aliases : []
-    const shortName = meta.pluginShortName || meta.shortName || ""
-    if (name.toLowerCase() === input) return name
-    if (shortName.toLowerCase() === input) return name
-    if (aliases.some(a => String(a).toLowerCase() === input)) return name
+  // 文件夹名直接匹配
+  const directPath = path.join(pluginsDir, input)
+  if (fs.existsSync(directPath) && fs.statSync(directPath).isDirectory()) return input
+
+  // 遍历所有插件目录，匹配 name / title / shortName / aliases
+  if (!fs.existsSync(pluginsDir)) return null
+  const entries = fs.readdirSync(pluginsDir, { withFileTypes: true })
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue
+    const indexPath = path.join(pluginsDir, entry.name, "index.js")
+    if (!fs.existsSync(indexPath)) continue
+    try {
+      const mod = await import(pathToFileURL(indexPath).href)
+      const meta = mod?.default || {}
+      const name = String(meta.name || "").trim()
+      const shortName = String(meta.shortName || "").trim()
+      const title = String(meta.title || "").trim()
+      const aliases = Array.isArray(meta.aliases) ? meta.aliases.map(String) : []
+      if (
+        name === input ||
+        shortName === input ||
+        title === input ||
+        aliases.includes(input)
+      ) {
+        return entry.name
+      }
+    } catch {}
   }
   return null
 }
@@ -108,7 +127,7 @@ export function register(bot) {
       return await ctx.reply("用法：禁用插件 <插件名或别名>")
     }
 
-    const pluginName = resolvePluginFolderName(userInput)
+    const pluginName = await resolvePluginFolderName(userInput)
     if (!pluginName) {
       return await ctx.reply(`未找到匹配的插件：${userInput}\n请使用文件夹名、别名或短名（如 #禁用插件 抖音）`)
     }
@@ -138,7 +157,7 @@ export function register(bot) {
       return await ctx.reply("用法：启用插件 <插件名或别名>")
     }
 
-    const pluginName = resolvePluginFolderName(userInput)
+    const pluginName = await resolvePluginFolderName(userInput)
     if (!pluginName) {
       return await ctx.reply(`未找到匹配的插件：${userInput}`)
     }
