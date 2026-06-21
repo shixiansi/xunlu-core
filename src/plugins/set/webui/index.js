@@ -300,6 +300,9 @@ export default {
         ],
       },
     ],
+    pages: [
+      { id: "plugin-manager", title: "插件管理", url: "/webui/plugins/set/static/plugin-manager.html" },
+    ],
   },
 
   async getValues() {

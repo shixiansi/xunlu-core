@@ -317,6 +317,49 @@ export function register(bot) {
 
     return await ctx.reply(`插件 ${pluginName} 的命令：\n${commandList.join("\n")}`)
   })
+
+  // 荨鹿web登录指令（仅主人可用，生成带token的web登录链接）
+  function getWebuiTokens() {
+    if (!globalThis.__xunlu_webui_tokens) {
+      globalThis.__xunlu_webui_tokens = new Map()
+      // 每5分钟清理过期token
+      setInterval(() => {
+        const now = Date.now()
+        for (const [t, exp] of globalThis.__xunlu_webui_tokens) {
+          if (exp <= now) globalThis.__xunlu_webui_tokens.delete(t)
+        }
+      }, 300000).unref()
+    }
+    return globalThis.__xunlu_webui_tokens
+  }
+
+  bot.registerCommand(["^(?:#|＃)?荨鹿web登录$", { key: "webui-login", desc: "生成带token的Web管理后台登录链接（仅主人可用，30分钟有效）" }], async ctx => {
+    if (!ctx.isMaster) return false
+
+    const botCfg = cfg.getConfig("bot") || {}
+    const host = botCfg.webui_host || process.env.XUNLU_WEBUI_HOST || "127.0.0.1"
+    const port = botCfg.webui_port || process.env.XUNLU_WEBUI_PORT || 9191
+    const token = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+    const tokens = getWebuiTokens()
+    tokens.set(token, Date.now() + 1800000) // 30分钟过期
+
+    const url = `http://${host}:${port}/webui?token=${token}`
+    const masterQQ = ctx?.self_id || ctx?.bot?.uin
+
+    try {
+      if (masterQQ && typeof ctx?.bot?.pickFriend === "function") {
+        const friend = ctx.bot.pickFriend(Number(masterQQ))
+        await friend.sendMsg(`荨鹿Web管理后台登录链接（30分钟有效）：\n${url}`)
+        return true
+      }
+      if (typeof ctx?.sendPrivateMsg === "function") {
+        await ctx.sendPrivateMsg(masterQQ, `荨鹿Web管理后台登录链接（30分钟有效）：\n${url}`)
+        return true
+      }
+    } catch {}
+
+    return await ctx.reply(`Web管理后台登录链接（30分钟有效）：\n${url}`)
+  })
 }
 
 export function onBotEvent(event) {

@@ -572,6 +572,21 @@ async function initLogin() {
     return
   }
 
+  // 自动通过 ?token= 登录
+  const urlToken = new URLSearchParams(location.search).get("token")
+  if (urlToken) {
+    try {
+      await api("/auth/login-by-token", {
+        method: "POST",
+        body: JSON.stringify({ token: urlToken }),
+      })
+      location.href = "/webui"
+      return
+    } catch {
+      // token 无效，继续显示登录表单
+    }
+  }
+
   $("#loginForm")?.addEventListener("submit", async event => {
     event.preventDefault()
     const username = $("#loginUsername").value.trim()

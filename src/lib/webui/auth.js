@@ -71,7 +71,14 @@ function pbkdf2Base64(password, saltBase64) {
 
 function defaultConfig() {
   const password_salt = randomBase64(16)
-  const password_hash = pbkdf2Base64("admin", password_salt)
+  // 默认密码为第一个主人QQ号，若未配置则回退 admin
+  let defaultPassword = "admin"
+  try {
+    const cfg = getXunluBotConfig()
+    const masterQQ = Array.isArray(cfg?.masterQQ) ? cfg.masterQQ[0] : null
+    if (masterQQ && String(masterQQ).trim()) defaultPassword = String(masterQQ).trim()
+  } catch {}
+  const password_hash = pbkdf2Base64(defaultPassword, password_salt)
 
   return {
     version: 1,
@@ -85,6 +92,17 @@ function defaultConfig() {
     ui: {
       title: "xunlu-core WebUI",
     },
+  }
+}
+
+function getXunluBotConfig() {
+  try {
+    const cfgPath = path.resolve(env.RootPath, "config", "config", "bot.yaml")
+    if (!fs.existsSync(cfgPath)) return {}
+    const raw = fs.readFileSync(cfgPath, "utf8")
+    return raw ? YAML.parse(raw) || {} : {}
+  } catch {
+    return {}
   }
 }
 
@@ -292,6 +310,13 @@ export function getWebuiSessionFromRequest(req) {
 }
 
 export function requireWebuiAuth(req, res, next) {
+  // 先尝试 token 登录（query ?token=xxx）
+  const token = String(req?.query?.token || "").trim()
+  if (token && tryLoginByWebuiToken(req, res)) {
+    req.user = getWebuiSessionFromRequest(req)
+    if (req.user) return next()
+  }
+
   const session = getWebuiSessionFromRequest(req)
   const cfg = getWebuiConfig()
   if (!session || session.username !== String(cfg?.auth?.username || "")) {
@@ -301,4 +326,29 @@ export function requireWebuiAuth(req, res, next) {
 
   req.user = session
   next()
+}
+
+export function verifyWebuiToken(token) {
+  const tokens = globalThis.__xunlu_webui_tokens
+  if (!tokens || !(tokens instanceof Map)) return false
+  const exp = tokens.get(token)
+  if (!exp || typeof exp !== "number") return false
+  if (Date.now() > exp) {
+    tokens.delete(token)
+    return false
+  }
+  tokens.delete(token) // 一次性使用
+  return true
+}
+
+function tryLoginByWebuiToken(req, res) {
+  const token = String(req?.query?.token || "").trim()
+  if (!token) return false
+  if (!verifyWebuiToken(token)) return false
+
+  const cfg = getWebuiConfig()
+  const authToken = createWebuiAuthToken(cfg?.auth?.username || "admin")
+  const ttlHours = Math.max(1, toNumber(cfg?.auth?.token_ttl_hours, 168))
+  setWebuiCookie(res, { value: authToken, maxAgeSec: ttlHours * 3600 })
+  return true
 }

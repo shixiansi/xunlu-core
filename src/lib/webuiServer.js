@@ -18,6 +18,7 @@ import {
   setWebuiCookie,
   updateWebuiAuth,
   verifyWebuiPassword,
+  verifyWebuiToken,
 } from "./webui/auth.js"
 import { createWebUiRegistry } from "./webui/registry.js"
 
@@ -130,7 +131,7 @@ export async function startWebuiServer(options = {}) {
     if (!enable) return null
 
     const host = String(options.host || process.env.XUNLU_WEBUI_HOST || botCfg.webui_host || "0.0.0.0")
-    const port = toPort(options.port || process.env.XUNLU_WEBUI_PORT || botCfg.webui_port, 3000)
+    const port = toPort(options.port || process.env.XUNLU_WEBUI_PORT || botCfg.webui_port, 9191)
     const allowPortFallback = options.allowPortFallback !== false
 
     const plugins =
@@ -192,6 +193,20 @@ export async function startWebuiServer(options = {}) {
       res.json({ ok: true, config: cfgSafe })
     })
 
+    nextApp.post("/webui/api/auth/login-by-token", (req, res) => {
+      const cfgSafe = getSafeWebuiConfig()
+      const token = String(req.body?.token || "").trim()
+      if (!token || !verifyWebuiToken(token)) {
+        res.status(401).json({ ok: false, error: "Invalid or expired token", config: cfgSafe })
+        return
+      }
+      const cfgRaw = getWebuiConfig()
+      const authToken = createWebuiAuthToken(cfgRaw?.auth?.username || "admin")
+      const ttlHours = Number(cfgRaw?.auth?.token_ttl_hours || 168) || 168
+      setWebuiCookie(res, { value: authToken, maxAgeSec: Math.max(1, ttlHours) * 3600 })
+      res.json({ ok: true, config: cfgSafe })
+    })
+
     nextApp.post("/webui/api/auth/logout", (req, res) => {
       clearWebuiCookie(res)
       res.json({ ok: true })
@@ -219,6 +234,85 @@ export async function startWebuiServer(options = {}) {
     nextApp.get("/webui/api/plugins", requireWebuiAuth, async (req, res) => {
       try {
         res.json({ ok: true, plugins: registry.list() })
+      } catch (err) {
+        res.status(500).json({ ok: false, error: err?.message || String(err) })
+      }
+    })
+
+    // 插件管理 API
+    nextApp.get("/webui/api/plugin-manager/plugins", requireWebuiAuth, (req, res) => {
+      try {
+        const botCfg = cfg.getConfig("bot") || {}
+        const disabledPlugins = botCfg?.plugin_control?.disabled_plugins || []
+        const disabledCommands = botCfg?.plugin_control?.disabled_commands || []
+        const catalog = globalThis.__xunlu_runtime_kernel?.getLoadedPlugins?.() || []
+        const commands = globalThis.__xunlu_runtime_bot?.plugins || {}
+        res.json({
+          ok: true,
+          plugins: catalog.map(p => ({
+            name: p?.name || "",
+            title: p?.title || p?.name || "",
+            disabled: disabledPlugins.includes(p?.name || ""),
+          })),
+          commands: Object.values(commands).map(c => ({
+            id: c?.id || "",
+            plugin: c?.plugin || "",
+            reg: c?.reg || "",
+            key: c?.key || "",
+            disabled: disabledCommands.includes(`${c?.plugin || ""}:${c?.key || c?.reg || ""}`),
+          })),
+          disabledPlugins,
+          disabledCommands,
+        })
+      } catch (err) {
+        res.status(500).json({ ok: false, error: err?.message || String(err) })
+      }
+    })
+
+    nextApp.post("/webui/api/plugin-manager/toggle-plugin", requireWebuiAuth, (req, res) => {
+      try {
+        const name = String(req.body?.name || "").trim()
+        if (!name) return res.status(400).json({ ok: false, error: "Missing plugin name" })
+        const botCfg = cfg.getConfig("bot") || {}
+        const disabledPlugins = [...(botCfg?.plugin_control?.disabled_plugins || [])]
+        const idx = disabledPlugins.indexOf(name)
+        if (idx >= 0) disabledPlugins.splice(idx, 1)
+        else disabledPlugins.push(name)
+        cfg.setConfigValue("bot", "plugin_control", {
+          ...(botCfg?.plugin_control || {}),
+          disabled_plugins: disabledPlugins,
+        })
+        res.json({ ok: true, disabled: idx < 0, disabledPlugins })
+      } catch (err) {
+        res.status(500).json({ ok: false, error: err?.message || String(err) })
+      }
+    })
+
+    nextApp.post("/webui/api/plugin-manager/toggle-command", requireWebuiAuth, (req, res) => {
+      try {
+        const cmdId = String(req.body?.id || "").trim()
+        if (!cmdId) return res.status(400).json({ ok: false, error: "Missing command id (plugin:key or plugin:reg)" })
+        const botCfg = cfg.getConfig("bot") || {}
+        const disabledCommands = [...(botCfg?.plugin_control?.disabled_commands || [])]
+        const idx = disabledCommands.indexOf(cmdId)
+        if (idx >= 0) disabledCommands.splice(idx, 1)
+        else disabledCommands.push(cmdId)
+        cfg.setConfigValue("bot", "plugin_control", {
+          ...(botCfg?.plugin_control || {}),
+          disabled_commands: disabledCommands,
+        })
+        res.json({ ok: true, disabled: idx < 0, disabledCommands })
+      } catch (err) {
+        res.status(500).json({ ok: false, error: err?.message || String(err) })
+      }
+    })
+
+    nextApp.post("/webui/api/plugin-manager/reload", requireWebuiAuth, async (req, res) => {
+      try {
+        const kernel = globalThis.__xunlu_runtime_kernel
+        if (!kernel) return res.json({ ok: false, error: "runtime kernel not available" })
+        await kernel.reloadPlugins()
+        res.json({ ok: true, message: "插件已重载" })
       } catch (err) {
         res.status(500).json({ ok: false, error: err?.message || String(err) })
       }
