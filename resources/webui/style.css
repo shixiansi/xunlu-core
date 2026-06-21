@@ -148,28 +148,48 @@ body.shell-page{display:flex;min-height:100vh}
 .card-header p{font-size:12px;color:var(--text-muted);margin-top:2px}
 
 /* ===== Plugin Config Panel ===== */
-.panel-empty{padding:40px 20px;text-align:center;color:var(--text-muted)}
-.panel-empty h3{margin-bottom:8px;font-size:15px}
+#pluginPanel { display: flex; flex-direction: column; gap: 20px; }
+#pluginPanel .scope-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 20px 24px;
+}
+#pluginPanel .scope-head { margin-bottom: 16px; }
+#pluginPanel .scope-head h4 { font-size: 15px; font-weight: 600; color: var(--text); }
+#pluginPanel .scope-meta { font-size: 13px; color: var(--text-secondary); margin-top: 4px; }
+#pluginPanel .section-card { padding: 16px 0; }
+#pluginPanel .section-card + .section-card { border-top: 1px solid var(--border); }
+
+/* field group card */
+.field-group {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 20px 24px;
+}
+.field-group .field-group-title { font-size: 15px; font-weight: 600; margin-bottom: 16px; color: var(--text); }
+.field-group .field-group-desc { font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; }
 
 .pages-row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
 .page-link{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;border:1px solid var(--border);color:var(--text-secondary);font-size:13px;font-weight:500;text-decoration:none;transition:var(--transition)}
 .page-link:hover{background:var(--bg-hover);color:var(--primary);border-color:var(--primary)}
 
 /* ===== Field Grid ===== */
-.field-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+.field-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px}
 .field{display:flex;flex-direction:column;gap:6px}
 .field.wide{grid-column:1/-1}
 .field label,.field>span{font-size:14px;font-weight:500;color:var(--text)}
 .field small{font-size:12px;color:var(--text-muted);line-height:1.4}
-.field.checkbox{flex-direction:row;align-items:center;padding:10px 14px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);gap:10px}
+.field input[type="text"],.field input[type="number"],.field input[type="password"],.field textarea,.field select{padding:10px 14px}
+.field textarea{min-height:120px}
+.field.checkbox{flex-direction:row;align-items:center;padding:14px 18px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);gap:10px}
 .field.checkbox label{margin:0}
-.field-actions{display:flex;justify-content:flex-end;margin-top:16px}
-.section-divider{border-top:1px solid var(--border);margin:20px 0}
+.field-actions{display:flex;justify-content:flex-end;margin-top:24px;padding-top:18px;border-top:1px solid var(--border)}
+.section-divider{border-top:1px solid var(--border);margin:24px 0}
+.panel-empty{padding:60px 20px;text-align:center;color:var(--text-muted)}
+.panel-empty h3{margin-bottom:8px;font-size:15px}
 
 /* ===== Scope ===== */
-.scope-section{margin-bottom:20px}
-.scope-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
-.scope-header h4{font-size:14px;font-weight:600}
+.scope-section{margin-bottom:24px}
+.scope-header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px}
+.scope-header h4{font-size:15px;font-weight:600}
 .scope-header select{width:auto;min-width:180px}
 
 /* ===== Toast ===== */
