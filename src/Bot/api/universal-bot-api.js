@@ -133,11 +133,8 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       if (targetBot && typeof targetBot.sendApi === "function" && !targetBot.sendApi.__xunlu_universal) {
         try {
           return await targetBot.sendApi(normalizedAction, params)
-        } catch (err) {
-          global.logger?.mark?.(`[sendApi] native sendApi threw: ${err?.message || err}`)
-        }
+        } catch {}
       }
-      // adapter 可能没有 callApi（TRSS 定制），尝试 sendApi
       if (targetBot?.adapter?.sendApi) {
         return await targetBot.adapter.sendApi(normalizedAction, params)
       }
@@ -184,8 +181,6 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       if (takeoverAdapter?.callApi) {
         return await takeoverAdapter.callApi(normalizedAction, params)
       }
-
-      if (global.logger?.mark) global.logger.mark(`[sendApi] final targetBotAdapter=${typeof targetBot?.adapter} targetBotAdapterCallApi=${typeof targetBot?.adapter?.callApi} targetBotKeys=${Object.keys(targetBot||{}).length} ctxKeys=${Object.keys(ctx||{}).length} ctxBot=${typeof ctx?.bot}`)
 
       throw new Error("[sendApi] API not available")
     },
@@ -241,11 +236,6 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       const takeoverAdapter = globalThis.__xunlu_takeover_adapter
       if (takeoverAdapter?.callApi) {
         return await takeoverAdapter.callApi(normalizedAction, params)
-      }
-
-      const lg = global.logger
-      if (lg?.mark) {
-        lg.mark(`[callApi] diag nativeBotKey=${nativeBotKey} hasTargetBot=${!!targetBot} targetBotSendApi=${typeof targetBot?.sendApi} targetBotAdapter=${typeof targetBot?.adapter} targetBotAdapterCallApi=${typeof targetBot?.adapter?.callApi} runtimeBotType=${typeof runtimeBot} runtimeBotSendApi=${typeof runtimeBot?.sendApi} runtimeBotUU=${runtimeBot?.sendApi?.__xunlu_universal} runtimeBotRaw=${typeof runtimeBot?.__xunlu_raw_sendApi} fallbackBotType=${typeof fallbackBot} takeoverAdapter=${typeof takeoverAdapter} takeoverAdapterCallApi=${typeof takeoverAdapter?.callApi}`)
       }
 
       throw new Error("[callApi] API not available")

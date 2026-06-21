@@ -378,7 +378,7 @@ class ListenerLoader {
 
     applyUniversalBotApi(bindEvent, { bot: pluginLoader, adapterHint: botenv, override: universalOverride })
     try {
-      applyUniversalBotApi(Bot, { bot: pluginLoader, adapterHint: botenv, override: universalOverride })
+      applyUniversalBotApi(Bot, { bot: pluginLoader, adapterHint: botenv, override: universalOverride, exclude: ["sendApi", "callApi"] })
     } catch {}
 
     await pluginLoader.initBot()
