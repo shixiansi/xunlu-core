@@ -127,9 +127,9 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       const normalizedAction = normalizeApiActionName(protocol, action)
       if (!normalizedAction) throw new Error("[sendApi] requires action")
 
-      // TRSS Bot 为包装对象，原生 Bot（含 adapter）以 uin 为 key 挂载在其上
-      const nativeBotKey = ctx ? Object.keys(ctx).find(k => ctx[k]?.adapter?.callApi) : null
-      const targetBot = nativeBotKey ? ctx[nativeBotKey] : ctx?.bot ?? ctx
+      // 尝试从 Bot/Event 上取原生 Bot（自引用/uin key/event.bot 三种情况）
+      const nativeBotUin = String(ctx?.self_id ?? ctx?.uin ?? '')
+      const targetBot = nativeBotUin && ctx?.[nativeBotUin]?.adapter ? ctx[nativeBotUin] : ctx?.bot ?? ctx
       if (targetBot && typeof targetBot.sendApi === "function" && !targetBot.sendApi.__xunlu_universal) {
         try {
           return await targetBot.sendApi(normalizedAction, params)
@@ -179,14 +179,7 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
         return await takeoverAdapter.callApi(normalizedAction, params)
       }
 
-      const lg = global.logger
-      if (lg?.mark) {
-        const nbKeys = ctx ? Object.keys(ctx) : []
-        const nbOwn = ctx ? Object.getOwnPropertyNames(ctx) : []
-        const nbFound = nbKeys.find(k => ctx[k]?.adapter?.callApi) || nbOwn.find(k => ctx[k]?.adapter?.callApi)
-        const nbSelfId = String(ctx?.self_id ?? ctx?.uin ?? '')
-        lg.mark(`[sendApi] diag nbFound=${nbFound} nbSelfId=${nbSelfId} hasSelfKey=${!!ctx?.[nbSelfId]?.adapter} keys=${nbKeys.length} own=${nbOwn.length} keysSample=${nbKeys.slice(0,5).join(',')} runtimeBotUU=${runtimeBot?.sendApi?.__xunlu_universal} takeoverAdapter=${typeof takeoverAdapter}`)
-      }
+      if (global.logger?.mark) global.logger.mark(`[sendApi] final targetBotAdapter=${typeof targetBot?.adapter} targetBotAdapterCallApi=${typeof targetBot?.adapter?.callApi} targetBotKeys=${Object.keys(targetBot||{}).length} ctxKeys=${Object.keys(ctx||{}).length} ctxBot=${typeof ctx?.bot}`)
 
       throw new Error("[sendApi] API not available")
     },
@@ -199,9 +192,9 @@ export function createUniversalBotApi({ bot, adapterHint } = {}) {
       const normalizedAction = normalizeApiActionName(protocol, action)
       if (!normalizedAction) throw new Error("[callApi] requires action")
 
-      // TRSS Bot 为包装对象，原生 Bot（含 adapter）以 uin 为 key 挂载在其上
-      const nativeBotKey = ctx ? Object.keys(ctx).find(k => ctx[k]?.adapter?.callApi) : null
-      const targetBot = nativeBotKey ? ctx[nativeBotKey] : ctx?.bot ?? ctx
+      // 尝试从 Bot/Event 上取原生 Bot
+      const nativeBotUin = String(ctx?.self_id ?? ctx?.uin ?? '')
+      const targetBot = nativeBotUin && ctx?.[nativeBotUin]?.adapter ? ctx[nativeBotUin] : ctx?.bot ?? ctx
       if (targetBot?.adapter?.callApi) {
         return await targetBot.adapter.callApi(normalizedAction, params)
       }
