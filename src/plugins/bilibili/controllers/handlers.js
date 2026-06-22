@@ -14,7 +14,6 @@ import { cleanupDirContents, scheduleTempFileCleanup } from "../../shared/temp-f
 import { createBilibiliCachePaths } from "../services/cache-paths.js"
 import {
   formatCompactCount as computew,
-  buildBilibiliCardFallback,
   pickRandomBilibiliBackground,
   renderBilibiliCard,
   renderDynamicMessage,
@@ -753,22 +752,17 @@ export function register(bot) {
 
             let message
             if (pushCfg.mode === "text") {
-              message = buildBilibiliCardFallback({
-                nickname: item.nickname || authorInfo?.name || "B站主播",
-                avatar: authorInfo?.face || roomInfo?.user_cover || "",
-                publishedAt: roomInfo?.live_time || "",
-                title: roomInfo?.title || "暂无标题",
-                desc: String(roomInfo?.description || "").trim().slice(0, 160),
-                cover: roomInfo?.user_cover || authorInfo?.face || "",
-                cardType: "live",
-                statText: [
-                  "状态 直播中",
-                  `分区 ${roomInfo?.area_name || "未分区"}`,
-                  `关注 ${computew(roomInfo?.attention || 0)}`,
-                  `在线 ${computew(roomInfo?.online || 0)}`,
-                ].join(" | "),
-                link: `https://live.bilibili.com/${room_id}`,
-              })
+              const author = item.nickname || authorInfo?.name || "B站主播"
+              const cover = roomInfo?.user_cover || authorInfo?.face || ""
+              const title = roomInfo?.title || "暂无标题"
+              const area = roomInfo?.area_name || "未分区"
+              const link = `https://live.bilibili.com/${room_id}`
+              const lines = [`${author}开播啦！小伙伴们快去围观吧！`]
+              if (cover) message = [segment.image(cover), lines.join("")]
+              else message = [lines.join("")]
+              message = Array.isArray(message)
+                ? [...message, `\n标题：${title}\n分区：${area}\n直播间地址：${link}`]
+                : `${message}\n标题：${title}\n分区：${area}\n直播间地址：${link}`
             } else {
               message = await renderBilibiliCard(bot, {
                 nickname: item.nickname || authorInfo?.name || "B站主播",
