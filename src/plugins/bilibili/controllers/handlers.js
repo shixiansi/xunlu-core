@@ -2,6 +2,7 @@ import fs from "node:fs"
 import path from "node:path"
 
 import { segment } from "../../../Bot/message/index.js"
+import { UniversalMessageSegment } from "../../../Bot/message/core/universal-segment.js"
 import Blogin from "../model/Blogin.js"
 import Bili from "../model/Bilili.js"
 import Filemage from "../../../utils/Filemage.js"
@@ -13,6 +14,7 @@ import { cleanupDirContents, scheduleTempFileCleanup } from "../../shared/temp-f
 import { createBilibiliCachePaths } from "../services/cache-paths.js"
 import {
   formatCompactCount as computew,
+  buildBilibiliCardFallback,
   pickRandomBilibiliBackground,
   renderBilibiliCard,
   renderDynamicMessage,
@@ -129,6 +131,25 @@ function getBilibiliGroupList() {
     return filemage.GetfileList(GROUP_DATA_DIR).map(item => item.replace(".json", ""))
   } catch {
     return []
+  }
+}
+
+function readLivePushConfig() {
+  try {
+    const configPath = path.join(filemage.RootPath, "data", "bilibili", "config.json")
+    if (!fs.existsSync(configPath)) return { live_push_mode: "image", live_at_all: false, groups: {} }
+    return JSON.parse(fs.readFileSync(configPath, "utf8"))
+  } catch {
+    return { live_push_mode: "image", live_at_all: false, groups: {} }
+  }
+}
+
+function getEffectiveLivePushConfig(groupId) {
+  const cfg = readLivePushConfig()
+  const override = cfg?.groups?.[String(groupId)] || {}
+  return {
+    mode: override.live_push_mode || cfg.live_push_mode || "image",
+    atAll: override.live_at_all !== undefined ? override.live_at_all : Boolean(cfg.live_at_all),
   }
 }
 
@@ -728,25 +749,51 @@ export function register(bot) {
 
           if (roomInfo && roomInfo?.live_status == 1 && !item?.live?.live_time) {
             const authorInfo = await Bili.getUserBaseInfo(roomInfo?.uid).catch(() => null)
-            const rendered = await renderBilibiliCard(bot, {
-              nickname: item.nickname || authorInfo?.name || "B站主播",
-              avatar: authorInfo?.face || roomInfo?.user_cover || "",
-              publishedAt: roomInfo?.live_time || "",
-              title: roomInfo?.title || "暂无标题",
-              desc: String(roomInfo?.description || "").trim().slice(0, 160),
-              cover: roomInfo?.user_cover || authorInfo?.face || "",
-              cardType: "live",
-              statText: [
-                "状态 直播中",
-                `分区 ${roomInfo?.area_name || "未分区"}`,
-                `关注 ${computew(roomInfo?.attention || 0)}`,
-                `在线 ${computew(roomInfo?.online || 0)}`,
-              ].join(" | "),
-              link: `https://live.bilibili.com/${room_id}`,
-              saveId: `push_live_${room_id}`,
-            }, { logger })
+            const pushCfg = getEffectiveLivePushConfig(g)
 
-            let res = await bot.sendMessage({ group_id: g }, rendered)
+            let message
+            if (pushCfg.mode === "text") {
+              message = buildBilibiliCardFallback({
+                nickname: item.nickname || authorInfo?.name || "B站主播",
+                avatar: authorInfo?.face || roomInfo?.user_cover || "",
+                publishedAt: roomInfo?.live_time || "",
+                title: roomInfo?.title || "暂无标题",
+                desc: String(roomInfo?.description || "").trim().slice(0, 160),
+                cover: roomInfo?.user_cover || authorInfo?.face || "",
+                cardType: "live",
+                statText: [
+                  "状态 直播中",
+                  `分区 ${roomInfo?.area_name || "未分区"}`,
+                  `关注 ${computew(roomInfo?.attention || 0)}`,
+                  `在线 ${computew(roomInfo?.online || 0)}`,
+                ].join(" | "),
+                link: `https://live.bilibili.com/${room_id}`,
+              })
+            } else {
+              message = await renderBilibiliCard(bot, {
+                nickname: item.nickname || authorInfo?.name || "B站主播",
+                avatar: authorInfo?.face || roomInfo?.user_cover || "",
+                publishedAt: roomInfo?.live_time || "",
+                title: roomInfo?.title || "暂无标题",
+                desc: String(roomInfo?.description || "").trim().slice(0, 160),
+                cover: roomInfo?.user_cover || authorInfo?.face || "",
+                cardType: "live",
+                statText: [
+                  "状态 直播中",
+                  `分区 ${roomInfo?.area_name || "未分区"}`,
+                  `关注 ${computew(roomInfo?.attention || 0)}`,
+                  `在线 ${computew(roomInfo?.online || 0)}`,
+                ].join(" | "),
+                link: `https://live.bilibili.com/${room_id}`,
+                saveId: `push_live_${room_id}`,
+              }, { logger })
+            }
+
+            if (pushCfg.atAll) {
+              message = Array.isArray(message) ? [UniversalMessageSegment.mentionAll(), ...message] : [UniversalMessageSegment.mentionAll(), message]
+            }
+
+            let res = await bot.sendMessage({ group_id: g }, message)
             if (res === false) throw new Error("直播推送消息失败")
 
             logger.info(`[Bilibili] 直播推送成功，房间ID：${room_id}，群ID：${g}`)
@@ -756,10 +803,15 @@ export function register(bot) {
             const startAt = moment(live_time)
             const liveTime = startAt.isValid() ? moment().diff(startAt) : 0
             if (liveTime < 60 * 60 * 1000) {
-              await bot.sendMessage({ group_id: g }, [
+              const pushCfg = getEffectiveLivePushConfig(g)
+              let liveEndMsg = [
                 segment.image(user_cover),
                 `\n标题：${title}\n分区：${area_name}\n开播时间：${live_time}\n已结束直播，直播时长：${moment.utc(liveTime).format("HH:mm:ss")}`,
-              ])
+              ]
+              if (pushCfg.atAll) {
+                liveEndMsg = [UniversalMessageSegment.mentionAll(), ...liveEndMsg]
+              }
+              await bot.sendMessage({ group_id: g }, liveEndMsg)
               writeLiveData(g, u, {})
               logger.info(`[Bilibili] 直播结束推送成功，房间ID：${room_id}，群ID：${g}`)
             } else {

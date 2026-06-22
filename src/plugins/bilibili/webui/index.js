@@ -6,6 +6,10 @@ function getBilibiliConfigPath() {
   return path.join(getRuntimePaths().rootDir, "data", "bilibili", "config.json")
 }
 
+function getBilibiliGroupDataDir() {
+  return path.join(getRuntimePaths().rootDir, "data", "bilibili", "group")
+}
+
 function readBilibiliConfig() {
   try {
     const p = getBilibiliConfigPath()
@@ -22,6 +26,19 @@ function writeBilibiliConfig(cfg) {
   fs.writeFileSync(p, JSON.stringify(cfg, null, 2), "utf8")
 }
 
+function listBilibiliGroupIds() {
+  try {
+    const dir = getBilibiliGroupDataDir()
+    if (!fs.existsSync(dir)) return []
+    return fs.readdirSync(dir)
+      .filter(f => f.endsWith(".json"))
+      .map(f => f.replace(".json", ""))
+      .sort((a, b) => String(a).localeCompare(String(b)))
+  } catch {
+    return []
+  }
+}
+
 function getBilibiliValues() {
   const cfg = readBilibiliConfig()
   return {
@@ -29,7 +46,32 @@ function getBilibiliValues() {
     push_interval_sec: Number(cfg.push_interval_sec || 300),
     default_video_qn: Number(cfg.default_video_qn || 80),
     dynamic_forward_enabled: cfg.dynamic_forward_enabled !== false,
+    live_push_mode: String(cfg.live_push_mode || "image"),
+    live_at_all: Boolean(cfg.live_at_all),
   }
+}
+
+function getGroupLiveValues(groupId) {
+  const cfg = readBilibiliConfig()
+  const override = cfg?.groups?.[String(groupId)] || {}
+  return {
+    live_push_mode: String(override.live_push_mode || "inherit"),
+    live_at_all: String(override.live_at_all !== undefined
+      ? (override.live_at_all ? "true" : "false")
+      : "inherit"),
+  }
+}
+
+function getGroupLiveSummary(groupId) {
+  const cfg = readBilibiliConfig()
+  const override = cfg?.groups?.[String(groupId)] || {}
+  const effectiveMode = override.live_push_mode || cfg.live_push_mode || "image"
+  const effectiveAtAll = override.live_at_all !== undefined ? override.live_at_all : Boolean(cfg.live_at_all)
+  return [
+    `群 ${groupId}`,
+    `推送模式 ${effectiveMode === "text" ? "文字" : "图片"}`,
+    `@全体 ${effectiveAtAll ? "开启" : "关闭"}`,
+  ].join(" | ")
 }
 
 export default {
@@ -81,6 +123,30 @@ export default {
         ],
       },
       {
+        id: "live_push",
+        scope: "global",
+        title: "直播推送",
+        description: "控制开播推送的消息格式和 @全体成员 行为。",
+        fields: [
+          {
+            path: "live_push_mode",
+            label: "推送模式",
+            type: "select",
+            options: [
+              { label: "图片推送", value: "image" },
+              { label: "文字推送", value: "text" },
+            ],
+            description: "图片推送发送渲染卡片，文字推送仅发送纯文本摘要。",
+          },
+          {
+            path: "live_at_all",
+            label: "@全体成员",
+            type: "boolean",
+            description: "开启后推送开播消息时自动 @全体成员。",
+          },
+        ],
+      },
+      {
         id: "video",
         scope: "global",
         title: "视频设置",
@@ -102,22 +168,101 @@ export default {
           },
         ],
       },
+      {
+        id: "group_live",
+        scope: "group",
+        title: "群级直播覆盖",
+        description: "为单个群设置不同于全局的直播推送模式和 @全体成员 行为。",
+        emptyText: "还没有已订阅直播的群，请先在群内订阅 B站 UP 主。",
+        fields: [
+          {
+            path: "live_push_mode",
+            label: "推送模式",
+            type: "select",
+            options: [
+              { label: "跟随全局", value: "inherit" },
+              { label: "图片推送", value: "image" },
+              { label: "文字推送", value: "text" },
+            ],
+          },
+          {
+            path: "live_at_all",
+            label: "@全体成员",
+            type: "select",
+            options: [
+              { label: "跟随全局", value: "inherit" },
+              { label: "开启", value: "true" },
+              { label: "关闭", value: "false" },
+            ],
+          },
+        ],
+      },
     ],
   },
 
-  async getValues() {
+  async listScopes({ scope }) {
+    if (scope !== "group") return []
+    return listBilibiliGroupIds().map(groupId => ({
+      id: String(groupId),
+      label: `群 ${groupId}`,
+    }))
+  },
+
+  async getValues({ scope = "global", scopeId = "" } = {}) {
+    if (scope === "group") {
+      const groupId = String(scopeId || "").trim()
+      if (!groupId) return { values: {}, meta: {} }
+      return {
+        values: getGroupLiveValues(groupId),
+        meta: { summary: getGroupLiveSummary(groupId) },
+      }
+    }
+
     return {
       values: getBilibiliValues(),
-      meta: { summary: "B站 Cookie、推送频率、视频画质" },
+      meta: { summary: "B站 Cookie、推送频率、直播推送模式、视频画质" },
     }
   },
 
-  async updateValues({ values = {} } = {}) {
+  async updateValues({ scope = "global", scopeId = "", values = {} } = {}) {
     const cfg = readBilibiliConfig()
+
+    if (scope === "group") {
+      const groupId = String(scopeId || "").trim()
+      if (!groupId) return { values: {}, meta: {}, message: "无效的群号" }
+
+      if (!cfg.groups) cfg.groups = {}
+      if (!cfg.groups[groupId]) cfg.groups[groupId] = {}
+
+      const override = cfg.groups[groupId]
+      if (values.live_push_mode !== undefined) {
+        const mode = String(values.live_push_mode).trim()
+        if (mode === "inherit") delete override.live_push_mode
+        else override.live_push_mode = mode === "text" ? "text" : "image"
+      }
+      if (values.live_at_all !== undefined) {
+        const atAll = String(values.live_at_all).trim()
+        if (atAll === "inherit") delete override.live_at_all
+        else override.live_at_all = atAll === "true"
+      }
+
+      if (Object.keys(override).length === 0) delete cfg.groups[groupId]
+      if (Object.keys(cfg.groups).length === 0) delete cfg.groups
+
+      writeBilibiliConfig(cfg)
+      return {
+        values: getGroupLiveValues(groupId),
+        meta: { summary: getGroupLiveSummary(groupId) },
+        message: `B站直播推送 群 ${groupId} 配置已保存`,
+      }
+    }
+
     if (values.cookie !== undefined) cfg.cookie = String(values.cookie || "").trim()
     if (values.push_interval_sec !== undefined) cfg.push_interval_sec = Math.max(60, Number(values.push_interval_sec) || 300)
     if (values.default_video_qn !== undefined) cfg.default_video_qn = Number(values.default_video_qn) || 80
     if (values.dynamic_forward_enabled !== undefined) cfg.dynamic_forward_enabled = Boolean(values.dynamic_forward_enabled)
+    if (values.live_push_mode !== undefined) cfg.live_push_mode = String(values.live_push_mode).trim() === "text" ? "text" : "image"
+    if (values.live_at_all !== undefined) cfg.live_at_all = Boolean(values.live_at_all)
     writeBilibiliConfig(cfg)
 
     return {
