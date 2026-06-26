@@ -171,13 +171,15 @@ async function getValidPixivPic(retryCount = 0) {
   }
 }
 
-async function requestSetuFromLolicon(tag) {
+const MAX_SETU_COUNT = 5
+
+async function requestSetuFromLolicon(tag, num = 1) {
   const response = await runtimeDeps.fetch(LOLICON_SETU_API, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       r18: 2,
-      num: 1,
+      num: Math.max(1, Math.min(num, MAX_SETU_COUNT)),
       tag: [tag],
       size: ["regular", "original"],
       excludeAI: false,
@@ -191,31 +193,35 @@ async function requestSetuFromLolicon(tag) {
   return await response.json()
 }
 
-async function getValidSetuPic(tag, retryCount = 0) {
+async function getValidSetuPic(tag, num = 1, retryCount = 0) {
   if (retryCount >= MAX_RETRY_COUNT) {
     console.log(`[获取色图] 标签：${tag}，已耗尽最大重试次数（${MAX_RETRY_COUNT}次），获取失败`)
     return null
   }
 
   try {
-    const setuData = await requestSetuFromLolicon(tag)
+    const setuData = await requestSetuFromLolicon(tag, num)
     if (setuData?.error) throw new Error(setuData.error)
 
-    const pic = Array.isArray(setuData?.data) ? setuData.data[0] : null
-    if (!pic) throw new Error("接口返回无色图数据")
+    const pics = Array.isArray(setuData?.data) ? setuData.data : []
+    if (!pics.length) throw new Error("接口返回无色图数据")
 
-    const imgUrl = getSetuPreviewUrl(pic)
-    if (!imgUrl) throw new Error("无法提取有效色图链接")
+    const validPics = []
+    for (const pic of pics) {
+      const imgUrl = getSetuPreviewUrl(pic)
+      if (!imgUrl) continue
+      if (await isImgUrlValid(imgUrl)) validPics.push(pic)
+    }
 
-    if (await isImgUrlValid(imgUrl)) return pic
+    if (validPics.length >= num) return validPics
 
-    console.log(`[获取色图] 标签：${tag}，图片链接无效，正在进行第${retryCount + 1}次重试`)
-    return await getValidSetuPic(tag, retryCount + 1)
+    console.log(`[获取色图] 标签：${tag}，有效图片不足（${validPics.length}/${num}），正在进行第${retryCount + 1}次重试`)
+    return await getValidSetuPic(tag, num, retryCount + 1)
   } catch (error) {
     console.log(
       `[获取色图] 标签：${tag}，第${retryCount + 1}次请求失败，错误：${error.message}，正在重试`,
     )
-    return await getValidSetuPic(tag, retryCount + 1)
+    return await getValidSetuPic(tag, num, retryCount + 1)
   }
 }
 
@@ -387,10 +393,12 @@ async function sendForwardWithMirageFallback(
   }
 }
 
-function getRequestedSetuTag(message = "") {
-  const match = /^来张(.*)色图$/.exec(String(message || "").trim())
-  const tag = match?.[1]?.trim()
-  return tag || "萝莉"
+function parseSetuRequest(message = "") {
+  const match = /^来(\d+)?张?(.*)色图$/.exec(String(message || "").trim())
+  const rawCount = match?.[1] ? parseInt(match[1], 10) : 1
+  const count = Math.max(1, Math.min(rawCount, MAX_SETU_COUNT))
+  const tag = (match?.[2] || "").trim() || "萝莉"
+  return { count, tag }
 }
 
 async function handleRandomPixiv(ctx) {
@@ -411,20 +419,24 @@ async function handleRandomPixiv(ctx) {
 async function handleSetuRequest(ctx) {
   if (!ctx.isMaster) return true
 
-  const tag = getRequestedSetuTag(ctx.msg)
-  console.log(`[色图请求] 主人请求标签：${tag}`)
+  const { count, tag } = parseSetuRequest(ctx.msg)
+  console.log(`[色图请求] 主人请求标签：${tag}，数量：${count}`)
 
-  const pic = await getValidSetuPic(tag)
-  if (!pic) {
+  const pics = await getValidSetuPic(tag, count)
+  if (!pics || !pics.length) {
     return await ctx.reply(
-      `😭 抱歉，标签「${tag}」已尝试${MAX_RETRY_COUNT}次，仍无法获取有效色图，请稍后再试或更换标签`,
+      `😭 抱歉，标签「${tag}」已尝试${MAX_RETRY_COUNT}次，仍无法获取足够色图，请稍后再试或更换标签`,
     )
   }
 
-  const previewUrl = getSetuPreviewUrl(pic)
+  const imageUrls = pics.map(p => getSetuPreviewUrl(p)).filter(Boolean)
+  const metaText = pics.length === 1
+    ? buildSetuMetaText(pics[0])
+    : `共 ${pics.length} 张「${tag}」色图`
+
   return await sendForwardWithMirageFallback(ctx, {
-    metaText: buildSetuMetaText(pic),
-    imageUrls: previewUrl ? [previewUrl] : [],
+    metaText,
+    imageUrls,
     failureTitle: `标签「${tag}」色图`,
     fallbackNoticeText: MIRAGE_FALLBACK_NOTICE,
   })
@@ -434,7 +446,7 @@ export function register(bot) {
   if (!bot || !bot.registerCommand) return
 
   bot.registerCommand(["随机图", { key: "random-pic" }], async ctx => await handleRandomPixiv(ctx))
-  bot.registerCommand(["^来张(.*)色图$", { key: "setu" }], async ctx => await handleSetuRequest(ctx))
+  bot.registerCommand(["^来\\d*张?.*色图$", { key: "setu" }], async ctx => await handleSetuRequest(ctx))
 
   console.log("[pixiv] registered with bot shim")
 }
@@ -445,11 +457,12 @@ export function onBotEvent(event) {
 
 export const __test = {
   MAX_RETRY_COUNT,
+  MAX_SETU_COUNT,
   LOLICON_SETU_API,
   mirageSurfacePath,
   tempDir,
   MIRAGE_FALLBACK_NOTICE,
-  getRequestedSetuTag,
+  parseSetuRequest,
   getValidPixivPic,
   getValidSetuPic,
   buildSetuMetaText,

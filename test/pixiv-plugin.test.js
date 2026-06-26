@@ -159,7 +159,7 @@ test("pixiv setu command uses lolicon v2 payload and sends forward with new meta
       },
     },
     async () => {
-      const handler = getCommandHandler("^来张(.*)色图$")
+      const handler = getCommandHandler("^来\\d*张?.*色图$")
       const { ctx, state } = createPixivCtx({ msg: "来张猫娘色图" })
 
       const result = await handler(ctx)
@@ -208,7 +208,7 @@ test("pixiv setu command retries empty lolicon responses and returns failure tex
       },
     },
     async () => {
-      const handler = getCommandHandler("^来张(.*)色图$")
+      const handler = getCommandHandler("^来\\d*张?.*色图$")
       const { ctx, state } = createPixivCtx({ msg: "来张色图" })
 
       await handler(ctx)
@@ -252,7 +252,7 @@ test("pixiv setu command rebuilds forward with mirage images after first forward
       },
     },
     async () => {
-      const handler = getCommandHandler("^来张(.*)色图$")
+      const handler = getCommandHandler("^来\\d*张?.*色图$")
       let forwardReplyCount = 0
       const { ctx, state } = createPixivCtx({
         async reply(message) {
@@ -308,7 +308,7 @@ test("pixiv setu command rebuilds forward with mirage images when forward reply 
       },
     },
     async () => {
-      const handler = getCommandHandler("^来张(.*)色图$")
+      const handler = getCommandHandler("^来\\d*张?.*色图$")
       let forwardReplyCount = 0
       const { ctx, state } = createPixivCtx({
         async reply(message) {
@@ -357,7 +357,7 @@ test("pixiv setu command still sends mirage fallback when notice message fails",
       },
     },
     async () => {
-      const handler = getCommandHandler("^来张(.*)色图$")
+      const handler = getCommandHandler("^来\\d*张?.*色图$")
       let forwardReplyCount = 0
       const { ctx, state } = createPixivCtx({
         async reply(message) {
@@ -476,7 +476,7 @@ test("pixiv sends explicit failure text when mirage fallback forward also fails"
       },
     },
     async () => {
-      const handler = getCommandHandler("^来张(.*)色图$")
+      const handler = getCommandHandler("^来\\d*张?.*色图$")
       let forwardReplyCount = 0
       const { ctx, state } = createPixivCtx({
         async reply(message) {
