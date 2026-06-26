@@ -796,7 +796,7 @@ export function register(bot) {
             let { title, user_cover, area_name, live_time } = item.live
             const startAt = moment(live_time)
             const liveTime = startAt.isValid() ? moment().diff(startAt) : 0
-            if (liveTime < 60 * 60 * 1000) {
+            if (liveTime >= 60000) {
               const pushCfg = getEffectiveLivePushConfig(g)
               let liveEndMsg = [
                 segment.image(user_cover),
