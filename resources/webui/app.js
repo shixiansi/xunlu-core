@@ -396,6 +396,7 @@ async function initPluginControlField(container, subType) {
   }
 
   async function toggle(name) {
+    _pluginManagerDataCache = null
     if (subType === "plugin") {
       await api("/plugin-manager/toggle-plugin", { method: "POST", body: JSON.stringify({ name }) })
     } else {
