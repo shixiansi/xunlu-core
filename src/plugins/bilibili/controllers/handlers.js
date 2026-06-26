@@ -792,7 +792,7 @@ export function register(bot) {
 
             logger.info(`[Bilibili] 直播推送成功，房间ID：${room_id}，群ID：${g}`)
             writeLiveData(g, u, roomInfo)
-          } else if (roomInfo?.live_status == 0 && item?.live?.live_time) {
+          } else if (roomInfo?.live_status != 1 && item?.live?.live_time) {
             let { title, user_cover, area_name, live_time } = item.live
             const pushCfg = getEffectiveLivePushConfig(g)
             const startAt = moment(live_time)
