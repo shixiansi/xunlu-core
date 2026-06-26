@@ -794,23 +794,19 @@ export function register(bot) {
             writeLiveData(g, u, roomInfo)
           } else if (roomInfo?.live_status == 0 && item?.live?.live_time) {
             let { title, user_cover, area_name, live_time } = item.live
+            const pushCfg = getEffectiveLivePushConfig(g)
             const startAt = moment(live_time)
             const liveTime = startAt.isValid() ? moment().diff(startAt) : 0
-            if (liveTime >= 60000) {
-              const pushCfg = getEffectiveLivePushConfig(g)
-              let liveEndMsg = [
-                segment.image(user_cover),
-                `\n标题：${title}\n分区：${area_name}\n开播时间：${live_time}\n已结束直播，直播时长：${moment.utc(liveTime).format("HH:mm:ss")}`,
-              ]
-              if (pushCfg.atAll) {
-                liveEndMsg = [UniversalMessageSegment.mentionAll(), ...liveEndMsg]
-              }
-              await bot.sendMessage({ group_id: g }, liveEndMsg)
-              writeLiveData(g, u, {})
-              logger.info(`[Bilibili] 直播结束推送成功，房间ID：${room_id}，群ID：${g}`)
-            } else {
-              writeLiveData(g, u, {})
+            let liveEndMsg = [
+              segment.image(user_cover),
+              `\n标题：${title}\n分区：${area_name}\n开播时间：${live_time}\n已结束直播，直播时长：${moment.utc(liveTime).format("HH:mm:ss")}`,
+            ]
+            if (pushCfg.atAll) {
+              liveEndMsg = [UniversalMessageSegment.mentionAll(), ...liveEndMsg]
             }
+            await bot.sendMessage({ group_id: g }, liveEndMsg)
+            writeLiveData(g, u, {})
+            logger.info(`[Bilibili] 直播结束推送成功，房间ID：${room_id}，群ID：${g}`)
           }
         } catch (e) {
           logger.error?.(`[Bilibili] 直播轮询失败，群ID：${g}，用户ID：${u}，${e?.message || e}`)
