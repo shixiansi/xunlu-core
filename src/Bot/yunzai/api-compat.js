@@ -286,7 +286,10 @@ function patchIcqqEntitiesForTakeover(bot) {
             const nickname = String(item?.nickname ?? item?.name ?? uid)
             const card = String(item?.card ?? item?.remark ?? item?.member_card ?? item?.memberCard ?? nickname ?? "")
             const role = String(item?.role ?? item?.permission ?? item?.member_role ?? item?.memberRole ?? "member")
-            m.set(uid, { group_id: gid, user_id: uid, nickname, card, role, update_time: now })
+            const shutTime = toInt(item?.shut_up_timestamp ?? item?.shut_up_end_time ?? item?.shutup_time)
+            const member = { group_id: gid, user_id: uid, nickname, card, role, update_time: now }
+            if (shutTime) member.shutup_time = shutTime
+            m.set(uid, member)
           }
 
           if (this.c?.gml instanceof Map) this.c.gml.set(gid, m)
