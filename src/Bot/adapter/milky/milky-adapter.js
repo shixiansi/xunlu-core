@@ -1,4 +1,4 @@
-﻿import { MilkyClient } from "@saltify/milky-node-sdk"
+import { createMilkyClient } from "@saltify/milky-tea"
 // 导入通用消息类型（用于兼容判断）
 import { UniversalMessage, UniversalSegmentType } from "../../message/universal-message.js"
 
@@ -7,7 +7,49 @@ function normalizeMilkyApiName(name) {
   let out = String(name).trim()
   while (out.startsWith("/")) out = out.slice(1)
   if (out.startsWith("api/")) out = out.slice("api/".length)
+  // 历史遗留写法：Milky 协议中不存在 get_forward_message，真实接口为 get_forwarded_messages
+  if (out === "get_forward_message") out = "get_forwarded_messages"
   return out
+}
+
+function appendBasePath(base, basePath) {
+  const path = String(basePath ?? "").trim()
+  if (!path || path === "/") return base
+  const normalized = path.startsWith("/") ? path : `/${path}`
+  return `${base}${normalized.replace(/\/+$/, "")}`
+}
+
+/**
+ * 把旧版 milky-node-sdk 的配置换算成 milky-tea 需要的单一 baseURL。
+ *
+ * milky-tea 只接受 baseURL，不再有 authority/basePath/useTLS 的拆分，
+ * 这里同时兼容老配置的历史写法：
+ * - authority: "localhost:3010" + basePath: "/"      => http://localhost:3010
+ * - authority: "localhost"      + basePath: ":3010"  => http://localhost:3010（旧默认配置把端口写在 basePath）
+ * - authority: "localhost:3010" + basePath: "/milky" => http://localhost:3010/milky
+ * - 直接给 baseURL（新写法）时优先级最高
+ */
+function resolveMilkyBaseURL(config = {}) {
+  const explicit = config.baseURL ?? config.baseUrl
+  if (explicit !== undefined && explicit !== null && String(explicit).trim()) {
+    return String(explicit).trim().replace(/\/+$/, "")
+  }
+
+  const authority = String(config.authority ?? "").trim()
+  if (!authority) {
+    throw new Error("[MilkyAdapter] 缺少 milky 服务地址，请配置 baseURL 或 authority")
+  }
+
+  if (/^https?:\/\//i.test(authority)) {
+    return appendBasePath(authority.replace(/\/+$/, ""), config.basePath)
+  }
+
+  const protocol = config.useTLS ? "https" : "http"
+  const basePath = String(config.basePath ?? "").trim()
+  // 旧配置形态：authority=localhost, basePath=:3010 —— 端口需要拼到 host 上
+  if (basePath.startsWith(":")) return `${protocol}://${authority}${basePath}`
+
+  return appendBasePath(`${protocol}://${authority}`, basePath)
 }
 
 /**
@@ -15,6 +57,9 @@ function normalizeMilkyApiName(name) {
  * 适配通用消息转换体系，完整实现milky标准API，兼容ICQQ插件
  */
 class MilkyAdapter {
+  // 已挂载到 milky-tea 事件源上的事件类型（避免重复注册）
+  #attachedEventTypes = new Set()
+
   constructor(config = {}) {
     this.config = {
       authority: config.authority || "localhost:8080",
@@ -25,20 +70,62 @@ class MilkyAdapter {
       ...config,
     }
 
-    this.client = new MilkyClient(
-      this.config.authority,
-      this.config.basePath,
-      this.config.accessToken,
-      this.config.useTLS,
-      this.config.useSSE,
-    )
+    // milky-tea：单一 baseURL + token，不再需要 authority/basePath/useTLS 拆分
+    this.baseURL = resolveMilkyBaseURL(this.config)
+    // milky-tea 的连接方式：websocket | sse（旧的 "auto" 已被 SDK 移除）
+    this.eventKind = this.config.useSSE ? "sse" : "websocket"
 
-    console.log("[MilkyAdapter] 客户端初始化完成:", this.client)
+    this.client = createMilkyClient({
+      baseURL: this.baseURL,
+      token: this.config.accessToken || undefined,
+      // 保持旧版行为：不启用 zod 严格校验，避免协议端字段差异导致调用直接抛错
+      strict: this.config.strict ?? false,
+    })
+
+    console.log(
+      `[MilkyAdapter] 客户端初始化完成: ${this.baseURL} (event=${this.eventKind})`,
+    )
 
     // 维护事件监听器列表（修复on/off/once方法）
     this.eventListeners = new Map()
+    // 事件源按需创建（milky-tea 的 client.event() 会立即发起连接）
+    this.eventSource = null
     // 标识适配器类型
     this.adapterType = "milky"
+  }
+
+  /**
+   * 懒创建 milky-tea 事件源，并桥接到本适配器的多监听器分发。
+   */
+  #ensureEventSource() {
+    if (this.eventSource) return this.eventSource
+
+    const source = this.client.event(this.eventKind, {
+      reconnect: this.config.reconnect ?? { interval: 1000, attempts: "always" },
+    })
+    this.eventSource = source
+
+    // 按类型分发：SDK 会以 event_type 作为事件名派发
+    for (const eventType of this.eventListeners.keys()) {
+      this.#attachEventSourceListener(eventType)
+    }
+
+    source.on("error", err => {
+      console.error("[MilkyAdapter] 事件连接异常:", err?.message || err)
+    })
+    source.on("open", () => {
+      console.log("[MilkyAdapter] 事件连接已建立")
+    })
+
+    return source
+  }
+
+  #attachEventSourceListener(eventType) {
+    if (!this.eventSource || this.#attachedEventTypes.has(eventType)) return
+    this.#attachedEventTypes.add(eventType)
+    this.eventSource.on(eventType, data => {
+      this.eventListeners.get(eventType)?.forEach(cb => cb(data))
+    })
   }
 
   /**
@@ -82,8 +169,10 @@ class MilkyAdapter {
     if (!normalizedName) throw new Error("[MilkyAdapter] callApi requires apiName")
 
     try {
-      const result = await this.client.callApi(normalizedName, input)
-      logger.debug(`[MilkyAdapter] 调用API ${normalizedName} 成功:`, result)
+      // milky-tea：client.fetch(endpointName, params)
+      const result = await this.client.fetch(normalizedName, input ?? {})
+      // logger 由 src/component/logger 挂到全局，独立调用时可能尚未初始化
+      globalThis.logger?.debug?.(`[MilkyAdapter] 调用API ${normalizedName} 成功:`, result)
       return result
     } catch (error) {
       console.error(`[MilkyAdapter] 调用API ${normalizedName} 失败:`, error)
@@ -208,7 +297,7 @@ class MilkyAdapter {
     delete payload.isAdd
 
     try {
-      const result = await this.client.callApi("send_group_message_reaction", payload)
+      const result = await this.callApi("send_group_message_reaction", payload)
       console.debug(`[MilkyAdapter] 调用API send_group_message_reaction 成功:`, result)
       return result
     } catch (err) {
@@ -305,17 +394,21 @@ class MilkyAdapter {
   }
 
   /**
-   * 修复事件监听方法（核心修改）
+   * 事件监听：桥接到 milky-tea 的 client.event() 事件源
+   *
+   * milky-tea 不再提供 client.onEvent()，改为 client.event(kind) 返回事件源，
+   * 且事件源创建时即发起连接，因此这里按需懒创建并在事件源上注册监听。
    */
   on(eventType, listener) {
     if (!this.eventListeners.has(eventType)) {
       this.eventListeners.set(eventType, new Set())
-      // 绑定到Milky客户端
-      this.client.onEvent(eventType, data => {
-        this.eventListeners.get(eventType).forEach(cb => cb(data))
-      })
     }
     this.eventListeners.get(eventType).add(listener)
+
+    // 触发事件源创建，并把该类型挂到事件源上
+    this.#ensureEventSource()
+    this.#attachEventSourceListener(eventType)
+
     console.log(
       `[MilkyAdapter] 绑定事件监听器: ${eventType}, 总数: ${this.eventListeners.get(eventType).size}`,
     )
@@ -383,7 +476,12 @@ class MilkyAdapter {
     const isSupportedMilkyUri = uri => {
       if (!uri) return false
       const s = String(uri).trim().toLowerCase()
-      return s.startsWith("http://") || s.startsWith("https://") || s.startsWith("file://") || s.startsWith("base64://")
+      return (
+        s.startsWith("http://") ||
+        s.startsWith("https://") ||
+        s.startsWith("file://") ||
+        s.startsWith("base64://")
+      )
     }
 
     // 1. 字符串直接转为文本段
@@ -415,160 +513,158 @@ class MilkyAdapter {
         case UniversalSegmentType.TEXT:
           return {
             type: "text",
-            data: { text: msg?.data?.content ?? msg?.data?.text ?? msg?.text ?? msg?.content ?? "" },
+            data: {
+              text: msg?.data?.content ?? msg?.data?.text ?? msg?.text ?? msg?.content ?? "",
+            },
           }
 
-        case UniversalSegmentType.EMOJI: // 通用face类型
-          {
-            const faceId = msg?.data?.id ?? msg?.id ?? msg?.data?.face_id ?? msg?.data?.faceId ?? undefined
-            const faceIdStr = faceId !== undefined && faceId !== null ? String(faceId) : ""
-            if (!faceIdStr) return { type: "text", data: { text: "" } }
-            return { type: "face", data: { face_id: faceIdStr } }
+        case UniversalSegmentType.EMOJI: { // 通用face类型
+          const faceId =
+            msg?.data?.id ?? msg?.id ?? msg?.data?.face_id ?? msg?.data?.faceId ?? undefined
+          const faceIdStr = faceId !== undefined && faceId !== null ? String(faceId) : ""
+          if (!faceIdStr) return { type: "text", data: { text: "" } }
+          return { type: "face", data: { face_id: faceIdStr } }
+        }
+
+        case UniversalSegmentType.IMAGE: { // 通用图片类型
+          // Prefer URL/temp_url first (Milky only supports http(s)/file/base64 schemes for uri).
+          // Avoid using resource_id (fileId) as uri, otherwise Milky returns "Unsupported URI scheme".
+          const rawInput =
+            msg?.data?.url ??
+            msg?.url ??
+            msg?.data?.uri ??
+            msg?.uri ??
+            msg?.data?.temp_url ??
+            msg?.data?.tempUrl ??
+            msg?.temp_url ??
+            msg?.tempUrl ??
+            msg?.data?.path ??
+            msg?.path ??
+            msg?.data?.file ??
+            msg?.file ??
+            msg?.data?.fileId ??
+            msg?.fileId ??
+            msg?.data?.resource_id ??
+            msg?.resource_id ??
+            msg?.data?.resourceId ??
+            msg?.resourceId ??
+            ""
+
+          const uri = toMilkyUri(rawInput)
+
+          if (!uri) {
+            const fallback = msg?.data?.summary ?? msg?.summary ?? "[图片]"
+            return { type: "text", data: { text: String(fallback || "") } }
           }
 
-        case UniversalSegmentType.IMAGE: // 通用图片类型
-          {
-            // Prefer URL/temp_url first (Milky only supports http(s)/file/base64 schemes for uri).
-            // Avoid using resource_id (fileId) as uri, otherwise Milky returns "Unsupported URI scheme".
-            const rawInput =
-              msg?.data?.url ??
-              msg?.url ??
-              msg?.data?.uri ??
-              msg?.uri ??
-              msg?.data?.temp_url ??
-              msg?.data?.tempUrl ??
-              msg?.temp_url ??
-              msg?.tempUrl ??
-              msg?.data?.path ??
-              msg?.path ??
-              msg?.data?.file ??
-              msg?.file ??
-              msg?.data?.fileId ??
-              msg?.fileId ??
-              msg?.data?.resource_id ??
-              msg?.resource_id ??
-              msg?.data?.resourceId ??
-              msg?.resourceId ??
-              ""
+          if (!isSupportedMilkyUri(uri)) {
+            const fallback = msg?.data?.summary ?? msg?.summary ?? "[图片]"
+            return { type: "text", data: { text: String(fallback || "") } }
+          }
 
-            const uri = toMilkyUri(rawInput)
-
-            if (!uri) {
-              const fallback = msg?.data?.summary ?? msg?.summary ?? "[图片]"
-              return { type: "text", data: { text: String(fallback || "") } }
-            }
-
-            if (!isSupportedMilkyUri(uri)) {
-              const fallback = msg?.data?.summary ?? msg?.summary ?? "[图片]"
-              return { type: "text", data: { text: String(fallback || "") } }
-            }
-
-            const summaryRaw = msg?.data?.summary ?? msg?.summary
-            const summary = summaryRaw !== undefined && summaryRaw !== null && String(summaryRaw).trim()
+          const summaryRaw = msg?.data?.summary ?? msg?.summary
+          const summary =
+            summaryRaw !== undefined && summaryRaw !== null && String(summaryRaw).trim()
               ? String(summaryRaw)
               : undefined
 
-            let subTypeRaw =
-              msg?.data?.sub_type ?? msg?.data?.subType ?? msg?.sub_type ?? msg?.subType ?? undefined
+          let subTypeRaw =
+            msg?.data?.sub_type ?? msg?.data?.subType ?? msg?.sub_type ?? msg?.subType ?? undefined
 
-            if (!subTypeRaw && summary) {
-              if (summary.includes("动画表情")) subTypeRaw = "sticker"
-            }
-
-            const sub_type = subTypeRaw ? String(subTypeRaw).toLowerCase() : undefined
-            const normalizedSubType = sub_type === "normal" || sub_type === "sticker" ? sub_type : undefined
-
-            const data = {
-              uri,
-              ...(normalizedSubType ? { sub_type: normalizedSubType } : {}),
-              ...(summary ? { summary } : {}),
-            }
-
-            return { type: "image", data }
+          if (!subTypeRaw && summary) {
+            if (summary.includes("动画表情")) subTypeRaw = "sticker"
           }
 
-        case UniversalSegmentType.VOICE: // 通用语音类型（record）
-          {
-            const rawInput =
-              msg?.data?.url ??
-              msg?.url ??
-              msg?.data?.uri ??
-              msg?.uri ??
-              msg?.data?.path ??
-              msg?.path ??
-              msg?.data?.file ??
-              msg?.file ??
-              msg?.data?.fileId ??
-              msg?.fileId ??
-              ""
-            const uri = toMilkyUri(rawInput)
-            if (!uri || !isSupportedMilkyUri(uri)) return { type: "text", data: { text: "[语音]" } }
-            return { type: "record", data: { uri } }
+          const sub_type = subTypeRaw ? String(subTypeRaw).toLowerCase() : undefined
+          const normalizedSubType =
+            sub_type === "normal" || sub_type === "sticker" ? sub_type : undefined
+
+          const data = {
+            uri,
+            ...(normalizedSubType ? { sub_type: normalizedSubType } : {}),
+            ...(summary ? { summary } : {}),
           }
 
-        case UniversalSegmentType.VIDEO: // 通用视频类型
-          {
-            const rawInput =
-              msg?.data?.url ??
-              msg?.url ??
-              msg?.data?.uri ??
-              msg?.uri ??
-              msg?.data?.path ??
-              msg?.path ??
-              msg?.data?.file ??
-              msg?.file ??
-              msg?.data?.fileId ??
-              msg?.fileId ??
-              ""
-            const uri = toMilkyUri(rawInput)
-            if (!uri || !isSupportedMilkyUri(uri)) return { type: "text", data: { text: "[视频]" } }
-            return { type: "video", data: { uri } }
-          }
+          return { type: "image", data }
+        }
 
-        case UniversalSegmentType.FILE: // 通用文件类型
-          {
-            const rawInput =
-              msg?.data?.url ??
-              msg?.url ??
-              msg?.data?.uri ??
-              msg?.uri ??
-              msg?.data?.path ??
-              msg?.path ??
-              msg?.data?.file ??
-              msg?.file ??
-              msg?.data?.fileId ??
-              msg?.fileId ??
-              ""
-            const uri = toMilkyUri(rawInput)
-            if (!uri || !isSupportedMilkyUri(uri)) {
-              const name = msg?.data?.name ?? msg?.name ?? ""
-              return { type: "text", data: { text: name ? `[文件] ${name}` : "[文件]" } }
-            }
+        case UniversalSegmentType.VOICE: { // 通用语音类型（record）
+          const rawInput =
+            msg?.data?.url ??
+            msg?.url ??
+            msg?.data?.uri ??
+            msg?.uri ??
+            msg?.data?.path ??
+            msg?.path ??
+            msg?.data?.file ??
+            msg?.file ??
+            msg?.data?.fileId ??
+            msg?.fileId ??
+            ""
+          const uri = toMilkyUri(rawInput)
+          if (!uri || !isSupportedMilkyUri(uri)) return { type: "text", data: { text: "[语音]" } }
+          return { type: "record", data: { uri } }
+        }
+
+        case UniversalSegmentType.VIDEO: { // 通用视频类型
+          const rawInput =
+            msg?.data?.url ??
+            msg?.url ??
+            msg?.data?.uri ??
+            msg?.uri ??
+            msg?.data?.path ??
+            msg?.path ??
+            msg?.data?.file ??
+            msg?.file ??
+            msg?.data?.fileId ??
+            msg?.fileId ??
+            ""
+          const uri = toMilkyUri(rawInput)
+          if (!uri || !isSupportedMilkyUri(uri)) return { type: "text", data: { text: "[视频]" } }
+          return { type: "video", data: { uri } }
+        }
+
+        case UniversalSegmentType.FILE: { // 通用文件类型
+          const rawInput =
+            msg?.data?.url ??
+            msg?.url ??
+            msg?.data?.uri ??
+            msg?.uri ??
+            msg?.data?.path ??
+            msg?.path ??
+            msg?.data?.file ??
+            msg?.file ??
+            msg?.data?.fileId ??
+            msg?.fileId ??
+            ""
+          const uri = toMilkyUri(rawInput)
+          if (!uri || !isSupportedMilkyUri(uri)) {
             const name = msg?.data?.name ?? msg?.name ?? ""
-            return { type: "file", data: { uri, ...(name ? { name } : {}) } }
+            return { type: "text", data: { text: name ? `[文件] ${name}` : "[文件]" } }
           }
+          const name = msg?.data?.name ?? msg?.name ?? ""
+          return { type: "file", data: { uri, ...(name ? { name } : {}) } }
+        }
 
-        case UniversalSegmentType.MENTION: // 通用@某人类型
-          {
-            const raw = msg?.data?.target ?? msg?.qq ?? ""
-            const uid = Number(raw)
-            if (!Number.isFinite(uid) || uid <= 0) {
-              return { type: "text", data: { text: raw ? `@${raw}` : "" } }
-            }
-            return { type: "mention", data: { user_id: uid } }
+        case UniversalSegmentType.MENTION: { // 通用@某人类型
+          const raw = msg?.data?.target ?? msg?.qq ?? ""
+          const uid = Number(raw)
+          if (!Number.isFinite(uid) || uid <= 0) {
+            return { type: "text", data: { text: raw ? `@${raw}` : "" } }
           }
+          return { type: "mention", data: { user_id: uid } }
+        }
 
         case UniversalSegmentType.MENTION_ALL: // 通用@全体类型
           return { type: "mention_all", data: {} }
 
-        case UniversalSegmentType.REPLY: // 通用回复类型
-          {
-            const rawSeq = msg?.data?.seq ?? msg?.seq ?? msg?.data?.id ?? msg?.id ?? ""
-            const seq = Number(rawSeq)
-            return Number.isFinite(seq) && seq > 0
-              ? { type: "reply", data: { message_seq: seq } }
-              : { type: "text", data: { text: "" } }
-          }
+        case UniversalSegmentType.REPLY: { // 通用回复类型
+          const rawSeq = msg?.data?.seq ?? msg?.seq ?? msg?.data?.id ?? msg?.id ?? ""
+          const seq = Number(rawSeq)
+          return Number.isFinite(seq) && seq > 0
+            ? { type: "reply", data: { message_seq: seq } }
+            : { type: "text", data: { text: "" } }
+        }
 
         default:
           // 其他通用类型直接透传
@@ -837,52 +933,64 @@ class MilkyAdapter {
       return this.dealMilkyMsg(patched)
     }
 
-    const fallbackUserIdRaw = this.loginInfo?.uin ?? this.loginInfo?.user_id ?? globalThis.Bot?.uin ?? 10001
+    const fallbackUserIdRaw =
+      this.loginInfo?.uin ?? this.loginInfo?.user_id ?? globalThis.Bot?.uin ?? 10001
     const fallbackUserId = Number(fallbackUserIdRaw)
-    const safeFallbackUserId = Number.isFinite(fallbackUserId) && fallbackUserId >= 10001 ? fallbackUserId : 10001
+    const safeFallbackUserId =
+      Number.isFinite(fallbackUserId) && fallbackUserId >= 10001 ? fallbackUserId : 10001
 
     return [
       {
         type: "forward",
         data: {
-          messages: await Promise.all(list.map(async item => {
-            const uidRaw = item?.user_id ?? item?.uin ?? item?.sender_id ?? item?.id
-            const uid = Number(uidRaw)
-            const user_id = Number.isFinite(uid) && uid >= 10001 ? uid : safeFallbackUserId
+          messages: await Promise.all(
+            list.map(async item => {
+              const uidRaw = item?.user_id ?? item?.uin ?? item?.sender_id ?? item?.id
+              const uid = Number(uidRaw)
+              const user_id = Number.isFinite(uid) && uid >= 10001 ? uid : safeFallbackUserId
 
-            const sender_name = String(item?.nickname ?? item?.sender_name ?? item?.name ?? "未知发送者")
+              const sender_name = String(
+                item?.nickname ?? item?.sender_name ?? item?.name ?? "未知发送者",
+              )
 
-            const content = item?.message ?? item?.content ?? item?.segments ?? item
-            const rawSegs = Array.isArray(content) ? content : [content]
-            const filtered = rawSegs.filter(v => v !== undefined && v !== null)
+              const content = item?.message ?? item?.content ?? item?.segments ?? item
+              const rawSegs = Array.isArray(content) ? content : [content]
+              const filtered = rawSegs.filter(v => v !== undefined && v !== null)
 
-            const segments =
-              filtered.length > 0
-                ? await Promise.all(
-                    filtered.map(async i => {
-                      try {
-                        return await toForwardSegment(i)
-                      } catch (err) {
-                        console.warn("[MilkyAdapter] 转发段转换失败，已降级为文本:", err?.message || err)
-                        return { type: "text", data: { text: String(i ?? "") } }
-                      }
-                    }),
-                  )
-                : [{ type: "text", data: { text: "" } }]
+              const segments =
+                filtered.length > 0
+                  ? await Promise.all(
+                      filtered.map(async i => {
+                        try {
+                          return await toForwardSegment(i)
+                        } catch (err) {
+                          console.warn(
+                            "[MilkyAdapter] 转发段转换失败，已降级为文本:",
+                            err?.message || err,
+                          )
+                          return { type: "text", data: { text: String(i ?? "") } }
+                        }
+                      }),
+                    )
+                  : [{ type: "text", data: { text: "" } }]
 
-            return { user_id, sender_name, segments }
-          })),
+              return { user_id, sender_name, segments }
+            }),
+          ),
         },
       },
     ]
   }
 
   /**
-   * 资源清理（修复eventEmitter未定义问题）
+   * 资源清理：关闭 milky-tea 事件源并清空监听器
    */
   dispose() {
     try {
-      this.client.dispose()
+      // milky-tea 的事件源需要显式关闭，客户端本身没有 dispose()
+      this.eventSource?.close?.()
+      this.eventSource = null
+      this.#attachedEventTypes.clear()
       // 清空事件监听器
       this.eventListeners.clear()
       console.log("[MilkyAdapter] 资源已释放")
@@ -897,4 +1005,3 @@ class MilkyAdapter {
 }
 
 export default MilkyAdapter
-
