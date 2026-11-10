@@ -1,4 +1,4 @@
-﻿import { BaseModel, Types } from "./base/BaseModel.js"
+import { BaseModel, Types } from "./base/BaseModel.js"
 import { Op } from "sequelize"
 import moment from "moment"
 
@@ -64,6 +64,7 @@ function messageContainsForwardId(message, forwardId, visited = new Set()) {
 class GroupMessageDB {
   constructor() {
     this.groupTables = new Map() // 用于缓存已创建的群表模型
+    this._lastRetentionRun = new Map() // 每群上次保留策略执行时间
   }
 
   // 获取指定群的数据表模型
@@ -82,6 +83,8 @@ class GroupMessageDB {
   async saveMessage(groupId, messageData) {
     const table = await this.getGroupTable(groupId)
     const payload = sanitizeMessageData(table, messageData)
+    // 低频触发保留策略（每群每天最多一次），防止消息库无限增长
+    this.maybeEnforceRetention(groupId)
     try {
       return await table.create(payload)
     } catch (err) {
@@ -227,8 +230,40 @@ class GroupMessageDB {
         },
       },
     })
-    console.log(`删除了${result}条过期消息`)
+    if (result > 0) console.log(`[MessageDB] group_${groupId} 清理了${result}条过期消息`)
     return result
+  }
+
+  // 每日保留策略：清理所有已知群表中超过保留天数的消息。
+  // 之前 deleteMessageByTime 全仓无人调用，每条群消息都 INSERT 但永不清理，库无限增长。
+  async enforceRetention({ day = 7 } = {}) {
+    const retentionDays = Number(process.env.XUNLU_MSG_RETENTION_DAYS || day) || 7
+    let totalDeleted = 0
+    let failed = 0
+    for (const groupId of this.groupTables.keys()) {
+      try {
+        totalDeleted += await this.deleteMessageByTime(groupId, retentionDays)
+      } catch (err) {
+        failed += 1
+        try {
+          globalThis.logger?.warn?.(`[MessageDB] 清理 group_${groupId} 过期消息失败:`, err?.message || err)
+        } catch {}
+      }
+    }
+    return { totalDeleted, groups: this.groupTables.size, failed, retentionDays }
+  }
+
+  // 轻量保留兜底：写入时低频触发（每群每 24h 至多一次），
+  // 覆盖"进程长期运行但从未重启/未注册定时清理"的场景
+  maybeEnforceRetention(groupId, { minIntervalMs = 24 * 3600_000 } = {}) {
+    if (!groupId) return
+    const now = Date.now()
+    const last = this._lastRetentionRun?.get?.(groupId) || 0
+    if (now - last < minIntervalMs) return
+    if (!this._lastRetentionRun) this._lastRetentionRun = new Map()
+    this._lastRetentionRun.set(groupId, now)
+    // 异步执行，不阻塞消息写入路径
+    this.enforceRetention().catch(() => {})
   }
   async close() {
     this.groupTables.clear()
