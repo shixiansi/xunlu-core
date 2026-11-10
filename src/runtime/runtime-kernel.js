@@ -93,31 +93,39 @@ export class RuntimeKernel {
 
   async start() {
     if (this.started) return this
+    // 并发 start 防护：只允许一次进入，后续调用复用进行中的 Promise
+    if (this._startPromise) return await this._startPromise
     const globals = captureRuntimeBotGlobals()
 
-    try {
-      this.context.ensureRuntimeLayout()
-      await this.loadRuntimeEnvironment()
-      this.driver = await this.createDriver()
-      if (!this.driver?.__startedByAutoFallback) {
-        await this.driver.start(this)
+    this._startPromise = (async () => {
+      try {
+        this.context.ensureRuntimeLayout()
+        await this.loadRuntimeEnvironment()
+        this.driver = await this.createDriver()
+        if (!this.driver?.__startedByAutoFallback) {
+          await this.driver.start(this)
+        }
+        this.registerProtocolActions()
+        this.facade =
+          this.mode === "api-only"
+            ? null
+            : createBotFacade({
+              driver: this.driver,
+            })
+        this.registerDefaultServices()
+        await this.services.startAll(this)
+        this.started = true
+        globalThis.__xunlu_runtime_kernel = this
+        return this
+      } catch (err) {
+        await this.rollbackFailedStart(globals)
+        throw err
+      } finally {
+        this._startPromise = null
       }
-      this.registerProtocolActions()
-      this.facade =
-        this.mode === "api-only"
-          ? null
-          : createBotFacade({
-            driver: this.driver,
-          })
-      this.registerDefaultServices()
-      await this.services.startAll(this)
-      this.started = true
-      globalThis.__xunlu_runtime_kernel = this
-      return this
-    } catch (err) {
-      await this.rollbackFailedStart(globals)
-      throw err
-    }
+    })()
+
+    return await this._startPromise
   }
 
   async rollbackFailedStart(globals) {
@@ -277,9 +285,22 @@ export class RuntimeKernel {
   }
 
   async stop() {
+    // 对称回收：恢复启动时保存的全局快照并清理配置 watcher，
+    // 否则 globalThis.Bot 仍指向已 dispose 的实例、chokidar watcher 持续泄漏
+    const globals = captureRuntimeBotGlobals()
     await this.services.stopAll()
     await this.driver?.stop?.()
     this.started = false
+    this.facade = null
+    try {
+      this.context?.cleanupConfig?.()
+    } catch (err) {
+      console.warn("[RuntimeKernel] 清理配置 watcher 失败:", err?.message || err)
+    }
+    restoreRuntimeBotGlobals(globals)
+    if (globalThis.__xunlu_runtime_kernel === this) {
+      delete globalThis.__xunlu_runtime_kernel
+    }
     return true
   }
 }
