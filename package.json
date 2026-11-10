@@ -25,47 +25,35 @@
     "test:render": "set XUNLU_RUN_RENDER_TESTS=1 && node --experimental-test-isolation=none --test test/render-smoke.test.js"
   },
   "dependencies": {
-    "@napi-rs/canvas": "^0.1.88",
     "@node-rs/jieba": "^2.0.1",
-    "@resvg/resvg-js": "^2.6.2",
     "@saltify/milky-tea": "^0.2.4",
     "@saltify/milky-types": "^1.2.2",
     "@takumi-rs/core": "^0.66.5",
     "@takumi-rs/helpers": "^0.66.5",
     "art-template": "^4.13.4",
     "axios": "^1.6.0",
-    "canvg": "^4.0.3",
     "cheerio": "^1.2.0",
     "chokidar": "^5.0.0",
-    "cron": "^2.1.0",
     "express": "^4.18.2",
     "html-react-parser": "^5.2.13",
     "https-proxy-agent": "^7.0.6",
-    "jimp": "^1.6.0",
-    "jpeg-js": "^0.4.4",
     "js-yaml": "^4.1.0",
     "jsdom": "^27.4.0",
     "lodash": "^4.17.21",
     "log4js": "^6.9.1",
-    "md5": "^2.3.0",
     "moment": "^2.30.1",
     "node-fetch": "^2.7.0",
     "node-schedule": "^2.1.1",
     "pm2": "^6.0.14",
     "puppeteer": "^24.35.0",
     "qrcode": "^1.5.4",
-    "react-dom": "^19.2.4",
     "redis": "^5.11.0",
-    "satori": "^0.19.1",
     "sequelize": "^6.37.7",
     "sharp": "^0.34.5",
-    "sqlite3": "^5.1.6",
     "sucrase": "^3.35.1",
     "systeminformation": "^5.31.5",
     "uuid": "^13.0.0",
-    "wordcloud": "^1.2.3",
     "ws": "^8.20.0",
-    "xmldom": "^0.6.0",
     "yaml": "^2.8.2"
   },
   "devDependencies": {
@@ -75,4 +63,3 @@
     "#utils": "./src/utils/index.js"
   }
 }
-
