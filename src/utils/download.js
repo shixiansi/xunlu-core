@@ -3,6 +3,11 @@ import fs from "fs"
 import path from "path"
 import Filemage from "./Filemage.js"
 
+// 连接+响应头超时与流空闲超时：node-fetch@2 默认无任何超时，
+// 服务器 stall 时 Promise 永久挂起并泄漏 socket。Node 18+ 原生 AbortController 全局可用。
+const DOWNLOAD_TIMEOUT_MS = Number(process.env.XUNLU_DOWNLOAD_TIMEOUT_MS) || 30_000
+const DOWNLOAD_IDLE_TIMEOUT_MS = Number(process.env.XUNLU_DOWNLOAD_IDLE_TIMEOUT_MS) || 60_000
+
 function isPositiveFiniteNumber(value) {
   return Number.isFinite(value) && value > 0
 }
@@ -52,7 +57,26 @@ export default class Downloader {
       const headers = { ...options.headers }
       if (startByte > 0) headers.Range = `bytes=${startByte}-`
 
-      const response = await fetch(url, { headers })
+      // 超时控制：连接/响应头 DOWNLOAD_TIMEOUT_MS；下载流空闲 DOWNLOAD_IDLE_TIMEOUT_MS
+      const controller = new AbortController()
+      const timeoutTimer = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS)
+      let idleTimer = null
+      const armIdleTimer = () => {
+        if (idleTimer) clearTimeout(idleTimer)
+        idleTimer = setTimeout(() => {
+          try {
+            response?.body?.destroy?.(new Error(`download idle timeout: ${DOWNLOAD_IDLE_TIMEOUT_MS}ms`))
+          } catch {}
+          controller.abort()
+        }, DOWNLOAD_IDLE_TIMEOUT_MS)
+      }
+
+      let response
+      try {
+        response = await fetch(url, { headers, signal: controller.signal })
+      } finally {
+        clearTimeout(timeoutTimer)
+      }
       if (!response.ok) {
         if (startByte > 0 && response.status !== 206) {
           return this.downloadFile(url, savePath, {
@@ -76,72 +100,84 @@ export default class Downloader {
       })
 
       let downloadedBytes = startByte
-      await new Promise((resolve, reject) => {
-        let settled = false
-        let cleanupScheduled = false
+      try {
+        await new Promise((resolve, reject) => {
+          let settled = false
+          let cleanupScheduled = false
 
-        const rejectWithCleanup = err => {
-          if (cleanupScheduled) return
-          cleanupScheduled = true
+          const rejectWithCleanup = err => {
+            if (cleanupScheduled) return
+            cleanupScheduled = true
 
-          const finalize = () => {
-            cleanupPartialFile()
+            const finalize = () => {
+              cleanupPartialFile()
+              if (settled) return
+              settled = true
+              reject(err)
+            }
+
+            try {
+              response.body?.unpipe?.(writeStream)
+            } catch {}
+
+            if (response.body && !response.body.destroyed) {
+              response.body.destroy()
+            }
+
+            if (writeStream.closed) {
+              finalize()
+              return
+            }
+
+            writeStream.once("close", finalize)
+            writeStream.destroy()
+          }
+
+          armIdleTimer()
+          response.body.on("data", chunk => {
+            armIdleTimer()
+            downloadedBytes += chunk.length
+            if (hasSizeLimit && downloadedBytes > sizeLimit) {
+              rejectWithCleanup(
+                new Error(`download size exceeds limit: ${downloadedBytes} > ${sizeLimit}`),
+              )
+              return
+            }
+
+            if (onProgress && totalSize > 0) {
+              const progress = Math.min(downloadedBytes / totalSize, 1)
+              onProgress(progress)
+            }
+          })
+
+          response.body.pipe(writeStream)
+          writeStream.on("finish", () => {
             if (settled) return
             settled = true
-            reject(err)
-          }
-
-          try {
-            response.body?.unpipe?.(writeStream)
-          } catch {}
-
-          if (response.body && !response.body.destroyed) {
-            response.body.destroy()
-          }
-
-          if (writeStream.closed) {
-            finalize()
-            return
-          }
-
-          writeStream.once("close", finalize)
-          writeStream.destroy()
-        }
-
-        response.body.on("data", chunk => {
-          downloadedBytes += chunk.length
-          if (hasSizeLimit && downloadedBytes > sizeLimit) {
-            rejectWithCleanup(
-              new Error(`download size exceeds limit: ${downloadedBytes} > ${sizeLimit}`),
-            )
-            return
-          }
-
-          if (onProgress && totalSize > 0) {
-            const progress = Math.min(downloadedBytes / totalSize, 1)
-            onProgress(progress)
-          }
+            resolve()
+          })
+          writeStream.on("error", err =>
+            rejectWithCleanup(new Error(`file write failed: ${err.message}`)),
+          )
+          response.body.on("error", err => {
+            if (cleanupScheduled || settled) return
+            rejectWithCleanup(new Error(`network stream error: ${err.message}`))
+          })
+          response.body.on("close", () => {
+            if (!settled && !cleanupScheduled) {
+              rejectWithCleanup(new Error("network stream closed unexpectedly"))
+            }
+          })
         })
-
-        response.body.pipe(writeStream)
-        writeStream.on("finish", () => {
-          if (settled) return
-          settled = true
-          resolve()
-        })
-        writeStream.on("error", err =>
-          rejectWithCleanup(new Error(`file write failed: ${err.message}`)),
-        )
-        response.body.on("error", err => {
-          if (cleanupScheduled || settled) return
-          rejectWithCleanup(new Error(`network stream error: ${err.message}`))
-        })
-      })
+      } finally {
+        if (idleTimer) clearTimeout(idleTimer)
+      }
 
       return true
     } catch (error) {
-      console.error(`download failed [${savePath}]: ${error.message}`)
-      throw error
+      const reason = error?.name === "AbortError" ? `timeout after ${DOWNLOAD_TIMEOUT_MS}ms` : error?.message
+      console.error(`download failed [${savePath}]: ${reason}`)
+      throw new Error(`download failed [${savePath}]: ${reason}`)
     }
   }
 

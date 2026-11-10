@@ -22,6 +22,12 @@ async function main() {
 
 main().catch(err => {
   console.error("[xunlu-core] 启动失败：", err)
+  // 独立运行时以非零码退出，让 PM2/systemd 能感知并重启；
+  // Yunzai 插件形态（xunLuEnv 已设置）下宿主不允许退出，仅记录失败状态。
+  if (!process.env.xunLuEnv) {
+    process.exitCode = 1
+    setTimeout(() => process.exit(1), 300).unref?.()
+  }
 })
 
 export default {}

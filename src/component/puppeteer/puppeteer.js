@@ -176,7 +176,7 @@ class Puppeteer extends Renderer {
     const pageHeight = data.multiPageHeight || 4000
 
     // 处理模板路径（核心：修复undefined问题）
-    let savePath = this.dealTpl(name, data)
+    let savePath = await this.dealTpl(name, data)
 
     if (!savePath) return false
 

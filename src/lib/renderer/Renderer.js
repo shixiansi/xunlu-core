@@ -35,7 +35,7 @@ export default class Renderer {
   }
 
   /** 模板 */
-  dealTpl(name, data) {
+  async dealTpl(name, data) {
     let { tplFile, saveId = name } = data
     let savePath = `./temp/html/${name}/${saveId}.html`
 
@@ -59,8 +59,8 @@ export default class Renderer {
 
     let tmpHtml = template.render(this.html[tplFile], data)
 
-    /** 保存模板 */
-    fs.writeFileSync(savePath, tmpHtml)
+    /** 保存模板（异步写：原 writeFileSync 每次渲染阻塞事件循环 1-5ms） */
+    await fs.promises.writeFile(savePath, tmpHtml)
 
     logger.debug(`[图片生成][使用模板] ${savePath}`)
 
