@@ -80,6 +80,9 @@ class MilkyAdapter {
       token: this.config.accessToken || undefined,
       // 保持旧版行为：不启用 zod 严格校验，避免协议端字段差异导致调用直接抛错
       strict: this.config.strict ?? false,
+      // 默认30s：视频/大文件上传到QQ服务器实测可达90s+（Highway通道），
+      // 超时会误报"发送失败"，实际协议端仍在后台上传并成功投递
+      timeout: this.config.apiTimeout ?? 180000,
     })
 
     console.log(
@@ -156,7 +159,8 @@ class MilkyAdapter {
     Object.keys(eventTypeMap).forEach(eventType => {
       this.on(eventType, data => {
         const eventName = eventTypeMap[eventType] || eventType
-        console.log(`[MilkyAdapter] 接收到事件: ${eventName}`, data)
+        // 每条入站事件全量打印改 debug 级：console.log 在高群流量下是持续性的 stdout 开销
+        logger.debug(`[MilkyAdapter] 接收到事件: ${eventName}`, data)
       })
     })
   }
@@ -298,7 +302,7 @@ class MilkyAdapter {
 
     try {
       const result = await this.callApi("send_group_message_reaction", payload)
-      console.debug(`[MilkyAdapter] 调用API send_group_message_reaction 成功:`, result)
+      logger.debug(`[MilkyAdapter] 调用API send_group_message_reaction 成功:`, result)
       return result
     } catch (err) {
       const msg = err?.message || String(err)
@@ -437,7 +441,7 @@ class MilkyAdapter {
    * @returns {Object} Milky标准格式消息段
    */
   dealMilkyMsg(msg) {
-    console.debug("[MilkyAdapter] 处理消息段:", msg)
+    logger.debug("[MilkyAdapter] 处理消息段:", msg)
 
     if (msg === undefined || msg === null) {
       return { type: "text", data: { text: "" } }

@@ -158,6 +158,50 @@ async function ensureIndexes() {
   indexesEnsured = true
 }
 
+// 命令使用量批量写入：命令触发频率高但实时性要求低（统计/排行用），
+// 500ms 窗口合并 INSERT，把每命令一次写放大摊薄为一次批量事务。
+// 读路径先 flushPendingUsageWrites() 冲刷，保证读回一致性。
+const usageWriteQueue = []
+const USAGE_FLUSH_INTERVAL_MS = Number(process.env.XUNLU_USAGE_FLUSH_MS) || 500
+let usageFlushTimer = null
+
+async function flushPendingUsageWrites() {
+  if (usageFlushTimer) {
+    clearTimeout(usageFlushTimer)
+    usageFlushTimer = null
+  }
+  if (!usageWriteQueue.length) return 0
+  const batch = usageWriteQueue.splice(0, usageWriteQueue.length)
+  try {
+    await initDb()
+    await sequelize.transaction(async t => {
+      for (const row of batch) {
+        await CommandUsageLog.create(row, { transaction: t })
+      }
+    })
+    return batch.length
+  } catch (err) {
+    // 批量失败降级为逐条补写，单条坏数据不拖垮整批
+    for (const row of batch) {
+      await CommandUsageLog.create(row).catch(() => {})
+    }
+    try {
+      globalThis.logger?.warn?.(`[CommandUsageDB] 批量写入失败，已逐条降级: ${err?.message || err}`)
+    } catch {}
+    return 0
+  }
+}
+
+function scheduleUsageFlush() {
+  if (usageFlushTimer) return
+  usageFlushTimer = setTimeout(async () => {
+    usageFlushTimer = null
+    await flushPendingUsageWrites()
+  }, USAGE_FLUSH_INTERVAL_MS)
+  // 不阻止进程退出：丢一批统计可接受，不能卡 shutdown
+  usageFlushTimer.unref?.()
+}
+
 async function recordUsage({
   groupId,
   userId,
@@ -171,8 +215,6 @@ async function recordUsage({
   triggeredAt = Date.now(),
   isSynthetic = false,
 } = {}) {
-  await initDb()
-
   const gid = String(groupId || "").trim()
   const uid = String(userId || "").trim()
   const pluginName = String(plugin || "").trim()
@@ -183,7 +225,7 @@ async function recordUsage({
   const ts = Number(triggeredAt || Date.now())
   const { dateKey, hourBucket } = getDateParts(ts)
 
-  return await CommandUsageLog.create({
+  usageWriteQueue.push({
     group_id: gid,
     user_id: uid,
     plugin: pluginName,
@@ -199,6 +241,8 @@ async function recordUsage({
     source: String(source || "xunlu"),
     is_synthetic: Boolean(isSynthetic),
   })
+  scheduleUsageFlush()
+  return { queued: true, queueSize: usageWriteQueue.length }
 }
 
 async function listUsage({
@@ -209,6 +253,7 @@ async function listUsage({
   includeSynthetic = false,
   limit = 5000,
 } = {}) {
+  await flushPendingUsageWrites()
   await initDb()
 
   const where = {}
@@ -244,6 +289,7 @@ async function getHourlyFavoriteCommands({
   historyDays = 14,
   minCount = 2,
 } = {}) {
+  await flushPendingUsageWrites()
   await initDb()
 
   const gid = String(groupId || "").trim()
@@ -284,6 +330,7 @@ async function getHourlyFavoriteCommands({
 }
 
 async function hasRecentManualUsage({ groupId, userId, reg, sinceMs = 0 } = {}) {
+  await flushPendingUsageWrites()
   await initDb()
   const gid = String(groupId || "").trim()
   const uid = String(userId || "").trim()
@@ -305,6 +352,8 @@ async function hasRecentManualUsage({ groupId, userId, reg, sinceMs = 0 } = {}) 
 }
 
 async function close() {
+  // 关库前冲刷待写入的使用量队列，避免丢数据
+  await flushPendingUsageWrites().catch(() => {})
   CommandUsageLog = null
   indexesEnsured = false
   activeDbPath = ""
@@ -317,6 +366,7 @@ async function close() {
 
 export {
   close,
+  flushPendingUsageWrites,
   getDateParts,
   getDbPath,
   getHourlyFavoriteCommands,

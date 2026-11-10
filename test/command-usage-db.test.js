@@ -6,6 +6,7 @@ import test from "node:test"
 
 import CommandUsageDB, {
   close,
+  flushPendingUsageWrites,
   getDbPath,
   listUsage,
   recordUsage,
@@ -49,6 +50,9 @@ test("command usage db path stays lazy and follows the current runtime root", as
       protocol: "milky",
       triggeredAt: new Date(2026, 0, 2, 3, 4, 5).getTime(),
     })
+
+    // recordUsage 现在走 500ms 批量队列：测试里显式冲刷落库
+    await flushPendingUsageWrites()
 
     assert.equal(fs.existsSync(expectedDbPath), true)
 

@@ -231,7 +231,7 @@ export default class LLoneBotEventListener {
             ...eventData,
           })
 
-          console.debug(`[MilkyAdapter] 处理完成事件：${eventName}`)
+          logger.debug(`[MilkyAdapter] 处理完成事件：${eventName}`)
         } catch (error) {
           console.error(`[MilkyAdapter] 处理事件 ${eventType} 失败：`, error)
         }
@@ -316,7 +316,7 @@ export default class LLoneBotEventListener {
         message: segments,
         sender: group_member,
       })
-      console.debug(`[MessageDB] 群消息 ${message_seq} 已存储`)
+      logger.debug(`[MessageDB] 群消息 ${message_seq} 已存储`)
     } catch (error) {
       console.error(`[MessageDB] 群消息 ${message_seq} 存储失败：`, error)
     }

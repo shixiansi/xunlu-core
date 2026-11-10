@@ -614,7 +614,16 @@ export function register(bot) {
     if (!ctx.isMaster) return false
     await Blogin.login()
     await ctx.reply(segment.image(Blogin.qrImagePath), false, { recallMsg: 120 })
+    // 轮询兜底：二维码一直不被扫时定时器永不回收（持有旧 ctx 闭包，热重载后仍在跑）。
+    // B 站二维码 86038 过期一般 ≤180s，这里给 5 分钟硬上限。
+    const SCAN_POLL_MAX_MS = 5 * 60_000
+    const scanPollStartedAt = Date.now()
     let timer = setInterval(async () => {
+      if (Date.now() - scanPollStartedAt > SCAN_POLL_MAX_MS) {
+        clearInterval(timer)
+        await ctx.reply("扫码超时，请重新发送“b站扫码”获取新的二维码。").catch(() => {})
+        return
+      }
       try {
         let result = await Blogin.pollLoginStatus(Bili.getUserInfo.bind(Bili))
         if (result?.code == 200) {

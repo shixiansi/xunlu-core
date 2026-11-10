@@ -163,7 +163,7 @@ export default class OneBotV11EventListener {
           await this.#binding.normalizeInboundEvent(data, { eventType })
           await this.#oneBot.deal(data)
 
-          console.debug(`[OneBotV11Adapter] 处理完成事件：${eventType}`)
+          logger.debug(`[OneBotV11Adapter] 处理完成事件：${eventType}`)
         } catch (error) {
           console.error(`[OneBotV11Adapter] 处理事件 ${eventType} 失败：`, error)
         }
@@ -191,7 +191,7 @@ export default class OneBotV11EventListener {
         message,
         sender,
       })
-      console.debug(`[MessageDB] 群消息 ${message_id} 已成功存储`)
+      logger.debug(`[MessageDB] 群消息 ${message_id} 已成功存储`)
     } catch (error) {
       console.error(`[MessageDB] 群消息 ${message_id} 存储失败：`, error)
     }
