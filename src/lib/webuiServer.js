@@ -9,15 +9,18 @@ import env from "./env.js"
 import { loadPlugins } from "./pluginLoader.js"
 import { getRuntimePaths } from "../runtime/runtime-context.js"
 import {
+  checkLoginRate,
   clearWebuiCookie,
   createWebuiAuthToken,
   getSafeWebuiConfig,
   getWebuiConfig,
   getWebuiSessionFromRequest,
+  recordLoginFailure,
+  recordLoginSuccess,
   requireWebuiAuth,
   setWebuiCookie,
   updateWebuiAuth,
-  verifyWebuiPassword,
+  verifyWebuiPasswordAsync,
   verifyWebuiToken,
 } from "./webui/auth.js"
 import { createWebUiRegistry } from "./webui/registry.js"
@@ -166,11 +169,20 @@ export async function startWebuiServer(options = {}) {
       })
     })
 
-    nextApp.post("/webui/api/auth/login", (req, res) => {
+    nextApp.post("/webui/api/auth/login", async (req, res) => {
       const cfgSafe = getSafeWebuiConfig()
       const cfgRaw = getWebuiConfig()
       const username = String(req.body?.username || "").trim()
       const password = String(req.body?.password || "")
+      const clientIp = req.socket?.remoteAddress || req.ip || "unknown"
+
+      // 登录限速：失败次数超限后冷却，防止对默认弱口令的暴力枚举
+      const rate = checkLoginRate(clientIp)
+      if (!rate.allowed) {
+        res.set("Retry-After", String(rate.retryAfterSec || 300))
+        res.status(429).json({ ok: false, error: "尝试过于频繁，请稍后再试", config: cfgSafe })
+        return
+      }
 
       if (!username || !password) {
         res.status(400).json({ ok: false, error: "Missing username/password", config: cfgSafe })
@@ -178,15 +190,19 @@ export async function startWebuiServer(options = {}) {
       }
 
       if (username !== String(cfgRaw?.auth?.username || "")) {
+        recordLoginFailure(clientIp)
         res.status(401).json({ ok: false, error: "Invalid credentials", config: cfgSafe })
         return
       }
 
-      if (!verifyWebuiPassword(password)) {
+      // 异步 pbkdf2 校验，避免 12 万次迭代阻塞事件循环卡住机器人消息处理
+      if (!(await verifyWebuiPasswordAsync(password))) {
+        recordLoginFailure(clientIp)
         res.status(401).json({ ok: false, error: "Invalid credentials", config: cfgSafe })
         return
       }
 
+      recordLoginSuccess(clientIp)
       const token = createWebuiAuthToken(username)
       const ttlHours = Number(cfgRaw?.auth?.token_ttl_hours || 168) || 168
       setWebuiCookie(res, { value: token, maxAgeSec: Math.max(1, ttlHours) * 3600 })

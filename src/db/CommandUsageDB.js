@@ -77,6 +77,7 @@ async function initDb() {
     })
     activeDbPath = dbPath
     await sequelize.authenticate()
+    await applySqlitePragmas(sequelize)
   } else if (activeDbPath && activeDbPath !== dbPath) {
     await close()
     return await initDb()
@@ -116,6 +117,26 @@ async function initDb() {
   await sequelize.sync()
   await ensureIndexes()
   return { sequelize, CommandUsageLog }
+}
+
+async function applySqlitePragmas(target) {
+  // WAL：写不再阻塞读，消除高频命令写入与统计查询互相 SQLITE_BUSY 的问题；
+  // synchronous=NORMAL 在 WAL 下安全且减少 fsync；busy_timeout 兜底并发写等待。
+  const pragmas = [
+    "PRAGMA journal_mode=WAL",
+    "PRAGMA synchronous=NORMAL",
+    "PRAGMA busy_timeout=3000",
+  ]
+  for (const sql of pragmas) {
+    try {
+      await target.query(sql)
+    } catch (err) {
+      // WAL 在个别文件系统（如网络盘）上不可用，降级为默认 journal 继续运行
+      try {
+        globalThis.logger?.warn?.(`[CommandUsageDB] ${sql} 失败，使用默认设置:`, err?.message || err)
+      } catch {}
+    }
+  }
 }
 
 async function ensureIndexes() {

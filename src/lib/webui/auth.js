@@ -69,6 +69,65 @@ function pbkdf2Base64(password, saltBase64) {
   return out.toString("base64")
 }
 
+// 异步版：pbkdf2Sync 12 万次迭代会阻塞事件循环 50-200ms，
+// 登录接口在请求路径上调用它，被刷时机器人整进程卡顿。启动期初始化配置仍用同步版。
+function pbkdf2Base64Async(password, saltBase64) {
+  const salt = Buffer.from(String(saltBase64 || ""), "base64")
+  return new Promise((resolve, reject) => {
+    crypto.pbkdf2(
+      String(password || ""),
+      salt,
+      PBKDF2_ITERATIONS,
+      PBKDF2_KEYLEN,
+      PBKDF2_DIGEST,
+      (err, out) => {
+        if (err) reject(err)
+        else resolve(out.toString("base64"))
+      },
+    )
+  })
+}
+
+// 登录限速：按来源 IP 的滑动窗口失败计数，超限后冷却。
+// 进程内实现即可（WebUI 单实例），重启清零可接受。
+const LOGIN_RATE = { windowMs: 60_000, maxFails: 5, cooldownMs: 300_000 }
+const loginFailures = new Map()
+
+export function checkLoginRate(ip) {
+  const key = String(ip || "unknown")
+  const entry = loginFailures.get(key)
+  if (!entry) return { allowed: true }
+  const now = Date.now()
+  if (entry.cooldownUntil && entry.cooldownUntil > now) {
+    return { allowed: false, retryAfterSec: Math.ceil((entry.cooldownUntil - now) / 1000) }
+  }
+  // 窗口过期则清空旧计数
+  if (now - entry.windowStart > LOGIN_RATE.windowMs) {
+    loginFailures.delete(key)
+  }
+  return { allowed: true }
+}
+
+export function recordLoginFailure(ip) {
+  const key = String(ip || "unknown")
+  const now = Date.now()
+  const entry = loginFailures.get(key) || { windowStart: now, count: 0, cooldownUntil: 0 }
+  if (now - entry.windowStart > LOGIN_RATE.windowMs) {
+    entry.windowStart = now
+    entry.count = 0
+  }
+  entry.count += 1
+  if (entry.count >= LOGIN_RATE.maxFails) {
+    entry.cooldownUntil = now + LOGIN_RATE.cooldownMs
+    entry.count = 0
+  }
+  loginFailures.set(key, entry)
+}
+
+export function recordLoginSuccess(ip) {
+  loginFailures.delete(String(ip || "unknown"))
+}
+
 function defaultConfig() {
   const password_salt = randomBase64(16)
   // 默认密码为第一个主人QQ号，若未配置则回退 admin
@@ -196,6 +255,16 @@ export function verifyWebuiPassword(password) {
   const salt = String(cfg?.auth?.password_salt || "")
   const expected = Buffer.from(String(cfg?.auth?.password_hash || ""), "base64")
   const got = Buffer.from(pbkdf2Base64(password, salt), "base64")
+  if (!expected.length || expected.length !== got.length) return false
+  return crypto.timingSafeEqual(expected, got)
+}
+
+// 异步校验：请求路径请用这个，避免 pbkdf2 阻塞事件循环；同步版保留给离线脚本/兼容用途
+export async function verifyWebuiPasswordAsync(password) {
+  const cfg = getWebuiConfig()
+  const salt = String(cfg?.auth?.password_salt || "")
+  const expected = Buffer.from(String(cfg?.auth?.password_hash || ""), "base64")
+  const got = Buffer.from(await pbkdf2Base64Async(password, salt), "base64")
   if (!expected.length || expected.length !== got.length) return false
   return crypto.timingSafeEqual(expected, got)
 }

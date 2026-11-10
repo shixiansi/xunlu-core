@@ -89,7 +89,9 @@ export async function startServer(portOrOptions = process.env.PORT || 3000) {
   })
 
   const listenPort = options.port ?? process.env.PORT ?? 3000
-  const listenHost = String(options.host ?? process.env.HOST ?? "0.0.0.0")
+  // 安全默认：插件 API（含 /bot/event 广播注入）无鉴权，默认只绑回环地址；
+  // 需要外部访问时显式设置 XUNLU_API_HOST=0.0.0.0 或在启动参数传 host。
+  const listenHost = String(options.host ?? process.env.XUNLU_API_HOST ?? process.env.HOST ?? "127.0.0.1")
   const currentServer = app.listen(listenPort, listenHost)
   server = currentServer
   serverReady = new Promise((resolve, reject) => {
