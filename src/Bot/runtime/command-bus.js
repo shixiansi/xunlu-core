@@ -52,6 +52,18 @@ export class CommandBus {
   async reloadPlugins(options = {}) {
     const cacheBust = options.cacheBust !== false
 
+    // 热重载前必须取消旧定时任务：scheduledTasks 持有旧插件闭包 + node-schedule job，
+    // 不取消则每次 reload 后任务翻倍注册，旧任务还会继续对已卸载插件触发。
+    const staleTasks = this.baseBot.scheduledTasks
+    this.baseBot.scheduledTasks = []
+    for (const task of staleTasks) {
+      try {
+        task?.job?.cancel?.()
+      } catch (err) {
+        logger.warn("[reloadPlugins] 取消旧定时任务失败:", err?.message || err)
+      }
+    }
+
     this.baseBot.plugins = {}
     this.baseBot.pluginCatalog = {}
     this.baseBot.onMount = []

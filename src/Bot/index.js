@@ -209,20 +209,37 @@ export default class BaseBot {
   }
 
   async deal(e) {
-    console.log(e)
-    await this.dealMsg(e)
-    this.reply(e)
-
-    if (e.user_id == e.self_id && e.post_type == "message") {
-      rememberRuntimeLastGroupMessage(e)
-      return
+    // 原 console.log(e) 每条消息全量序列化事件对象（含消息内容/群号/用户ID）到 stdout，
+    // 既拖慢热路径又泄漏隐私；需要排查入站事件时设置 XUNLU_DEBUG_DEAL=1 走 logger.debug。
+    if (process.env.XUNLU_DEBUG_DEAL === "1" && typeof logger !== "undefined") {
+      logger.debug("[deal] inbound event:", e)
     }
+    try {
+      await this.dealMsg(e)
+      this.reply(e)
 
-    const result = await this.sessionManager.handleEvent(e, async event =>
-      await this.processNormalCommands(event),
-    )
-    rememberRuntimeLastGroupMessage(e)
-    return result
+      if (e.user_id == e.self_id && e.post_type == "message") {
+        rememberRuntimeLastGroupMessage(e)
+        return
+      }
+
+      const result = await this.sessionManager.handleEvent(e, async event =>
+        await this.processNormalCommands(event),
+      )
+      rememberRuntimeLastGroupMessage(e)
+      return result
+    } catch (err) {
+      // 测试/模拟链路（cli-simulator 设置 __xunluThrowCommandError）依赖异常向上传播来判定插件错误，
+      // 不能吞；生产环境兜底记录，避免单个中间件/会话异常把整条消息静默吞进适配器的 catch。
+      if (e?.__xunluThrowCommandError) throw err
+      if (typeof logger !== "undefined" && logger?.error) {
+        logger.error("[deal] 处理事件失败:", err)
+      } else {
+        console.error("[deal] 处理事件失败:", err)
+      }
+      rememberRuntimeLastGroupMessage(e)
+      return undefined
+    }
   }
 
   async processNormalCommands(e, options = {}) {
