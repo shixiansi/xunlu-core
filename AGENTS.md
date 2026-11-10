@@ -232,3 +232,13 @@ node ./bin/xunlubot.js restart
 ## 8) 已知问题/注意事项（截至 2026-04-02）
 
 - 许多模块依赖全局 `logger`（由 `src/component/logger/log.js` 初始化）；独立调用模块时需注意先初始化日志
+
+## 9) 2026-11-11 优化升级批次注记
+
+- P0：`deal()` 不再 console.log 全量事件（`XUNLU_DEBUG_DEAL=1` 按需开）；deal 顶层异常兜底（测试链路 `__xunluThrowCommandError` 仍上抛）；`reloadPlugins` 热重载前取消旧 scheduledTasks
+- 安全：插件 API Server 默认绑 `127.0.0.1`（`XUNLU_API_HOST` 覆盖）；WebUI 登录 pbkdf2 异步化 + 按 IP 限速（60s/5 次失败冷却 5 分钟）
+- 数据：sqlite 统一 `env.RootPath/data` + WAL；MessageDB 保留 7 天（`XUNLU_MSG_RETENTION_DAYS` 调整），saveMessage 每群每日触发一次清理
+- 运行时：坏 YAML 回退空配置不炸管线；stopAll 逐项容错；ProtocolDispatcher.register 幂等；kernel start 并发防护、stop 恢复全局快照；入口失败退出码 1（standalone）
+- 性能：命令正则预编译缓存 + 排序缓存；Renderer.dealTpl 异步写盘；下载默认 30s 超时 + 60s 空闲超时（`XUNLU_DOWNLOAD_TIMEOUT_MS` / `XUNLU_DOWNLOAD_IDLE_TIMEOUT_MS`）
+- puppeteer：截图失败先探活再重启；默认 `headless: true`（`XUNLU_HEADLESS=false` 还原）
+- 清理：删除零引用依赖（@napi-rs/canvas/jpeg-js/react-dom/xmldom/wordcloud/md5/cron/sqlite3/@resvg/resvg-js/satori/canvg/jimp）与死代码 `src/component/render/t/`、`puppeteer_bk.js`
