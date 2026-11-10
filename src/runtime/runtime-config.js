@@ -3,6 +3,7 @@ import path from "node:path"
 
 import chokidar from "chokidar"
 import lodash from "lodash"
+import YAML from "yaml"
 
 import YamlReader from "../utils/YamlReader.js"
 
@@ -194,7 +195,17 @@ export class RuntimeConfigManager {
       configType === "user"
         ? this.ensureUserConfigFile(configName)
         : this.getConfigFilePath(configName, configType)
-    const configReader = new YamlReader(filePath)
+    let configReader
+    try {
+      configReader = new YamlReader(filePath)
+    } catch (error) {
+      // 坏 YAML 不能让 getConfig 直接 throw：这会让 masterQQ 解析等基础路径崩溃，
+      // 整个消息管线全站哑巴。回退为空文档并告警，原文件保留等用户修复（不覆盖）。
+      console.error(`[xunlu-core] 配置解析失败（回退为空配置）: ${filePath}`, error?.message || error)
+      configReader = new YamlReader()
+      configReader.yamlPath = filePath
+      configReader.document = YAML.parseDocument("{}\n")
+    }
     this.configCache.set(cacheKey, configReader)
 
     if (configType === "user" && this.isWatcherEnabled && !this.fileWatchers.has(configName)) {

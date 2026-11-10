@@ -42,12 +42,27 @@ export class ServiceRegistry {
 
   async stopAll() {
     const names = [...this.started].reverse()
+    const errors = []
     for (const name of names) {
       const service = this.get(name)
-      if (!service) continue
-      if (typeof service.stop === "function") await service.stop()
+      // 无论单项 stop 是否抛错，都要继续回收其余服务并逐项移出 started，
+      // 否则 webui 抛错会跳过 control 的停止，留下半死服务和端口占用
+      this.started = this.started.filter(n => n !== name)
+      if (!service || typeof service.stop !== "function") continue
+      try {
+        await service.stop()
+      } catch (err) {
+        errors.push({ name, err })
+        try {
+          globalThis.logger?.error?.(`[ServiceRegistry] 停止服务 ${name} 失败:`, err)
+        } catch {}
+      }
     }
-    this.started = []
+    if (errors.length) {
+      const failure = new Error(`stopAll: ${errors.length} 个服务停止失败: ${errors.map(e => e.name).join(",")}`)
+      failure.errors = errors
+      throw failure
+    }
     return true
   }
 
