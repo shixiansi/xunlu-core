@@ -2,6 +2,13 @@ import fs from "node:fs"
 import path from "node:path"
 
 import fetch from "node-fetch"
+// 统一 fetch 超时包装：外部 API stall 时不阻塞消息链路（node-fetch@2 默认无超时）
+const DEFAULT_FETCH_TIMEOUT_MS = Number(process.env.XUNLU_FETCH_TIMEOUT_MS) || 20000
+const rawFetch = fetch
+const fetchWithTimeout = (url, options = {}) => {
+  if (!options.signal) options.signal = AbortSignal.timeout(DEFAULT_FETCH_TIMEOUT_MS)
+  return rawFetch(url, options)
+}
 
 import Download from "../../../utils/download.js"
 import env from "../../../lib/env.js"
@@ -177,7 +184,7 @@ class MusicService {
       total: "true",
     })
 
-    const response = await fetch(`${NETEASE_SEARCH_API}?${params.toString()}`, {
+    const response = await fetchWithTimeout(`${NETEASE_SEARCH_API}?${params.toString()}`, {
       headers: buildNeteaseHeaders(),
     })
     if (!response.ok) {
@@ -201,7 +208,7 @@ class MusicService {
       t: "0",
     })
 
-    const response = await fetch(`${QQ_SEARCH_API}?${params.toString()}`, {
+    const response = await fetchWithTimeout(`${QQ_SEARCH_API}?${params.toString()}`, {
       headers: buildQqHeaders(),
     })
     if (!response.ok) {
@@ -279,7 +286,7 @@ class MusicService {
       encodeType: "mp3",
     })
 
-    const response = await fetch(`${NETEASE_PLAYER_API}?${params.toString()}`, {
+    const response = await fetchWithTimeout(`${NETEASE_PLAYER_API}?${params.toString()}`, {
       headers: buildNeteaseHeaders(),
     })
     if (!response.ok) {

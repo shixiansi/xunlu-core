@@ -213,8 +213,10 @@ export default function setLog() {
         },
       },
       error: {
-        type: "file",
-        filename: "logs/error.log",
+        type: "dateFile",
+        filename: "logs/error",
+        pattern: "yyyy-MM-dd.log",
+        numBackups: 14,
         alwaysIncludePattern: true,
         layout: {
           type: "pattern",
@@ -270,5 +272,37 @@ export default function setLog() {
     levelMethods,
   })
   global.logger = targetLogger
+
+  installProcessErrorGuards(targetLogger)
   return targetLogger
+}
+
+/**
+ * 进程级兜底：unhandledRejection / uncaughtException 只记录不退出。
+ *
+ * 机器人是长驻进程：一个插件漏 await 导致的 rejection 不应该带崩整条消息链路；
+ * 但必须留痕（error.log），否则问题静默累积。重复注册只生效一次。
+ */
+let processErrorGuardsInstalled = false
+export function installProcessErrorGuards(loggerLike = globalThis.logger) {
+  if (processErrorGuardsInstalled) return false
+  processErrorGuardsInstalled = true
+
+  const log = (level, ...args) => {
+    try {
+      loggerLike?.[level]?.(...args)
+    } catch {
+      console.error(...args)
+    }
+  }
+
+  process.on("unhandledRejection", reason => {
+    log("error", "[unhandledRejection] 未处理的 Promise 拒绝:", reason)
+  })
+
+  process.on("uncaughtException", err => {
+    log("fatal", "[uncaughtException] 未捕获异常:", err)
+  })
+
+  return true
 }

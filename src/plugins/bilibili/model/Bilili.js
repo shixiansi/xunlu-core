@@ -7,6 +7,9 @@ import moment from "moment"
 import lodash from "lodash"
 import getErrorMessage from "./BErrorCode.js"
 import * as cheerio from "cheerio"
+
+// B 站 API 请求超时：接口 stall 时不阻塞消息链路（node-fetch@2 默认无超时）
+const BILI_API_TIMEOUT_MS = Number(process.env.XUNLU_BILI_API_TIMEOUT_MS) || 15000
 class Bilibili {
   get dynamicType() {
     return {
@@ -49,14 +52,24 @@ class Bilibili {
   async fetchWithHeaders(url, headers = {}) {
     try {
       const cookie = await this.getCookie()
-      const response = await fetch(url, {
-        headers: {
-          ...headers,
-          Cookie: cookie,
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0",
-        },
-      })
+      const doFetch = () =>
+        fetch(url, {
+          // 外部 API 必须有超时：B 站接口 stall 时不阻塞消息链路
+          signal: AbortSignal.timeout(BILI_API_TIMEOUT_MS),
+          headers: {
+            ...headers,
+            Cookie: cookie,
+            Referer: "https://www.bilibili.com/",
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0",
+          },
+        })
+      let response = await doFetch()
+      // 412 多为 IP 级风控/限频，等待后重试一次
+      if (response.status === 412) {
+        await new Promise(resolve => setTimeout(resolve, 2000))
+        response = await doFetch()
+      }
       if (!response.ok) {
         throw new Error(`请求失败: [errcode:${response.status}] ${response.statusText}`)
       }
@@ -531,6 +544,30 @@ class Bilibili {
     }
   }
 
+  // 从 m 站视频页提取 __INITIAL_STATE__.video.viewInfo（与 web view 接口同构，风控策略不同）
+  async fetchVideoInfoFromMobilePage(bv) {
+    const response = await fetch(`https://m.bilibili.com/video/${bv}/`, {
+      signal: AbortSignal.timeout(BILI_API_TIMEOUT_MS),
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+      },
+    })
+    if (!response.ok) {
+      throw new Error(`请求失败: [errcode:${response.status}] ${response.statusText}`)
+    }
+    const html = await response.text()
+    const match = html.match(/window\.__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\});\s*\(function/)
+    const viewInfo = match ? JSON.parse(match[1])?.video?.viewInfo : null
+    if (!viewInfo?.cid) {
+      throw new Error("页面数据解析失败")
+    }
+    if (viewInfo.pic) {
+      viewInfo.pic = viewInfo.pic.replace(/^http:/, "https:")
+    }
+    return viewInfo
+  }
+
   // 获取视频信息
   async getVideoInfo(bv) {
     try {
@@ -539,8 +576,28 @@ class Bilibili {
       return this.parseVideoInfoData(data)
     } catch (error) {
       console.error("[ERROR] 获取视频信息失败:", error.message)
-      return this.buildErrorResult(error)
     }
+    // view 接口被风控时，从 m 站页面兜底（信息最全，卡片渲染依赖这些字段）
+    try {
+      const viewInfo = await this.fetchVideoInfoFromMobilePage(bv)
+      console.log("[INFO] view 接口失败，已通过 m 站页面兜底获取视频信息")
+      return this.parseVideoInfoData(viewInfo)
+    } catch (error) {
+      console.error("[ERROR] m 站页面兜底失败:", error.message)
+    }
+    // 最后用 pagelist 兜底（仅 cid/aid，卡片信息会缺失）
+    try {
+      const url = `https://api.bilibili.com/x/player/pagelist?bvid=${bv}`
+      const { data } = await this.fetchWithHeaders(url)
+      const page = Array.isArray(data) ? data[0] : null
+      if (page?.cid) {
+        console.log("[INFO] 已通过 pagelist 兜底获取视频信息")
+        return { bvid: bv, cid: page.cid, aid: page.aid, part: page.part }
+      }
+    } catch (error) {
+      console.error("[ERROR] pagelist 兜底失败:", error.message)
+    }
+    return this.buildErrorResult(new Error("[errcode:500] 视频信息获取失败"))
   }
 
   parseVideoInfoData(data) {
@@ -830,7 +887,7 @@ class Bilibili {
 
   async getCompleteUrl(url) {
     try {
-      const rep = await fetch(url)
+      const rep = await fetch(url, { signal: AbortSignal.timeout(BILI_API_TIMEOUT_MS) })
       return rep.url
     } catch {
       return ""
@@ -864,6 +921,7 @@ class Bilibili {
     const url = Bapi("medalfans", { str })
 
     let rep = await fetch(url, {
+      signal: AbortSignal.timeout(BILI_API_TIMEOUT_MS),
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0.0.0 Safari/537.36",
       },

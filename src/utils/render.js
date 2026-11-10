@@ -4,6 +4,9 @@ import { segment } from "../Bot/message/index.js"
 import fs from "fs"
 import Path from "path" // 新增：路径处理
 import env from "../lib/env.js"
+
+// 已确认存在的 data/ 子目录缓存（进程内，目录只会增不会删）
+const renderDirCache = new Set()
 class Render {
   async render(plugin, tplPath, data = {}, cfg = {}) {
     // 修复：路径处理，避免空值
@@ -18,8 +21,7 @@ class Render {
     if (paths.length === 0) {
       console.error("[Render] 路径解析后为空")
       return false
-    }
-    tplPath = paths.join("/")
+    }    tplPath = paths.join("/")
 
     // 创建目录（修复路径拼接）
     const mkdir = check => {
@@ -28,8 +30,12 @@ class Render {
       for (let p of check.split("/")) {
         if (!p) continue
         currDir = Path.join(currDir, p)
-        if (!fs.existsSync(currDir)) {
-          fs.mkdirSync(currDir, { recursive: true }) // 新增：递归创建
+        // 缓存目录存在性：热路径每次渲染对同一目录反复 existsSync（10+ 次 stat）
+        if (!renderDirCache.has(currDir)) {
+          if (!fs.existsSync(currDir)) {
+            fs.mkdirSync(currDir, { recursive: true })
+          }
+          renderDirCache.add(currDir)
         }
       }
       return currDir
@@ -72,10 +78,12 @@ class Render {
     }
 
     // 截图
-    console.log(`[Render] 开始截图：${plugin}/${tplPath}`)
+    const debugLog = (typeof logger !== "undefined" && logger?.debug) || console.log
+    const errorLog = (typeof logger !== "undefined" && logger?.error) || console.error
+    debugLog(`[Render] 开始截图：${plugin}/${tplPath}`)
     let base64 = await puppeteer.screenshot(`${plugin}/${tplPath}`, data)
     if (!base64) {
-      console.error("[Render] 截图失败")
+      errorLog("[Render] 截图失败")
       return false
     }
 

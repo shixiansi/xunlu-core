@@ -1,4 +1,11 @@
 import fetch from "node-fetch"
+// 统一 fetch 超时包装：外部 API stall 时不阻塞消息链路（node-fetch@2 默认无超时）
+const DEFAULT_FETCH_TIMEOUT_MS = Number(process.env.XUNLU_FETCH_TIMEOUT_MS) || 20000
+const rawFetch = fetch
+const fetchWithTimeout = (url, options = {}) => {
+  if (!options.signal) options.signal = AbortSignal.timeout(DEFAULT_FETCH_TIMEOUT_MS)
+  return rawFetch(url, options)
+}
 import qrcode from "qrcode"
 import fs from "fs"
 import path from "path"
@@ -27,7 +34,7 @@ class BiliBiliQRLogin {
 
   async generateQRImage(isBase64 = false) {
     try {
-      const response = await fetch(
+      const response = await fetchWithTimeout(
         "https://passport.bilibili.com/x/passport-login/web/qrcode/generate",
       )
       let rep = await response.json()
@@ -54,7 +61,7 @@ class BiliBiliQRLogin {
   async pollLoginStatus(getUserInfo) {
     if (!this.qrcodeKey) throw new Error("未生成二维码")
     try {
-      const response = await fetch(
+      const response = await fetchWithTimeout(
         `https://passport.bilibili.com/x/passport-login/web/qrcode/poll?qrcode_key=${this.qrcodeKey}`,
       )
       let res = await response.json()

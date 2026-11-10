@@ -1,6 +1,7 @@
 import http from "node:http"
 import fs from "node:fs"
 import path from "node:path"
+import crypto from "node:crypto"
 import { URL } from "node:url"
 import cfg from "./config.js"
 
@@ -32,7 +33,16 @@ function isAuthorized(req, url, token) {
   const bearer = header.startsWith("Bearer ") ? header.slice(7) : ""
   const queryToken = url.searchParams.get("token") || ""
   const got = bearer || queryToken
-  return got && got === token
+  // timing-safe 比较：避免 === 字节比较被时序侧信道逐位猜测 token
+  if (!got) return false
+  const expected = Buffer.from(String(token), "utf8")
+  const provided = Buffer.from(String(got), "utf8")
+  if (expected.length !== provided.length) {
+    // 长度不等仍走一次哑比较，保持响应时间一致性
+    crypto.timingSafeEqual(expected, expected)
+    return false
+  }
+  return crypto.timingSafeEqual(expected, provided)
 }
 
 function toInt(value, defaultValue) {
