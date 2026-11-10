@@ -67,6 +67,7 @@ export class CommandBus {
     this.baseBot.plugins = {}
     this.baseBot.pluginCatalog = {}
     this.baseBot.onMount = []
+    this.invalidateCommandCache()
 
     await this.loadPlugins({ cacheBust })
     await this.runLegacyMount()
@@ -76,6 +77,7 @@ export class CommandBus {
 
   async registerPlugin(plugin) {
     if (!plugin.implementation?.register) return
+    this.invalidateCommandCache()
 
     // 获取禁用命令列表
     const botCfg = cfg.getConfig("bot") || {}
@@ -200,7 +202,32 @@ export class CommandBus {
   }
 
   getOrderedCommands() {
-    return lodash.orderBy(Object.values(this.baseBot.plugins), ["priority"], ["asc"])
+    // 缓存排序结果：每条消息都会调用，重载/注册时失效即可
+    if (this._orderedCommandsCache) return this._orderedCommandsCache
+    this._orderedCommandsCache = lodash.orderBy(Object.values(this.baseBot.plugins), ["priority"], ["asc"])
+    return this._orderedCommandsCache
+  }
+
+  invalidateCommandCache() {
+    this._orderedCommandsCache = null
+    this._compiledRegCache = null
+  }
+
+  // 预编译正则缓存：热路径上每条消息对每个候选命令 new RegExp 的开销（约 N命令×M候选 次/条）
+  getCompiledReg(commandMeta) {
+    if (!this._compiledRegCache) this._compiledRegCache = new Map()
+    const regText = String(commandMeta?.reg || "")
+    let compiled = this._compiledRegCache.get(regText)
+    if (compiled === undefined) {
+      try {
+        compiled = new RegExp(regText)
+      } catch (err) {
+        logger.warn("[command-bus] invalid reg:", regText, err?.message || err)
+        compiled = null
+      }
+      this._compiledRegCache.set(regText, compiled)
+    }
+    return compiled
   }
 
   shouldTrackCommandUsage(commandMeta, e = null) {
@@ -242,12 +269,9 @@ export class CommandBus {
       if (plugin && String(item?.plugin || "") !== plugin) continue
       if (item?.event && !this.baseBot.filtEvent(e, item)) continue
 
-      try {
-        if (new RegExp(String(item?.reg || "")).test(commandText)) {
-          return item
-        }
-      } catch (err) {
-        logger.warn("[findCommandByText] invalid reg:", item?.reg, err?.message || err)
+      const compiled = this.getCompiledReg(item)
+      if (compiled && compiled.test(commandText)) {
+        return item
       }
     }
 
@@ -614,8 +638,10 @@ export class CommandBus {
 
       let matched = false
       let matchedText = ""
+      const compiledReg = this.getCompiledReg(r)
+      if (!compiledReg) continue
       for (const candidateText of buildCommandTextCandidates(commandText, prefixState)) {
-        if (new RegExp(r.reg).test(candidateText)) {
+        if (compiledReg.test(candidateText)) {
           matched = true
           matchedText = candidateText
           break
