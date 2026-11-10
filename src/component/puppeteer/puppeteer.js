@@ -297,7 +297,12 @@ class Puppeteer extends Renderer {
       }
     } catch (err) {
       logger.error(`[图片生成][${name}] 失败`, err)
-      this.restart(true)
+      // 不要一失败就强杀浏览器：并发场景下会连带杀掉其它进行中的截图。
+      // 先做健康检查，只有浏览器真的失联时才强制重启。
+      const healthy = await this.isBrowserHealthy().catch(() => false)
+      if (!healthy) {
+        this.restart(true)
+      }
       if (overtime) clearTimeout(overtime)
       ret = []
       return false
@@ -331,14 +336,18 @@ class Puppeteer extends Renderer {
     logger.info(`puppeteer Chromium ${force ? "强制" : ""}关闭重启...`)
     this.lock = true // 加锁避免并发
     try {
-      this.stop(this.browser)
-      this.browser = false
-      this.renderNum = 0
-      // 延迟重启，避免资源占用
-      setTimeout(() => {
-        this.lock = false
-        this.browserInit()
-      }, 1000)
+      // stop 是 async：不 await 会让 browser.close 与后续 browserInit 竞态
+      Promise.resolve(this.stop(this.browser))
+        .catch(err => logger.error("[restart] 关闭旧浏览器失败:", err))
+        .finally(() => {
+          this.browser = false
+          this.renderNum = 0
+          // 延迟重启，避免资源占用
+          setTimeout(() => {
+            this.lock = false
+            this.browserInit()
+          }, 1000)
+        })
     } catch (err) {
       logger.error("[restart] 重启失败", err)
       this.lock = false
@@ -360,7 +369,9 @@ class Puppeteer extends Renderer {
 }
 
 export default new Puppeteer({
-  headless: false,
+  // headless 默认改为 true：服务器环境 headless:false 会弹可见窗口/依赖 X。
+  // 本地调试需要看窗口时，在 config 或环境变量 XUNLU_HEADLESS=false 覆盖。
+  headless: process.env.XUNLU_HEADLESS === "false" ? false : "new",
   chromiumPath: "",
   puppeteerWS: "",
   puppeteerTimeout: 30000,
