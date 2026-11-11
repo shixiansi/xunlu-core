@@ -242,3 +242,12 @@ node ./bin/xunlubot.js restart
 - 性能：命令正则预编译缓存 + 排序缓存；Renderer.dealTpl 异步写盘；下载默认 30s 超时 + 60s 空闲超时（`XUNLU_DOWNLOAD_TIMEOUT_MS` / `XUNLU_DOWNLOAD_IDLE_TIMEOUT_MS`）
 - puppeteer：截图失败先探活再重启；默认 `headless: true`（`XUNLU_HEADLESS=false` 还原）
 - 清理：删除零引用依赖（@napi-rs/canvas/jpeg-js/react-dom/xmldom/wordcloud/md5/cron/sqlite3/@resvg/resvg-js/satori/canvg/jimp）与死代码 `src/component/render/t/`、`puppeteer_bk.js`
+
+## 10) 2026-11-11 第二波优化注记
+
+- 可靠性：logger 初始化即安装进程级 unhandledRejection/uncaughtException 兜底（只记录不退出）；error appender 改 dateFile 按日轮转（保留 14 天，原 error.log 无限增长）
+- 安全：Control Server token 改 timingSafeEqual 比较
+- 性能：CommandUsageDB 改 500ms 批量写入（XUNLU_USAGE_FLUSH_MS 可调；读路径自动冲刷保证读回一致）；render.js 目录存在性缓存；适配器每条事件的 console.log/console.debug 降级 logger.debug
+- 网络超时全覆盖：imgdisplay(5s)、bilibili 全链路(15s)、其余插件 fetch 统一 20s（XUNLU_FETCH_TIMEOUT_MS 可调）；bilibili 扫码轮询加 5 分钟硬上限
+- 测试注意：CommandUsageDB 测试在 recordUsage 后需 await flushPendingUsageWrites() 落库断言
+- 已知遗留：test:unit 套件在尾部（xunlu-dev 测试之后）存在既有挂起（两轮基线均复现，位置一致），跑全量需 timeout 包裹
