@@ -104,6 +104,7 @@ export default class Downloader {
         await new Promise((resolve, reject) => {
           let settled = false
           let cleanupScheduled = false
+          let streamEnded = false
 
           const rejectWithCleanup = err => {
             if (cleanupScheduled) return
@@ -151,8 +152,20 @@ export default class Downloader {
           })
 
           response.body.pipe(writeStream)
+          response.body.on("end", () => {
+            // 传输完整：后续 close 属正常收尾，不得判为截断
+            streamEnded = true
+            if (idleTimer) clearTimeout(idleTimer)
+          })
           writeStream.on("finish", () => {
             if (settled) return
+            if (contentLength > 0 && downloadedBytes < totalSize) {
+              // 防御：end/finish 都发了但字节数不足（异常代理/服务端 bug）
+              rejectWithCleanup(
+                new Error(`download truncated: ${downloadedBytes}/${totalSize} bytes`),
+              )
+              return
+            }
             settled = true
             resolve()
           })
@@ -164,8 +177,15 @@ export default class Downloader {
             rejectWithCleanup(new Error(`network stream error: ${err.message}`))
           })
           response.body.on("close", () => {
-            if (!settled && !cleanupScheduled) {
-              rejectWithCleanup(new Error("network stream closed unexpectedly"))
+            // 修复回归：close 在成功路径上常先于 writeStream.finish 触发，
+            // 只有 end 从未触发（真截断/提前关连接）才视为异常；
+            // end 之后由 finish/error 负责收尾，close 不抢跑、不删完整文件
+            if (!streamEnded && !settled && !cleanupScheduled) {
+              rejectWithCleanup(
+                new Error(
+                  `network stream closed before end: ${downloadedBytes}/${contentLength > 0 ? totalSize : "?"} bytes`,
+                ),
+              )
             }
           })
         })

@@ -41,3 +41,54 @@ test("scheduleTempFileCleanup removes files after deferred attempt", async () =>
     fs.rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test("downloadFile resolves on complete transfer even if socket closes before write flush", async () => {
+  const http = await import("node:http")
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xunlu-download-ok-"))
+  const payload = Buffer.alloc(512 * 1024, 7)
+  const server = http.createServer((req, res) => {
+    res.setHeader("content-length", String(payload.length))
+    res.end(payload)
+  })
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve))
+  const { port } = server.address()
+
+  try {
+    const downloader = new Downloader(dir)
+    const ok = await downloader.downloadFile(`http://127.0.0.1:${port}/video.mp4`, "video.mp4", {
+      resume: false,
+    })
+
+    assert.equal(ok, true)
+    const written = fs.readFileSync(path.join(dir, "video.mp4"))
+    assert.equal(written.length, payload.length)
+  } finally {
+    server.close()
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test("downloadFile rejects and cleans partial file when connection closes mid-transfer", async () => {
+  const http = await import("node:http")
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xunlu-download-cut-"))
+  const partial = Buffer.alloc(256 * 1024, 7)
+  const server = http.createServer((req, res) => {
+    res.setHeader("content-length", String(1024 * 1024))
+    res.write(partial)
+    setTimeout(() => res.destroy(), 50)
+  })
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve))
+  const { port } = server.address()
+
+  try {
+    const downloader = new Downloader(dir)
+    await assert.rejects(
+      () => downloader.downloadFile(`http://127.0.0.1:${port}/cut.mp4`, "cut.mp4", { resume: false }),
+      /closed before end|network stream error/,
+    )
+    assert.equal(fs.existsSync(path.join(dir, "cut.mp4")), false)
+  } finally {
+    server.close()
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
