@@ -84,12 +84,18 @@ test("legacy segment compatibility still produces universal media segments", () 
 
   try {
     const videoSeg = segment.video(pathToFileURL(videoPath).href)
+    const localVideoSeg = segment.video(videoPath)
 
     assert.equal(imageSeg.type, UniversalSegmentType.IMAGE)
     assert.match(String(imageSeg.data.file || ""), /^base64:\/\//)
     assert.equal(videoSeg.type, UniversalSegmentType.VIDEO)
-    assert.match(String(videoSeg.data.file || ""), /^base64:\/\//)
-    assert.equal(videoSeg.data.path, undefined)
+    // 视频不再内联 base64（大文件会撑爆协议端请求体导致内存超限崩溃），
+    // 改为保留本地 file:// 引用，由协议端在同机直接读取文件。
+    assert.doesNotMatch(String(videoSeg.data.file || ""), /^base64:\/\//)
+    assert.match(String(videoSeg.data.file || ""), /^file:\/\//)
+    // 传入纯本地路径时同样保持文件引用，并附带解析后的 path
+    assert.doesNotMatch(String(localVideoSeg.data.file || ""), /^base64:\/\//)
+    assert.equal(localVideoSeg.data.path, videoPath)
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true })
   }

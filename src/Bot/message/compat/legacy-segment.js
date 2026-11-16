@@ -48,8 +48,13 @@ function normalizeSegmentFileData(type, file, name) {
     data.name = path.basename(localPath)
   }
   if (type === "video") {
-    data.file = `base64://${fs.readFileSync(localPath).toString("base64")}`
-    delete data.path
+    // 视频文件可能很大（实测 12 分钟 360p ≈ 36MB，base64 后 ≈ 65MB），
+    // 转 base64 会把协议端请求体撑爆导致其内存超限崩溃，因此保留本地
+    // 路径（file://），由协议端在同机直接读取文件。
+    if (!data.path) {
+      data.path = localPath
+    }
+    data.file = `file://${localPath}`
     return data
   }
 
