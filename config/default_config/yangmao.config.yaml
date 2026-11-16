@@ -1,0 +1,19 @@
+# AI 羊毛日报（数据源：https://ai-yangmao.com ）
+# 群默认不开启：需要在群里发送「#羊毛开启」后，才会收到每天 12:00 的合并转发推送。
+source:
+  # 数据源站点，插件会请求 <api_base>/api/offers
+  api_base: "https://ai-yangmao.com"
+  # 单次抓取超时（毫秒）
+  timeout_ms: 15000
+  # “最新”窗口：最近 N 天新发现/更新的羊毛
+  lookback_days: 3
+  # 每条转发最多展示多少条羊毛
+  max_items: 12
+  # 额外汇总“N 天内截止”的条目，0 表示关闭
+  ending_soon_days: 3
+
+push:
+  # 总开关：关闭后不再注册每日定时任务（群级开关仍然保留）
+  enabled: true
+  # node-schedule 6 段 cron：秒 分 时 日 月 周，默认每天 12:00
+  cron: "0 0 12 * * *"
