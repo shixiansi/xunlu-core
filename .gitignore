@@ -20,3 +20,16 @@ mirage_tank_web.png
 src/plugins/tts/resources/audio/
 src/plugins/bilibili/resources/dynamic-forward/
 src/plugins/bilibili/resources/video/
+
+# >>> codex-switch managed ignores >>>
+codex_scripts/
+.codex/template-backups/
+.codex/sessions/
+.codex/log/
+.codex/history.jsonl
+.codex/version.json
+.claude/
+.codex/local.env
+.claude/settings.local.json
+package-lock.json
+# <<< codex-switch managed ignores <<<
