@@ -83,10 +83,87 @@ test("downloadFile rejects and cleans partial file when connection closes mid-tr
   try {
     const downloader = new Downloader(dir)
     await assert.rejects(
-      () => downloader.downloadFile(`http://127.0.0.1:${port}/cut.mp4`, "cut.mp4", { resume: false }),
-      /closed before end|network stream error/,
+      () =>
+        downloader.downloadFile(`http://127.0.0.1:${port}/cut.mp4`, "cut.mp4", {
+          resume: false,
+          retries: 0,
+          timeoutMs: 2000,
+          idleTimeoutMs: 800,
+        }),
+      /下载停滞|传输不完整|closed before end|user aborted/,
     )
     assert.equal(fs.existsSync(path.join(dir, "cut.mp4")), false)
+  } finally {
+    server.close()
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test("downloadFile completes via byte count when server writes full payload then destroys socket without end", async () => {
+  const http = await import("node:http")
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xunlu-download-halfclose-"))
+  const payload = Buffer.alloc(300 * 1024, 9)
+  const server = http.createServer((req, res) => {
+    res.setHeader("content-length", String(payload.length))
+    res.write(payload)
+    // 故意不调用 res.end()：模拟 B 站 CDN 传满字节后直接断连、不发终止信号
+    setTimeout(() => res.destroy(), 50)
+  })
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve))
+  const { port } = server.address()
+
+  try {
+    const downloader = new Downloader(dir)
+    const ok = await downloader.downloadFile(
+      `http://127.0.0.1:${port}/audio.mp3`,
+      "audio.mp3",
+      { resume: false, timeoutMs: 2000, idleTimeoutMs: 5000 },
+    )
+
+    assert.equal(ok, true)
+    const written = fs.readFileSync(path.join(dir, "audio.mp3"))
+    assert.equal(written.length, payload.length)
+  } finally {
+    server.close()
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test("downloadFile resumes partial download across retries", async () => {
+  const http = await import("node:http")
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xunlu-download-resume-"))
+  const payload = Buffer.alloc(400 * 1024, 5)
+  let requests = 0
+  const server = http.createServer((req, res) => {
+    requests += 1
+    const range = req.headers.range
+    if (!range) {
+      // 第一次：只给一半然后掐掉
+      res.setHeader("content-length", String(payload.length))
+      res.write(payload.subarray(0, 200 * 1024))
+      setTimeout(() => res.destroy(), 30)
+      return
+    }
+    const start = Number(String(range).match(/bytes=(\d+)/)?.[1] || 0)
+    res.writeHead(206, { "content-length": String(payload.length - start) })
+    res.end(payload.subarray(start))
+  })
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve))
+  const { port } = server.address()
+
+  try {
+    const downloader = new Downloader(dir)
+    const ok = await downloader.downloadFile(
+      `http://127.0.0.1:${port}/part.mp4`,
+      "part.mp4",
+      { resume: true, timeoutMs: 2000, idleTimeoutMs: 800, retries: 2 },
+    )
+
+    assert.equal(ok, true)
+    assert.equal(requests >= 2, true)
+    const written = fs.readFileSync(path.join(dir, "part.mp4"))
+    assert.equal(written.length, payload.length)
+    assert.equal(Buffer.compare(written, payload), 0)
   } finally {
     server.close()
     fs.rmSync(dir, { recursive: true, force: true })
